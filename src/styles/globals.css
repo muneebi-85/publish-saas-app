@@ -1,0 +1,154 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@500;600;700;800&display=swap');
+
+/* ─────────────────────────────
+   Design tokens
+   ───────────────────────────── */
+:root {
+  --canvas:      #FAFAF9;
+  --panel:       #FFFFFF;
+  --sunken:      #F5F5F4;
+  --muted:       #EFEFEE;
+
+  --ink-950: #0C0A09;
+  --ink-900: #1C1917;
+  --ink-800: #292524;
+  --ink-700: #44403C;
+  --ink-600: #57534E;
+  --ink-500: #78716C;
+  --ink-400: #A8A29E;
+  --ink-300: #D6D3D1;
+  --ink-200: #E7E5E4;
+  --ink-100: #F5F5F4;
+
+  --grass-500: #16A34A;
+  --grass-600: #15803D;
+  --amber-500: #F59E0B;
+  --crimson-500: #EF4444;
+
+  --ring: rgba(28,25,23,0.12);
+  --ring-strong: rgba(28,25,23,0.32);
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+html {
+  scroll-behavior: smooth;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
+}
+
+body {
+  color: var(--ink-900);
+  background: var(--canvas);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Editorial display type */
+.font-display {
+  font-family: 'Inter Tight', 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D6D3D1; border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #A8A29E; background-clip: padding-box; border: 2px solid transparent; }
+* { scrollbar-width: thin; scrollbar-color: #D6D3D1 transparent; }
+
+/* ─── Selection ─── */
+::selection { background: #1C1917; color: #FAFAF9; }
+
+/* ─── Forms ─── */
+input, textarea, select { font-family: inherit; color: var(--ink-900); }
+input:focus, textarea:focus, select:focus { outline: none; }
+input::placeholder, textarea::placeholder { color: var(--ink-400); }
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--ink-200);
+  border-radius: 99px;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--ink-900);
+  border: 2.5px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.22,1,0.36,1);
+}
+input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.14); }
+input[type='range']::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--ink-900); border: 2.5px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+}
+
+/* ─── Animations ─── */
+@keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes enter-scale { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+.animate-enter { animation: enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-enter-scale { animation: enter-scale 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Stagger children */
+.stagger > * { animation: enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 20ms; }
+.stagger > *:nth-child(2) { animation-delay: 70ms; }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 170ms; }
+.stagger > *:nth-child(5) { animation-delay: 220ms; }
+.stagger > *:nth-child(6) { animation-delay: 270ms; }
+.stagger > *:nth-child(7) { animation-delay: 320ms; }
+.stagger > *:nth-child(8) { animation-delay: 370ms; }
+
+/* ─── Utility ─── */
+.text-balance { text-wrap: balance; }
+.text-pretty { text-wrap: pretty; }
+
+/* Grain overlay — adds subtle paper texture without hurting perf */
+.grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.9'/></svg>");
+}
+
+/* Focus ring */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--ink-900);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Subtle dotted rule */
+.divider-dotted {
+  background-image: linear-gradient(90deg, var(--ink-200) 50%, transparent 50%);
+  background-size: 6px 1px;
+  background-repeat: repeat-x;
+  height: 1px;
+  border: 0;
+}
+
+/* Logo mark stripe */
+.logo-strip {
+  mask-image: linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%);
+}

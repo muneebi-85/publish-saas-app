@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useAuth } from '@clerk/nextjs';
 
 /**
  * Unread activity count for the header bell.
@@ -15,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react';
  */
 export function useUnreadActivity(enabled = true): number {
   const [unread, setUnread] = useState(0);
+  const { isSignedIn } = useAuth();
 
   const load = useCallback(async () => {
     if (!enabled) return;
@@ -33,12 +35,14 @@ export function useUnreadActivity(enabled = true): number {
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled) return;
+    // Never fetch when signed out: the endpoint is auth-gated, and firing it
+    // from public pages produces a 401 in the console for nothing.
+    if (!enabled || !isSignedIn) return;
     void load();
     const onFocus = () => void load();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [enabled, load]);
+  }, [enabled, load, isSignedIn]);
 
   return unread;
 }

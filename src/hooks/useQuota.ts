@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useAuth } from '@clerk/nextjs';
 
 export type Plan = 'free' | 'starter' | 'pro' | 'agency';
 
@@ -49,6 +50,7 @@ function coercePlan(p: unknown): Plan {
  */
 export function useQuota(): QuotaState & { refresh: () => void } {
   const [state, setState] = useState<QuotaState>(INITIAL);
+  const { isSignedIn } = useAuth();
 
   const load = useCallback(async () => {
     try {
@@ -77,11 +79,18 @@ export function useQuota(): QuotaState & { refresh: () => void } {
   }, []);
 
   useEffect(() => {
+    if (!isSignedIn) {
+      // Public pages (marketing, legal): don't fire an authenticated fetch
+      // that would 401 and spam the console. The UI shows the free-tier
+      // defaults, and any gated server route re-checks auth anyway.
+      setState((s) => ({ ...s, loading: false, authenticated: false }));
+      return;
+    }
     void load();
     const onFocus = () => void load();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [load]);
+  }, [load, isSignedIn]);
 
   return { ...state, refresh: () => void load() };
 }

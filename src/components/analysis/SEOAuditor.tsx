@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Search, Tag, Hash } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Tag, Hash, Copy, Check, Clock, AlignLeft } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { SEOMetric } from '@/lib/types';
 
@@ -14,7 +14,7 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
             <Search className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-semibold tracking-tight text-ink-950">
+            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
               SEO &amp; metadata
             </h2>
             <p className="text-xs text-ink-500 mt-0.5">
@@ -46,7 +46,7 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 px-6 pb-6">
         <div>
-          <div className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-2 inline-flex items-center gap-1.5">
+          <div className="text-[12px] font-semibold text-brand-600 mb-2 inline-flex items-center gap-1.5">
             <Tag className="w-3 h-3" /> Search tags
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -58,7 +58,7 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
           </div>
         </div>
         <div>
-          <div className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-2 inline-flex items-center gap-1.5">
+          <div className="text-[12px] font-semibold text-brand-600 mb-2 inline-flex items-center gap-1.5">
             <Hash className="w-3 h-3" /> Hashtags
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -70,6 +70,54 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
           </div>
         </div>
       </div>
+      {(seo.generatedDescription || seo.timestamps) && (
+        <div className="border-t border-ink-200 p-6 grid grid-cols-1 gap-6">
+          {seo.generatedDescription && (
+            <CopyableText 
+              title="Optimized Description" 
+              icon={<AlignLeft className="w-3.5 h-3.5" />} 
+              text={seo.generatedDescription} 
+            />
+          )}
+          {seo.timestamps && seo.timestamps.length > 0 && (
+            <CopyableText 
+              title="Chapter Timestamps" 
+              icon={<Clock className="w-3.5 h-3.5" />} 
+              text={seo.timestamps.join('\n')} 
+            />
+          )}
+        </div>
+      )}
     </section>
+  );
+};
+
+const CopyableText: React.FC<{ title: string; icon: React.ReactNode; text: string }> = ({ title, icon, text }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[12px] font-semibold text-brand-600 inline-flex items-center gap-1.5">
+          {icon} {title}
+        </div>
+        <button
+          onClick={handleCopy}
+          className="text-[11px] font-medium text-ink-500 hover:text-ink-900 flex items-center gap-1 transition-colors"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-grass-600" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <div className="bg-surface-canvas border border-ink-200 rounded-xl p-4 text-[13px] text-ink-800 whitespace-pre-wrap font-mono text-sm">
+        {text}
+      </div>
+    </div>
   );
 };

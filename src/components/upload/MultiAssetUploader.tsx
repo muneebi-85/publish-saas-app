@@ -1,31 +1,50 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   UploadCloud, FileVideo, FileImage, FileText, FileAudio,
-  X, ArrowRight, CheckCircle2, Loader2, Info,
+  X, ArrowRight, CheckCircle2, Loader2, Info, AlertTriangle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 
+type SlotKey = 'video' | 'thumbnail' | 'script' | 'voiceover';
+
 interface UploadedFile {
   name: string;
   type: string;
   size: number;
-  progress?: number; // 0..100
-  ready?: boolean;
+  /** Real bytes-sent percentage from the XHR progress event. */
+  progress: number;
+  ready: boolean;
+  /** Set when the upload failed; the slot then offers a retry. */
+  error?: string;
+  /** Object key returned by the presign route, once the PUT succeeded. */
+  key?: string;
+  /** Public URL, when the deployment has a read origin configured. */
+  publicUrl?: string | null;
+  /** For the script slot: the extracted text we send to the review. */
+  text?: string;
 }
 
 const SLOTS = [
-  { key: 'video',      label: 'Video',      accept: '.mp4,.mov,.webm',  icon: FileVideo,  desc: 'MP4, MOV or WebM up to 4 GB', required: true  },
-  { key: 'thumbnail',  label: 'Thumbnail',  accept: '.png,.jpg,.jpeg,.webp', icon: FileImage,  desc: 'PNG, JPG or WebP',       required: false },
-  { key: 'script',     label: 'Script',     accept: '.txt,.doc,.docx',  icon: FileText,   desc: 'Text file or paste below',    required: false },
-  { key: 'voiceover',  label: 'Voiceover',  accept: '.mp3,.wav,.m4a',   icon: FileAudio,  desc: 'MP3, WAV or M4A',             required: false },
+  { key: 'video',     label: 'Video',     accept: 'video/mp4,video/quicktime,video/webm',                    icon: FileVideo, desc: 'MP4, MOV or WebM up to 4 GB', required: true  },
+  { key: 'thumbnail', label: 'Thumbnail', accept: 'image/png,image/jpeg,image/webp',                          icon: FileImage, desc: 'PNG, JPG or WebP up to 15 MB', required: false },
+  { key: 'script',    label: 'Script',    accept: 'text/plain,.txt,.doc,.docx',                               icon: FileText,  desc: 'TXT reads instantly, or paste below', required: false },
+  { key: 'voiceover', label: 'Voiceover', accept: 'audio/mpeg,audio/wav,audio/mp4,.mp3,.wav,.m4a',            icon: FileAudio, desc: 'MP3, WAV or M4A up to 300 MB', required: false },
 ] as const;
 
 const PLATFORMS = ['YouTube', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn'] as const;
+
+const MUSIC_SOURCES = [
+  { value: 'none',     label: 'No music' },
+  { value: 'original', label: 'Original / self-made' },
+  { value: 'licensed', label: 'Licensed library' },
+  { value: 'stock',    label: 'Stock / royalty-free' },
+  { value: 'popular',  label: 'Commercial track' },
+] as const;
 
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -34,19 +53,83 @@ const formatSize = (bytes: number) => {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
 
+/** PUT to the presigned URL, reporting true byte progress. */
+function putWithProgress(
+  url: string,
+  file: File,
+  headers: Record<string, string>,
+  onProgress: (pct: number) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url, true);
+    for (const [k, val] of Object.entries(headers)) xhr.setRequestHeader(k, val);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(new Error(`Storage rejected the upload (${xhr.status}).`));
+    xhr.onerror = () => reject(new Error('Network error during upload.'));
+    xhr.onabort = () => reject(new Error('Upload cancelled.'));
+
+    signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(file);
+  });
+}
+
 export const MultiAssetUploader: React.FC = () => {
-  const [files, setFiles] = useState<Record<string, UploadedFile | null>>({
+  const [files, setFiles] = useState<Record<SlotKey, UploadedFile | null>>({
     video: null, thumbnail: null, script: null, voiceover: null,
   });
   const [platform, setPlatform] = useState<typeof PLATFORMS[number]>('YouTube');
   const [analyzing, setAnalyzing] = useState(false);
-  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  const [statusLine, setStatusLine] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<SlotKey | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [tags, setTags] = useState('');
-  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [scriptText, setScriptText] = useState('');
+  const [musicSource, setMusicSource] = useState<string>('none');
+  const [aiGenerated, setAiGenerated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [storageOff, setStorageOff] = useState(false);
 
-  const setFileProgress = useCallback((key: string, patch: Partial<UploadedFile>) => {
+  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const aborters = useRef<Record<string, AbortController>>({});
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+
+    // Re-run handoff from a report ("Re-run review"): preload title, script,
+    // and platform so the follow-up review starts from the same inputs.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const title = params.get('title');
+      const script = params.get('script');
+      const platform = params.get('platform');
+      if (title) setTitle(title.slice(0, 200));
+      if (script) setScriptText(script.slice(0, 20_000));
+      if (platform && (PLATFORMS as readonly string[]).includes(platform)) {
+        setPlatform(platform as typeof PLATFORMS[number]);
+      }
+    } catch {
+      // Reading the URL is cosmetic; never let it break the uploader.
+    }
+
+    return () => {
+      mounted.current = false;
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+      Object.values(aborters.current).forEach((a) => a.abort());
+    };
+  }, []);
+
+  const patchFile = useCallback((key: SlotKey, patch: Partial<UploadedFile>) => {
+    if (!mounted.current) return;
     setFiles((prev) => {
       const current = prev[key];
       if (!current) return prev;
@@ -54,40 +137,184 @@ export const MultiAssetUploader: React.FC = () => {
     });
   }, []);
 
-  const acceptFile = (key: string, f: File) => {
+  const upload = useCallback(async (key: SlotKey, f: File) => {
+    aborters.current[key]?.abort();
+    const controller = new AbortController();
+    aborters.current[key] = controller;
+
     setFiles((prev) => ({
       ...prev,
       [key]: { name: f.name, type: f.type, size: f.size, progress: 0, ready: false },
     }));
 
-    // Fake upload progress → the real thing would stream through UploadThing/S3.
-    let pct = 0;
-    const tick = () => {
-      pct = Math.min(100, pct + 6 + Math.random() * 12);
-      setFileProgress(key, { progress: pct });
-      if (pct < 100) {
-        setTimeout(tick, 90 + Math.random() * 90);
-      } else {
-        setTimeout(() => setFileProgress(key, { ready: true }), 200);
+    // A .txt script is read locally — the review needs the text, not a stored
+    // object, so we skip the round trip to storage entirely.
+    const isPlainTextScript =
+      key === 'script' && (f.type === 'text/plain' || /\.txt$/i.test(f.name));
+    if (isPlainTextScript) {
+      try {
+        const text = await f.text();
+        if (!mounted.current) return;
+        setScriptText(text.slice(0, 20_000));
+        patchFile(key, { progress: 100, ready: true, text: text.slice(0, 20_000) });
+      } catch {
+        patchFile(key, { error: 'Could not read that file. Paste the script instead.' });
       }
-    };
-    setTimeout(tick, 120);
-  };
+      return;
+    }
 
-  const handleFile = (key: string, list: FileList | null) => {
+    try {
+      const presignRes = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slot: key,
+          filename: f.name,
+          contentType: f.type || 'application/octet-stream',
+          size: f.size,
+        }),
+        signal: controller.signal,
+      });
+
+      const presign = await presignRes.json().catch(() => ({}));
+      if (!presignRes.ok) {
+        if (presign?.storageUnavailable) setStorageOff(true);
+        throw new Error(presign?.error ?? `Could not prepare the upload (${presignRes.status}).`);
+      }
+
+      await putWithProgress(
+        presign.signedUrl,
+        f,
+        presign.requiredHeaders ?? { 'Content-Type': f.type },
+        (pct) => patchFile(key, { progress: pct }),
+        controller.signal,
+      );
+
+      patchFile(key, {
+        progress: 100,
+        ready: true,
+        key: presign.key,
+        publicUrl: presign.publicUrl ?? null,
+      });
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      patchFile(key, {
+        error: err instanceof Error ? err.message : 'Upload failed.',
+        progress: 0,
+        ready: false,
+      });
+    }
+  }, [patchFile]);
+
+  const handleFile = (key: SlotKey, list: FileList | null) => {
     if (!list || !list[0]) return;
-    acceptFile(key, list[0]);
+    setError(null);
+    void upload(key, list[0]);
   };
 
-  const removeFile = (key: string) => setFiles((prev) => ({ ...prev, [key]: null }));
+  const removeFile = (key: SlotKey) => {
+    aborters.current[key]?.abort();
+    if (key === 'script') setScriptText('');
+    setFiles((prev) => ({ ...prev, [key]: null }));
+  };
 
-  const hasVideo = !!files.video?.ready;
-  const anyReady = Object.values(files).some((f) => f?.ready);
-  const anyLoading = Object.values(files).some((f) => f && !f.ready);
+  const anyUploading = (Object.values(files) as (UploadedFile | null)[]).some(
+    (f) => f && !f.ready && !f.error,
+  );
+  const addedCount = (Object.values(files) as (UploadedFile | null)[]).filter(Boolean).length;
 
-  const runAudit = () => {
+  // A review needs something to review: a title plus either a script or an
+  // uploaded asset. We do not let the user spend an audit on an empty request.
+  const effectiveTitle = title.trim();
+  const hasSubstance = scriptText.trim().length > 0 || !!files.video?.ready || !!files.thumbnail?.ready;
+  const canRun = effectiveTitle.length >= 3 && hasSubstance && !anyUploading && !analyzing;
+
+  /** Poll the job until it resolves, then navigate to the real report. */
+  const pollJob = useCallback((jobId: string, attempt = 0) => {
+    // ~5 minutes of polling at 2.5s, matching the worker's own ceiling.
+    if (attempt > 120) {
+      setError('The review is taking longer than expected. It will appear under Reports when it finishes.');
+      setAnalyzing(false);
+      setStatusLine(null);
+      return;
+    }
+
+    pollTimer.current = setTimeout(async () => {
+      if (!mounted.current) return;
+      try {
+        const res = await fetch(`/api/analyze/status/${jobId}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('Could not read the review status.');
+        const job = await res.json();
+
+        if (job.status === 'completed' && job.reportId) {
+          setStatusLine('Report ready — opening…');
+          window.location.href = `/analysis/${job.reportId}`;
+          return;
+        }
+        if (job.status === 'failed') {
+          setError(job.error ?? 'The review failed. Your allowance was refunded.');
+          setAnalyzing(false);
+          setStatusLine(null);
+          return;
+        }
+        setStatusLine(job.status === 'running' ? 'Analyzing your upload…' : 'Queued…');
+        pollJob(jobId, attempt + 1);
+      } catch {
+        // Transient network blip — keep polling rather than failing the run.
+        pollJob(jobId, attempt + 1);
+      }
+    }, 2500);
+  }, []);
+
+  const runAudit = async () => {
+    if (!canRun) return;
     setAnalyzing(true);
-    setTimeout(() => { window.location.href = '/analysis/proj-001'; }, 1400);
+    setError(null);
+    setStatusLine('Starting review…');
+
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: effectiveTitle,
+          description: description.trim() || undefined,
+          targetPlatform: platform,
+          scriptText: scriptText.trim(),
+          // Only send a thumbnail URL the server can actually fetch.
+          thumbnailUrl: files.thumbnail?.publicUrl ?? undefined,
+          // Prefer the voiceover track; fall back to the video when it is the
+          // only media (Deepgram extracts the audio from either).
+          audioUrl: files.voiceover?.publicUrl ?? files.video?.publicUrl ?? undefined,
+          musicSource,
+          aiGenerated,
+          folder: 'General',
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (data?.upgradeRequired) {
+          window.location.href = '/pricing';
+          return;
+        }
+        throw new Error(data?.error ?? `Could not start the review (${res.status}).`);
+      }
+
+      // The inline path returns the report immediately; the queued path gives us
+      // a job to poll. Either way we only ever navigate to a real report id.
+      if (data.reportId) {
+        window.location.href = `/analysis/${data.reportId}`;
+        return;
+      }
+      setStatusLine('Queued…');
+      pollJob(data.jobId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start the review.');
+      setAnalyzing(false);
+      setStatusLine(null);
+    }
   };
 
   return (
@@ -105,6 +332,8 @@ export const MultiAssetUploader: React.FC = () => {
             {PLATFORMS.map((p) => (
               <button
                 key={p}
+                type="button"
+                aria-pressed={platform === p}
                 onClick={() => setPlatform(p)}
                 className={clsx(
                   'px-2.5 h-8 rounded-md text-[12.5px] font-medium transition-colors',
@@ -120,6 +349,17 @@ export const MultiAssetUploader: React.FC = () => {
         </div>
       </Card>
 
+      {storageOff && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900 flex items-start gap-2">
+          <Info className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            File storage isn&apos;t enabled on this deployment, so video, thumbnail, and voiceover
+            uploads are unavailable. Paste your script below — the script, hook, SEO, platform-policy,
+            and copyright layers all run on text alone.
+          </span>
+        </div>
+      )}
+
       {/* Upload slots */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -128,12 +368,10 @@ export const MultiAssetUploader: React.FC = () => {
               Drop your assets
             </h2>
             <div className="text-xs text-ink-500 mt-1">
-              Only the video is required — every extra asset makes the review sharper.
+              Every extra asset unlocks another layer of the review. A script alone already runs five of them.
             </div>
           </div>
-          <Badge variant="outline">
-            {Object.values(files).filter(Boolean).length} / {SLOTS.length} added
-          </Badge>
+          <Badge variant="outline">{addedCount} / {SLOTS.length} added</Badge>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -155,11 +393,13 @@ export const MultiAssetUploader: React.FC = () => {
                 className={clsx(
                   'relative rounded-2xl border-2 border-dashed p-5 transition-colors',
                   !file && 'cursor-pointer',
-                  file
-                    ? 'border-ink-200 bg-white'
-                    : isDragOver
-                      ? 'border-ink-900 bg-ink-100/60'
-                      : 'border-ink-200 bg-white hover:border-ink-400 hover:bg-ink-50/40',
+                  file?.error
+                    ? 'border-crimson-200 bg-crimson-50/40'
+                    : file
+                      ? 'border-ink-200 bg-white'
+                      : isDragOver
+                        ? 'border-ink-900 bg-ink-100/60'
+                        : 'border-ink-200 bg-white hover:border-ink-400 hover:bg-ink-50/40',
                 )}
               >
                 <input
@@ -175,11 +415,17 @@ export const MultiAssetUploader: React.FC = () => {
                     <div className="flex items-start gap-3">
                       <div className={clsx(
                         'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border transition-colors',
-                        file.ready
-                          ? 'bg-grass-50 border-grass-100 text-grass-700'
-                          : 'bg-white border-ink-200 text-ink-700',
+                        file.error
+                          ? 'bg-crimson-50 border-crimson-200 text-crimson-600'
+                          : file.ready
+                            ? 'bg-grass-50 border-grass-100 text-grass-700'
+                            : 'bg-white border-ink-200 text-ink-700',
                       )}>
-                        {file.ready ? <CheckCircle2 className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+                        {file.error
+                          ? <AlertTriangle className="w-4 h-4" />
+                          : file.ready
+                            ? <CheckCircle2 className="w-4 h-4" />
+                            : <Icon className="w-4 h-4" />}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-[13.5px] font-medium text-ink-900 truncate">{file.name}</div>
@@ -189,28 +435,48 @@ export const MultiAssetUploader: React.FC = () => {
                         </div>
                       </div>
                       <button
+                        type="button"
                         onClick={(e) => { e.stopPropagation(); removeFile(slot.key); }}
                         className="text-ink-400 hover:text-ink-900 transition-colors shrink-0"
-                        aria-label="Remove"
+                        aria-label={`Remove ${slot.label}`}
                       >
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    {!file.ready && (
+
+                    {file.error && (
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <span className="text-[11.5px] text-crimson-700">{file.error}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); fileRefs.current[slot.key]?.click(); }}
+                          className="text-[11.5px] font-medium text-ink-900 underline shrink-0"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+
+                    {!file.ready && !file.error && (
                       <div className="mt-3">
-                        <div className="h-1 w-full bg-ink-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-1 w-full bg-ink-100 rounded-full overflow-hidden"
+                          role="progressbar"
+                          aria-valuenow={file.progress}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-label={`${slot.label} upload progress`}
+                        >
                           <div
                             className="h-full bg-ink-900 rounded-full transition-all duration-200"
-                            style={{ width: `${file.progress || 0}%` }}
+                            style={{ width: `${file.progress}%` }}
                           />
                         </div>
                         <div className="flex items-center justify-between mt-1.5">
                           <span className="text-[10.5px] text-ink-500 inline-flex items-center gap-1">
                             <Loader2 className="w-3 h-3 animate-spin" /> Uploading
                           </span>
-                          <span className="text-[10.5px] tabular-nums text-ink-500">
-                            {Math.round(file.progress || 0)}%
-                          </span>
+                          <span className="text-[10.5px] tabular-nums text-ink-500">{file.progress}%</span>
                         </div>
                       </div>
                     )}
@@ -239,69 +505,142 @@ export const MultiAssetUploader: React.FC = () => {
         </div>
       </div>
 
-      {/* Metadata */}
+      {/* Script + metadata */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-semibold text-ink-900">Metadata (optional)</h3>
+            <h3 className="text-sm font-semibold text-ink-900">Script &amp; metadata</h3>
             <div className="text-xs text-ink-500 mt-0.5">
-              Helps us match your description against SEO and disclosure rules.
+              The script drives the hook, authenticity, and demonetization-risk layers — it is the single
+              highest-value thing to include.
             </div>
           </div>
           <Info className="w-4 h-4 text-ink-400" />
         </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Video title">
+          <Field label="Video title" htmlFor="up-title" className="md:col-span-2">
             <input
+              id="up-title"
               value={title}
+              maxLength={200}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Why AI voices are getting demonetized"
+              placeholder="The exact title you plan to publish"
               className="w-full bg-white border border-ink-200 rounded-lg px-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
             />
           </Field>
-          <Field label="Description">
+
+          <Field label="Script" htmlFor="up-script" className="md:col-span-2">
+            <textarea
+              id="up-script"
+              value={scriptText}
+              maxLength={20000}
+              rows={8}
+              onChange={(e) => setScriptText(e.target.value)}
+              placeholder="Paste your full script, or upload a .txt above and it lands here automatically."
+              className="w-full bg-white border border-ink-200 rounded-lg px-3 py-2 text-[13px] leading-relaxed placeholder:text-ink-400 focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5 resize-y"
+            />
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[11px] text-ink-400">
+                {scriptText.trim() ? `${scriptText.trim().split(/\s+/).length} words` : 'No script yet'}
+              </span>
+              <span className="text-[11px] text-ink-400 tabular-nums">{scriptText.length} / 20,000</span>
+            </div>
+          </Field>
+
+          <Field label="Description" htmlFor="up-desc">
             <input
+              id="up-desc"
               value={description}
+              maxLength={5000}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="One-line summary that will appear under the video"
+              placeholder="The description that will appear under the video"
               className="w-full bg-white border border-ink-200 rounded-lg px-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
             />
           </Field>
-          <Field label="Tags" className="md:col-span-2">
-            <input
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="Comma-separated: creator economy, AI, monetization"
-              className="w-full bg-white border border-ink-200 rounded-lg px-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
-            />
+
+          <Field label="Music source" htmlFor="up-music">
+            <select
+              id="up-music"
+              value={musicSource}
+              onChange={(e) => setMusicSource(e.target.value)}
+              className="w-full bg-white border border-ink-200 rounded-lg px-3 h-9 text-[13px] focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
+            >
+              {MUSIC_SOURCES.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
           </Field>
+
+          <div className="md:col-span-2">
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={aiGenerated}
+                onChange={(e) => setAiGenerated(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-ink-300 text-ink-900 focus:ring-ink-900/20"
+              />
+              <span className="text-[12.5px] text-ink-700">
+                This upload contains AI-generated voice or visuals.
+                <span className="block text-[11.5px] text-ink-500 mt-0.5">
+                  Used to check whether YouTube&apos;s synthetic-content disclosure applies to your specific case —
+                  it does not by itself lower any score.
+                </span>
+              </span>
+            </label>
+          </div>
         </div>
       </Card>
 
       {/* Run bar */}
       <div className="sticky bottom-4 z-10">
-        <div className="rounded-2xl border border-ink-200 bg-white/90 backdrop-blur-md p-4 flex items-center justify-between shadow-float">
+        {error && (
+          <div className="mb-3 rounded-xl bg-crimson-50 border border-crimson-200 px-4 py-3 text-[13px] text-crimson-800 shadow-sm flex items-start justify-between gap-3">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="text-crimson-600 hover:text-crimson-900 shrink-0"
+              aria-label="Dismiss error"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+        <div className="rounded-2xl border border-ink-200 bg-white/90 backdrop-blur-md p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-float">
           <div className="flex items-center gap-3">
             <div className={clsx(
-              'w-9 h-9 rounded-lg flex items-center justify-center',
-              hasVideo ? 'bg-grass-50 text-grass-700 border border-grass-100' : 'bg-ink-100 text-ink-500',
+              'w-9 h-9 rounded-lg flex items-center justify-center shrink-0',
+              canRun || analyzing
+                ? 'bg-grass-50 text-grass-700 border border-grass-100'
+                : 'bg-ink-100 text-ink-500',
             )}>
-              {hasVideo ? <CheckCircle2 className="w-4 h-4" /> : <UploadCloud className="w-4 h-4" />}
+              {analyzing
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : canRun ? <CheckCircle2 className="w-4 h-4" /> : <UploadCloud className="w-4 h-4" />}
             </div>
             <div>
               <div className="text-sm font-medium text-ink-900">
-                {analyzing ? 'Running review…' : hasVideo ? 'Ready to review' : 'Add a video to continue'}
+                {analyzing
+                  ? statusLine ?? 'Running review…'
+                  : canRun
+                    ? 'Ready to review'
+                    : effectiveTitle.length < 3
+                      ? 'Add a title to continue'
+                      : 'Add a script or an asset to continue'}
               </div>
               <div className="text-[11.5px] text-ink-500">
-                Full multi-asset audit · {platform} policy set · ~11 minute turnaround
+                {platform} policy set · {analyzing ? 'this stays live while it runs' : 'runs every layer your assets support'}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => window.history.back()}>Cancel</Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="ghost" disabled={analyzing} onClick={() => window.history.back()}>
+              Cancel
+            </Button>
             <Button
               size="lg"
-              disabled={!hasVideo || anyLoading}
+              disabled={!canRun}
               isLoading={analyzing}
               rightIcon={<ArrowRight className="w-4 h-4" />}
               onClick={runAudit}
@@ -315,11 +654,16 @@ export const MultiAssetUploader: React.FC = () => {
   );
 };
 
-const Field: React.FC<{ label: string; className?: string; children: React.ReactNode }> = ({
-  label, className, children,
-}) => (
+const Field: React.FC<{
+  label: string;
+  htmlFor?: string;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ label, htmlFor, className, children }) => (
   <div className={className}>
-    <label className="text-[11.5px] font-medium text-ink-600 block mb-1.5">{label}</label>
+    <label htmlFor={htmlFor} className="text-[11.5px] font-medium text-ink-600 block mb-1.5">
+      {label}
+    </label>
     {children}
   </div>
 );

@@ -1,13 +1,13 @@
-import React from 'react';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { auth } from '@clerk/nextjs/server';
-import { FileText, ArrowUpRight } from 'lucide-react';
+import { requirePageAuth } from '@/lib/api-guards';
+import { FileText, ArrowUpRight, TrendingUp, TrendingDown } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { ScoreGauge } from '@/components/ui/ScoreGauge';
 import { prisma } from '@/lib/db';
 import { Sparkline } from '@/components/analytics/Sparkline';
+import { ReportActions } from './ReportActions';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,11 +24,17 @@ interface ProjectGroup {
   count: number;
 }
 
-export default async function ReportsPage() {
-  const { userId: clerkId } = auth();
-  if (!clerkId) redirect('/sign-in');
+/** Maps a score band to the reader-facing status shown in the list. */
+function statusFor(score: number): { label: string; className: string } {
+  if (score >= 85) return { label: 'Ready', className: 'text-brand-600' };
+  if (score >= 70) return { label: 'Improve', className: 'text-amber-600' };
+  return { label: 'Rework', className: 'text-crimson-600' };
+}
 
-  const user = await prisma.user.findUnique({ where: { clerkId } });
+export default async function ReportsPage() {
+  const authCtx = await requirePageAuth();
+
+  const user = await prisma.user.findUnique({ where: { id: authCtx.dbUserId } });
   if (!user) {
     return <EmptyState />;
   }
@@ -86,87 +92,88 @@ export default async function ReportsPage() {
   }).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
   return (
-    <div className="space-y-8 animate-enter">
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500 mb-2">Deliverables</div>
-          <h1 className="font-display text-3xl font-semibold tracking-[-0.02em] text-ink-950">Reports</h1>
-          <p className="text-sm text-ink-500 mt-2 max-w-xl">
-            Every review you have run, grouped by project. Scores below are computed on the video&apos;s own signals
-            — a rising trend is real evidence the changes you shipped are working.
-          </p>
-        </div>
-        <Link href="/upload">
-          <Button>New review</Button>
-        </Link>
-      </header>
+    <div className="animate-enter">
+      <PageHeader
+        title="Reports"
+        subtitle="Download, share, and revisit every analysis report."
+        showUtility
+        actions={
+          <Link href="/upload">
+            <Button variant="dark" leftIcon={<ArrowUpRight className="w-4 h-4" />}>New review</Button>
+          </Link>
+        }
+      />
 
       <Card padded={false}>
-        <div className="px-5 py-4 border-b border-ink-200 flex items-center justify-between">
-          <span className="text-[12px] text-ink-500 tabular-nums">
+        <div className="px-5 py-4 border-b border-ink-100 flex items-center justify-between">
+          <span className="text-[12px] font-medium text-ink-600 tabular-nums">
             {list.length} project{list.length === 1 ? '' : 's'} · {rows.length} review{rows.length === 1 ? '' : 's'}
           </span>
+          <span className="text-[11px] text-ink-400">Scored on each video&apos;s own signals · estimates</span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px]">
+          <table className="w-full min-w-[760px]">
             <thead>
-              <tr className="bg-surface-canvas text-left">
-                <th className="px-5 py-3 text-[11.5px] font-semibold text-ink-600">Project</th>
-                <th className="px-5 py-3 text-[11.5px] font-semibold text-ink-600 text-center">Latest score</th>
-                <th className="px-5 py-3 text-[11.5px] font-semibold text-ink-600 text-center">Δ vs prior</th>
-                <th className="px-5 py-3 text-[11.5px] font-semibold text-ink-600">Trend</th>
-                <th className="px-5 py-3 text-[11.5px] font-semibold text-ink-600">Updated</th>
-                <th className="px-5 py-3 text-[11.5px] font-semibold text-ink-600 text-right">Actions</th>
+              <tr className="text-left border-b border-ink-100">
+                <th className="px-5 py-3 text-[12px] font-semibold text-ink-600">Report</th>
+                <th className="px-5 py-3 text-[12px] font-semibold text-ink-600 text-center">Score</th>
+                <th className="px-5 py-3 text-[12px] font-semibold text-ink-600">Status</th>
+                <th className="px-5 py-3 text-[12px] font-semibold text-ink-600">Trend</th>
+                <th className="px-5 py-3 text-[12px] font-semibold text-ink-600">Updated</th>
+                <th className="px-5 py-3 text-[12px] font-semibold text-ink-600 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-100">
-              {list.map((g) => (
-                <tr key={g.projectId} className="hover:bg-ink-50/60 transition-colors">
-                  <td className="px-5 py-4">
-                    <div className="min-w-0">
-                      <Link href={`/analysis/${g.latestReportId}`} className="text-[13.5px] font-medium text-ink-900 hover:underline underline-offset-4 truncate block max-w-xs">
-                        {g.title}
-                      </Link>
-                      <div className="text-[11.5px] text-ink-500 mt-0.5">
-                        {g.targetPlatform} · {g.count} review{g.count === 1 ? '' : 's'}
+              {list.map((g) => {
+                const status = statusFor(g.latestScore);
+                return (
+                  <tr key={g.projectId} className="hover:bg-surface-canvas transition-colors">
+                    <td className="px-5 py-4">
+                      <div className="min-w-0">
+                        <Link
+                          href={`/analysis/${g.latestReportId}`}
+                          className="text-[14px] font-semibold text-ink-900 hover:text-brand-700 truncate block max-w-xs transition-colors"
+                        >
+                          {g.title}
+                        </Link>
+                        <div className="text-[12px] text-ink-500 mt-0.5">
+                          {g.targetPlatform} · {g.count} review{g.count === 1 ? '' : 's'}
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4 text-center">
-                    <span className={`text-[15px] font-semibold tabular-nums ${
-                      g.latestScore >= 85 ? 'text-emerald-700' : g.latestScore >= 70 ? 'text-amber-700' : 'text-crimson-700'
-                    }`}>
-                      {g.latestScore}
-                    </span>
-                    <span className="text-[11.5px] text-ink-400">/100</span>
-                  </td>
-                  <td className="px-5 py-4 text-center">
-                    {g.delta === null ? (
-                      <span className="text-[11.5px] text-ink-400">—</span>
-                    ) : (
-                      <Badge variant={g.delta > 0 ? 'success' : g.delta < 0 ? 'danger' : 'default'}>
-                        {g.delta > 0 ? '+' : ''}{g.delta}
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="px-5 py-4">
-                    <Sparkline data={g.scoresChronological} />
-                  </td>
-                  <td className="px-5 py-4">
-                    <span className="text-[12.5px] text-ink-600 tabular-nums">
-                      {g.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Link href={`/analysis/${g.latestReportId}`}>
-                        <Button variant="ghost" size="sm" leftIcon={<FileText className="w-3.5 h-3.5" />}>Open</Button>
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex justify-center">
+                        <ScoreGauge score={g.latestScore} size="sm" showLabel={false} />
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex flex-col gap-1">
+                        <span className={`text-[13px] font-semibold ${status.className}`}>{status.label}</span>
+                        {g.delta !== null && g.delta !== 0 && (
+                          <span className={`inline-flex items-center gap-1 text-[11.5px] font-medium tabular-nums ${
+                            g.delta > 0 ? 'text-brand-600' : 'text-crimson-600'
+                          }`}>
+                            {g.delta > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                            {g.delta > 0 ? '+' : ''}{g.delta} vs prior
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <Sparkline data={g.scoresChronological} />
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="text-[13px] text-ink-600 tabular-nums">
+                        {g.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <ReportActions reportId={g.latestReportId} />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -177,20 +184,24 @@ export default async function ReportsPage() {
 
 function EmptyState() {
   return (
-    <div className="space-y-8 animate-enter">
-      <header>
-        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500 mb-2">Deliverables</div>
-        <h1 className="font-display text-3xl font-semibold tracking-[-0.02em] text-ink-950">Reports</h1>
-      </header>
+    <div className="animate-enter">
+      <PageHeader
+        title="Reports"
+        subtitle="Download, share, and revisit every analysis report."
+        showUtility
+      />
       <Card className="text-center py-16">
-        <h3 className="font-display text-lg font-semibold text-ink-950">No reviews yet</h3>
-        <p className="text-[13px] text-ink-500 mt-2 max-w-md mx-auto">
-          Run your first review to start building a track record. Every subsequent review on the same project
-          shows a real trend line — evidence your changes are working.
+        <div className="w-14 h-14 rounded-full bg-ink-100 flex items-center justify-center mx-auto mb-5">
+          <FileText className="w-6 h-6 text-ink-500" />
+        </div>
+        <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">No reports yet</h3>
+        <p className="text-[13px] text-ink-600 mt-2 max-w-md mx-auto">
+          Run your first analysis to start building a track record. Every subsequent review on the same
+          project shows a real trend line — evidence your changes are working.
         </p>
-        <div className="mt-5">
+        <div className="mt-6">
           <Link href="/upload">
-            <Button rightIcon={<ArrowUpRight className="w-3.5 h-3.5" />}>Analyze your first video</Button>
+            <Button variant="dark" rightIcon={<ArrowUpRight className="w-4 h-4" />}>Analyze a video</Button>
           </Link>
         </div>
       </Card>

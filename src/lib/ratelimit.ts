@@ -12,10 +12,24 @@
 
 type Result = { success: boolean; limit: number; remaining: number; resetAt: number };
 
+import { env } from './env';
+
 const memoryStore = new Map<string, { count: number; resetAt: number }>();
+
+/**
+ * Drop expired buckets so a long-lived process cannot grow the map without
+ * bound (each distinct key/window pair would otherwise leak an entry).
+ */
+function sweepMemoryStore(now: number): void {
+  if (memoryStore.size < 5_000) return;
+  for (const [k, rec] of memoryStore) {
+    if (rec.resetAt < now) memoryStore.delete(k);
+  }
+}
 
 function inMemoryLimit(key: string, limit: number, windowMs: number): Result {
   const now = Date.now();
+  sweepMemoryStore(now);
   const rec = memoryStore.get(key);
   if (!rec || rec.resetAt < now) {
     memoryStore.set(key, { count: 1, resetAt: now + windowMs });
@@ -27,11 +41,13 @@ function inMemoryLimit(key: string, limit: number, windowMs: number): Result {
 }
 
 async function upstashLimit(key: string, limit: number, windowMs: number): Promise<Result | null> {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const url = env.UPSTASH_REDIS_REST_URL;
+  const token = env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
 
   // Fixed-window INCR + EXPIRE. Not perfectly smooth but predictable and cheap.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2_000);
   try {
     const now = Date.now();
     const bucket = Math.floor(now / windowMs);
@@ -49,6 +65,8 @@ async function upstashLimit(key: string, limit: number, windowMs: number): Promi
         ['INCR', cacheKey],
         ['PEXPIRE', cacheKey, String(windowMs)],
       ]),
+      signal: controller.signal,
+      cache: 'no-store',
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { result: number }[];
@@ -60,7 +78,11 @@ async function upstashLimit(key: string, limit: number, windowMs: number): Promi
       resetAt,
     };
   } catch {
+    // Network/timeout: fall through to the in-memory bucket rather than either
+    // failing the request or letting it through unlimited.
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -81,15 +103,50 @@ export const LIMITS = {
   ANALYZE:   { limit: 20, windowMs: 60 * 60 * 1000 },  // 20 / hour
   HUMANIZE:  { limit: 60, windowMs: 60 * 60 * 1000 },  // 60 / hour
   SEO:       { limit: 60, windowMs: 60 * 60 * 1000 },
+  COACH:     { limit: 40, windowMs: 60 * 60 * 1000 },  // 40 messages / hour
   AUTH:      { limit: 10, windowMs: 60 * 1000 },       // 10 / minute
   WEBHOOK:   { limit: 100, windowMs: 60 * 1000 },
+  CHANNELS:  { limit: 20, windowMs: 60 * 60 * 1000 },  // channel connect/refresh
+  UPLOAD:    { limit: 60, windowMs: 60 * 60 * 1000 },  // presigned URL issuance
+  ACCOUNT:   { limit: 5,  windowMs: 60 * 60 * 1000 },  // export / delete
+  READ:      { limit: 240, windowMs: 60 * 1000 },      // cheap authenticated reads
 } as const;
 
 export function clientKey(req: Request, prefix: string): string {
-  // In prod, prefer authenticated user id. Fallback to X-Forwarded-For.
+  // IP-derived key. Only correct for unauthenticated routes — an authenticated
+  // route must use userKey() so one user behind a shared NAT cannot exhaust the
+  // bucket for everyone else on that IP (and so rotating IPs cannot bypass it).
   const ip =
     req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     req.headers.get('x-real-ip') ||
     'anon';
-  return `${prefix}:${ip}`;
+  return `${prefix}:ip:${ip}`;
+}
+
+/**
+ * Rate-limit key bound to the authenticated user. Preferred for every route
+ * behind requireAuth(): the identity cannot be spoofed by forging headers.
+ */
+export function userKey(userId: string, prefix: string): string {
+  return `${prefix}:user:${userId}`;
+}
+
+/** Standard 429 body + Retry-After, so every route reports limits identically. */
+export function tooManyRequests(result: Result) {
+  const retryAfter = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));
+  return {
+    body: {
+      error: 'Too many requests. Please slow down and try again shortly.',
+      retryAfter,
+    },
+    init: {
+      status: 429,
+      headers: {
+        'Retry-After': String(retryAfter),
+        'X-RateLimit-Limit': String(result.limit),
+        'X-RateLimit-Remaining': String(result.remaining),
+        'X-RateLimit-Reset': String(Math.ceil(result.resetAt / 1000)),
+      },
+    },
+  } as const;
 }

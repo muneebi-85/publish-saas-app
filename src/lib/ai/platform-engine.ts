@@ -144,9 +144,9 @@ export async function analyzePlatform(
 
   const system = `${TRUST_SYSTEM_PREAMBLE}
 
-You are the platform-policy review layer for ${input.platform}.
+You are the platform-policy review layer for ${input.platform}. This is a POLICY-ELIGIBILITY check, not a performance or views forecast — never imply a compliant video will earn, rank, or go viral. It tells the creator whether ${input.platform}'s published monetization rules would clear this upload.
 
-Apply ONLY the following published ${input.platform} rules. Do not invent rules from memory.
+Apply ONLY the following published ${input.platform} rules. Do not invent rules from memory. Cite the exact rule/disqualifier number (Rn/Dn) behind every point so the creator can verify it against ${input.platform}'s own documentation — and cite the number that actually matches THIS platform's list, never a number from another platform.
 
 MONETIZATION PROGRAM: ${policy.monetizationName}
 
@@ -161,14 +161,21 @@ Scoring guidance:
 - If any hard disqualifier applies, the score must be below 50 and policyStatus must be "At Risk".
 - Under uncertainty, score lower rather than higher. A false alarm costs the creator 5 minutes; a missed risk costs them revenue.
 
-For EVERY recommendation you make, cite which rule number it derives from — creators must be able to verify your claim against the platform's own documentation.
+SYNTHETIC-CONTENT SCOPING: the disclosure rule triggers ONLY when synthetic or altered media could mislead about REAL people or events — a deepfake, a real person's cloned voice, or fabricated footage of a real event. A creator using an AI voice or AI b-roll to narrate their OWN original script does NOT trigger it and must NOT be penalized or told to disclose. Do not dock score for an AI voiceover of original commentary; only flag disclosure when the input indicates a real person or event is being depicted.
+
+RECOMMENDATION QUALITY BAR — every string in specificRecommendations must, in natural prose (never labeled fields):
+- WHERE: name the exact attribute it concerns — the ${input.durationSeconds ? `${input.durationSeconds}s` : 'stated'} duration, the watermark, the 9:16 flag, the music source, a title/description phrase — and the rule number (Rn/Dn) it maps to.
+- WHY: the specific consequence on THIS platform (excluded from Creator Rewards, reduced Reels distribution, ad-suitability downgrade, revenue diverted by a Content ID claim) — not "may affect monetization".
+- WHAT: a concrete, do-it-now action ("trim to at least 61s by cutting the ${input.durationSeconds && input.durationSeconds < 60 ? 'intro throat-clear' : 'slowest segment'}", "export a 1080x1920 9:16 master", "re-upload the source file rather than a TikTok save"), never "make sure it complies".
+- IMPACT: honest and mechanism-based ("clears the single hard disqualifier now blocking eligibility", "restores full-feed distribution"), never a guarantee of approval, views, or income.
+- When nothing fails, say so as a scoped policy pass ("clears every published ${input.platform} disqualifier as of ${policy.lastReviewed} — a policy pass, not a views forecast"), not a generic "looks great".
 
 Return JSON:
 {
   "score": number,
   "policyStatus": "Compliant" | "Review Suggested" | "At Risk",
   "adSuitability": string,           // short phrase describing ad eligibility
-  "specificRecommendations": string[], // 2-4 actions, each referencing a rule (e.g. "(R3)")
+  "specificRecommendations": string[], // 2-4 actions, each citing the correct Rn/Dn for THIS platform
   "citedRules": string[]             // the rule texts you applied
 }`;
 
@@ -191,7 +198,7 @@ Script excerpt: """${(input.scriptText || '').slice(0, 2500)}"""`,
     { model: 'reasoning', temperature: 0.2, maxTokens: 1100 },
   );
 
-  if (!raw) return mockPlatform(input.platform, input);
+  if (!raw) return heuristicPlatform(input.platform, input);
 
   return {
     platform: input.platform,
@@ -220,7 +227,7 @@ function normalizeStatus(v: string | undefined): 'Compliant' | 'Review Suggested
 }
 
 // ─── Deterministic fallback ────────────────────────────
-export function mockPlatform(
+export function heuristicPlatform(
   platform: PlatformName,
   input: Partial<PlatformAnalysisInput> = {},
 ): PlatformReportWithCitations {
@@ -233,22 +240,38 @@ export function mockPlatform(
 
   if ((platform === 'TikTok' || platform === 'Facebook') && duration < 60) {
     score -= 45;
-    recs.push(`Video is under 1 minute — below the ${platform} monetization threshold (D1).`);
+    const floor = platform === 'TikTok' ? 'Creator Rewards' : 'in-stream ad';
+    recs.push(
+      `Your clip runs ${duration}s, under the 60-second ${platform} ${floor} floor (D1) — at this length it is hard-excluded from monetization no matter how strong the content is. Extend it past 61s by ${duration < 30 ? 'developing the core point with a concrete example or a second beat rather than padding' : 'keeping the slowest 10-15s you were about to cut and adding one worked example'}; crossing the threshold is what moves this upload from "ineligible" to "eligible for review," though it does not by itself guarantee payout.`,
+    );
   }
   if (input.hasWatermark && (platform === 'TikTok' || platform === 'Instagram')) {
     score -= 30;
-    recs.push(`Remove the visible watermark — ${platform} excludes watermarked content (D2).`);
+    // Watermark is disqualifier D2 on TikTok, D1 on Instagram — cite the number that
+    // matches THIS platform's list, not a shared hardcoded one.
+    const dNum = platform === 'TikTok' ? 'D2' : 'D1';
+    const consequence =
+      platform === 'TikTok'
+        ? 'a visible watermark from another app marks the video as reposted and removes Creator Rewards eligibility'
+        : 'watermarked or letterboxed frames get reduced Reels distribution';
+    recs.push(
+      `There's a visible watermark on the frame, and on ${platform} ${consequence} (${dNum}). Re-export from your original project file — or grab the no-watermark master from the source app's download/export option — instead of the shared/downloaded copy that stamps the corner logo. Removing it clears the reposted-content flag that is capping this video's distribution; it restores reach rather than adding any.`,
+    );
   }
-  if (input.hasAiVoiceover && platform === 'YouTube') {
-    score -= 6;
-    recs.push('AI voiceover detected — add the synthetic content disclosure in YouTube Studio (R2).');
-  }
+  // NOTE: an AI voiceover narrating the creator's OWN original script does not trigger
+  // YouTube's synthetic-content disclosure rule (that rule is scoped to media that could
+  // mislead about REAL people or events) and carries no ad-suitability penalty, so we do
+  // not dock score or auto-recommend disclosure here.
   if (platform === 'Instagram' && input.isVertical === false) {
     score -= 12;
-    recs.push('Export a 9:16 vertical cut for full Reels distribution (R5).');
+    recs.push(
+      `The video isn't flagged 9:16, and Instagram throttles non-vertical Reels out of the full-screen feed (R5) — a horizontal or square cut simply reaches fewer people. Export a 1080x1920 master with the subject kept inside the center-safe area so captions and the profile UI don't cover it; this is what unlocks full Reels distribution rather than the reduced tray placement.`,
+    );
   }
   if (recs.length === 0) {
-    recs.push(`Content aligns with published ${platform} monetization rules as reviewed on ${policy.lastReviewed}.`);
+    recs.push(
+      `Nothing here trips a published ${platform} disqualifier: ${policy.monetizationName} eligibility looks clear against the ruleset as reviewed on ${policy.lastReviewed}. Treat this as a policy pass, not a performance forecast — it means the door is open, not that views or revenue are assured. Keep the source file and any music license on hand in case of a manual review.`,
+    );
   }
 
   const finalScore = conservativeScore(Math.max(20, score));

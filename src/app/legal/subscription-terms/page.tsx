@@ -54,7 +54,7 @@ export default function SubscriptionTermsPage() {
       <p>You can cancel your subscription at any time by:</p>
       <ol>
         <li>Going to <strong>Settings &rsaquo; Billing</strong> and clicking &ldquo;Cancel plan&rdquo;, or</li>
-        <li>Opening the <a href="/billing">customer portal</a> (link included in every receipt email), or</li>
+        <li>Opening the <a href="/api/billing/portal">customer portal</a> (link included in every receipt email), or</li>
         <li>Emailing <a href={`mailto:${LEGAL.billingEmail}`}>{LEGAL.billingEmail}</a> from your account email.</li>
       </ol>
       <p>

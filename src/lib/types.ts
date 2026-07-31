@@ -23,14 +23,20 @@ export interface ScriptIssue {
   /** Directional effect on monetization eligibility / CPM. */
   monetizationImpact?: 'none' | 'demoted' | 'demonetized';
   line: number;
+  reasoning?: string;
+  estimatedMetricImpact?: string;
 }
 
 export interface VoiceMetric {
-  naturalness: number;
-  emotionScore: number;
-  pauseRatio: number;
-  speakingPaceWpm: number;
-  isMonotone: boolean;
+  /** True only when an audio source was actually processed. When false, numeric fields are estimates or null. */
+  measured: boolean;
+  naturalness: number | null;
+  emotionScore: number | null;
+  /** Requires audio DSP (pitch/pause detection). null until an audio pipeline is connected. */
+  pauseRatio: number | null;
+  /** Derived from word count ÷ duration. null when duration is unknown. */
+  speakingPaceWpm: number | null;
+  isMonotone: boolean | null;
   syntheticArtifactRisk: 'Low' | 'Medium' | 'High';
   recommendations: string[];
 }
@@ -47,13 +53,15 @@ export interface VideoMetric {
 }
 
 export interface ThumbnailMetric {
-  ctrPredictionScore: number;
-  faceCount: number;
+  /** True only when the thumbnail image was actually analyzed by the vision model. */
+  measured: boolean;
+  ctrPredictionScore: number | null;
+  faceCount: number | null;
   dominantEmotion: string;
-  textReadabilityScore: number;
+  textReadabilityScore: number | null;
   contrastRating: string;
   clickbaitRisk: 'Low' | 'Medium' | 'High';
-  compositionScore: number;
+  compositionScore: number | null;
   recommendations: string[];
 }
 
@@ -65,6 +73,8 @@ export interface SEOMetric {
   competitorComparison: string;
   suggestedTags: string[];
   suggestedHashtags: string[];
+  generatedDescription?: string;
+  timestamps?: string[];
 }
 
 export interface CopyrightMetric {
@@ -72,7 +82,8 @@ export interface CopyrightMetric {
   detectedLogos: string[];
   movieClipRisk: 'Low' | 'Medium' | 'High';
   watermarkDetected: boolean;
-  stockFootageEstimate: string;
+  /** null when no stock-footage signal is available — never a fabricated default. */
+  stockFootageEstimate: string | null;
   recommendations: string[];
 }
 
@@ -124,6 +135,10 @@ export interface ProjectData {
     editing: number;
   };
   scriptIssues: ScriptIssue[];
+  scriptAnalysis?: {
+    gptProbability: number;
+    storytellingArc: string;
+  };
   voiceAnalysis: VoiceMetric;
   videoAnalysis: VideoMetric;
   thumbnailAnalysis: ThumbnailMetric;
@@ -131,4 +146,18 @@ export interface ProjectData {
   copyrightAnalysis: CopyrightMetric;
   hookAnalysis: HookRetentionMetric;
   platformReports: PlatformReport[];
+  /**
+   * Computed creator-value summary. Optional — reports persisted before this
+   * field existed simply do not have it, and the UI falls back gracefully.
+   */
+  insights?: {
+    /** Projected overall score if every flagged fix is applied (deterministic, honest). */
+    scorePotential: number;
+    /** Number of issues that can demonetize or block reach if left unfixed. */
+    blockingCount: number;
+    /** Number of high-impact (non-blocking) issues. */
+    highCount: number;
+    /** Total actionable fixes across all layers. */
+    totalFixes: number;
+  };
 }

@@ -111,8 +111,7 @@ export default function PrivacyPage() {
         <li><strong>Sentry</strong> — error monitoring</li>
       </ul>
       <p>
-        A current list is maintained at <a href={`${LEGAL.websiteUrl}/legal/subprocessors`}>
-        {LEGAL.websiteUrl.replace(/^https?:\/\//, '')}/legal/subprocessors</a> and will be
+        A current list is maintained at <a href="/legal/subprocessors">/legal/subprocessors</a> and will be
         updated whenever it changes.
       </p>
 

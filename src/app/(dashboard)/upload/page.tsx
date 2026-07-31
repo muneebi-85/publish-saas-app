@@ -15,15 +15,12 @@ export default function UploadPage() {
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to dashboard
         </Link>
-        <div className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-2">
-          Start a review
-        </div>
-        <h1 className="font-display text-3xl font-semibold tracking-[-0.02em] text-ink-950">
-          Upload &amp; audit
+        <h1 className="font-display text-[28px] font-bold tracking-tight text-ink-900">
+          Analyze a video
         </h1>
-        <p className="text-sm text-ink-500 mt-2 max-w-2xl">
+        <p className="text-[15px] text-ink-600 mt-2 max-w-2xl">
           Drop the assets you have — video, thumbnail, script, or voiceover. We&apos;ll audit them
-          against every platform&apos;s monetization policy and return a full report in about 11 minutes.
+          against every platform&apos;s monetization policy and return a full report in about a minute.
         </p>
 
         <div className="mt-5 flex items-start gap-2.5 p-3.5 rounded-xl border border-ink-200 bg-white text-[12.5px] text-ink-600 max-w-2xl">

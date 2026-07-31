@@ -18,8 +18,16 @@ const STATUS_TONE: Record<string, 'success' | 'warning' | 'danger'> = {
   'At Risk': 'danger',
 };
 
-export const PlatformTabs: React.FC<{ reports: PlatformReport[] }> = ({ reports }) => {
-  const [active, setActive] = useState('YouTube');
+export const PlatformTabs: React.FC<{
+  reports: PlatformReport[];
+  defaultPlatform?: string;
+}> = ({ reports, defaultPlatform }) => {
+  const [active, setActive] = useState(defaultPlatform && reports.some((r) => r.platform === defaultPlatform) ? defaultPlatform : reports[0]?.platform ?? 'YouTube');
+
+  // No platform reports (legacy or hand-seeded rows): render nothing rather
+  // than dereferencing an empty array.
+  if (!reports || reports.length === 0) return null;
+
   const report = reports.find((r) => r.platform === active) || reports[0];
   const Icon = PLATFORM_ICONS[report.platform] || Youtube;
 
@@ -28,7 +36,7 @@ export const PlatformTabs: React.FC<{ reports: PlatformReport[] }> = ({ reports 
       {/* Header */}
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div>
-          <h2 className="font-display text-lg font-semibold tracking-tight text-ink-950">
+          <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
             Platform breakdown
           </h2>
           <p className="text-xs text-ink-500 mt-1">
@@ -82,7 +90,7 @@ export const PlatformTabs: React.FC<{ reports: PlatformReport[] }> = ({ reports 
           </div>
 
           <div>
-            <div className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-1.5">
+            <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
               Advertiser suitability
             </div>
             <div className="rounded-xl border border-grass-100 bg-grass-50 p-3.5 flex items-start gap-2.5">
@@ -92,12 +100,12 @@ export const PlatformTabs: React.FC<{ reports: PlatformReport[] }> = ({ reports 
           </div>
 
           <div>
-            <div className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-1.5">
+            <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
               Score
             </div>
             <div className="flex items-baseline gap-2">
               <span className={clsx(
-                'font-display text-4xl font-semibold tabular-nums tracking-tight',
+                'font-display text-4xl font-bold tabular-nums tracking-tight',
                 report.score >= 85 ? 'text-grass-700' : report.score >= 70 ? 'text-amber-700' : 'text-crimson-700',
               )}>
                 {report.score}
@@ -118,7 +126,7 @@ export const PlatformTabs: React.FC<{ reports: PlatformReport[] }> = ({ reports 
 
         {/* Recommendations column */}
         <div className="lg:col-span-3 space-y-2">
-          <div className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-1.5">
+          <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
             {report.platform}-specific recommendations
           </div>
           {report.specificRecommendations.map((rec, i) => (

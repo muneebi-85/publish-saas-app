@@ -1,20 +1,24 @@
 'use client';
 
+import Link from 'next/link';
 import { SignIn } from '@clerk/nextjs';
+import { AuthShell, clerkAppearance } from '@/components/auth/AuthShell';
 
 export default function SignInPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-6 bg-surface-canvas px-4 py-12">
-      <div className="text-2xl font-semibold tracking-tight text-ink-900">
-        Polish
-      </div>
-      <SignIn
-        appearance={{
-          elements: {
-            card: 'shadow-none border border-ink-200',
-          },
-        }}
-      />
-    </main>
+    <AuthShell
+      heading="Welcome back"
+      subheading="Sign in to continue analyzing your content."
+      footer={
+        <>
+          Don&apos;t have an account?{' '}
+          <Link href="/sign-up" className="font-medium text-brand-600 hover:text-brand-700">
+            Sign up free
+          </Link>
+        </>
+      }
+    >
+      <SignIn path="/sign-in" signUpUrl="/sign-up" appearance={clerkAppearance} />
+    </AuthShell>
   );
 }

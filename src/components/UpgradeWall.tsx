@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { ArrowRight, Lock } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
+import { useQuota } from '@/hooks/useQuota';
 import { PlanId } from '@/lib/billing/lemonsqueezy';
 
 interface Props {
@@ -15,12 +16,21 @@ interface Props {
 export const UpgradeWall: React.FC<Props> = ({ feature, requiredPlan, description }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const { plan } = useQuota();
 
   const planLabel = requiredPlan.charAt(0).toUpperCase() + requiredPlan.slice(1);
 
   const handleUpgrade = async () => {
     setLoading(true);
     setError('');
+
+    // A subscriber switching tiers already has a Lemon Squeezy subscription —
+    // a second checkout would double-bill. Plan changes go through the portal.
+    if (plan !== 'free' && plan !== requiredPlan) {
+      window.location.href = '/api/billing/portal';
+      return;
+    }
+
     try {
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',

@@ -4,20 +4,23 @@
  * Coordinates every AI engine in parallel and assembles a single
  * `ProjectData` payload — the shape the analysis UI expects.
  *
- * Isolation: any single engine failure is caught and replaced with its mock
- * output, so a NIM outage on the vision endpoint (say) does not fail the whole
- * report. The user still gets 5 of 6 layers, cleanly labeled.
+ * Isolation: any single engine failure is caught and replaced with that engine's
+ * deterministic fallback, so a NIM outage on the vision endpoint (say) does not
+ * fail the whole report. The user still gets 5 of 6 layers, cleanly labeled —
+ * and any layer that could not be measured says so instead of showing a number.
  */
 
 import { ProjectData, RiskLevel } from '../types';
-import { analyzeScript, mockScriptAnalysis } from './script-engine';
-import { analyzeHook, mockHook } from './hook-engine';
-import { analyzeVoice, mockVoice, VoiceAnalysisInput } from './voice-engine';
-import { analyzeThumbnail, mockThumbnail } from './thumbnail-engine';
-import { analyzeCopyright, mockCopyright, CopyrightInput } from './copyright-engine';
-import { generateSEOAnalysis, mockSEO } from './seo-engine';
-import { analyzeAllPlatforms, mockPlatform, PlatformName } from './platform-engine';
+import { analyzeScript, heuristicScriptAnalysis } from './script-engine';
+import { analyzeHook, heuristicHook } from './hook-engine';
+import { analyzeVoice, heuristicVoice, VoiceAnalysisInput } from './voice-engine';
+import { analyzeThumbnail, unmeasuredThumbnail } from './thumbnail-engine';
+import { analyzeCopyright, heuristicCopyright, CopyrightInput } from './copyright-engine';
+import { generateSEOAnalysis, heuristicSEO } from './seo-engine';
+import { analyzeAllPlatforms, heuristicPlatform, PlatformName } from './platform-engine';
 import { riskBand, conservativeScore } from './guardrails';
+import { transcribeAudio } from './transcription';
+import { hasTranscription } from '../env';
 
 /** Estimate stock-footage percentage from available signals. Returns null when no signals fire. */
 function estimateStockFootagePercent(opts: {
@@ -60,6 +63,8 @@ export interface ReviewInput {
   description?: string;
   scriptText?: string;
   thumbnailUrl?: string;
+  /** Media (audio or video) URL to transcribe when speech-to-text is configured. */
+  audioUrl?: string;
   targetPlatform?: PlatformName;
   durationSeconds?: number;
   aiGenerated?: boolean;
@@ -82,15 +87,35 @@ async function safeCall<T>(name: string, fn: () => Promise<T>, fallback: () => T
 
 export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
   const platform = input.targetPlatform ?? 'YouTube';
-  const script = input.scriptText ?? '';
+
+  // Real speech-to-text: when a media URL is attached and Deepgram is
+  // configured, transcribe once and let every text engine read the actual
+  // spoken words, while the voice engine gets measured DSP values. Any
+  // transcription failure degrades cleanly to the existing transcript path.
+  const transcribed = input.audioUrl && hasTranscription()
+    ? await safeCall('transcription', () => transcribeAudio(input.audioUrl as string), () => null)
+    : null;
+
+  // The creator's written script wins when present; otherwise the real
+  // transcript becomes the script (audio-only uploads now analyzed for real).
+  const script = input.scriptText ?? transcribed?.transcript ?? '';
   const opening = script.slice(0, 800);
 
   const voiceInput: VoiceAnalysisInput = {
     transcript: script,
-    wordCount: script.split(/\s+/).filter(Boolean).length,
-    durationSeconds: input.durationSeconds,
+    wordCount: input.scriptText
+      ? script.split(/\s+/).filter(Boolean).length
+      : transcribed?.wordCount,
+    durationSeconds: input.durationSeconds ?? transcribed?.durationSeconds,
     aiGenerated: input.aiGenerated,
     voiceSourceLabel: input.aiGenerated ? 'AI-generated' : undefined,
+    measured: transcribed
+      ? {
+          speakingPaceWpm: transcribed.speakingPaceWpm,
+          pauseRatio: transcribed.pauseRatio,
+          isMonotone: transcribed.isMonotone,
+        }
+      : undefined,
   };
 
   // Evidence-based stock-footage estimate. We do NOT fabricate a hardcoded 18%.
@@ -121,17 +146,17 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     seoResult,
     platformResults,
   ] = await Promise.all([
-    safeCall('script',    () => analyzeScript(script), () => mockScriptAnalysis(script)),
-    safeCall('hook',      () => analyzeHook(opening, platform), () => mockHook(opening)),
-    safeCall('voice',     () => analyzeVoice(voiceInput), () => mockVoice(voiceInput)),
+    safeCall('script',    () => analyzeScript(script), () => heuristicScriptAnalysis(script)),
+    safeCall('hook',      () => analyzeHook(opening, platform), () => heuristicHook(opening, platform)),
+    safeCall('voice',     () => analyzeVoice(voiceInput), () => heuristicVoice(voiceInput)),
     safeCall('thumbnail',
       () => input.thumbnailUrl
         ? analyzeThumbnail(input.thumbnailUrl, input.title)
-        : Promise.resolve(mockThumbnail()),
-      () => mockThumbnail(),
+        : Promise.resolve(unmeasuredThumbnail()),
+      () => unmeasuredThumbnail(),
     ),
-    safeCall('copyright', () => analyzeCopyright(copyrightInput), () => mockCopyright(copyrightInput)),
-    safeCall('seo',       () => generateSEOAnalysis(input.title, platform), () => mockSEO(input.title, platform)),
+    safeCall('copyright', () => analyzeCopyright(copyrightInput), () => heuristicCopyright(copyrightInput)),
+    safeCall('seo',       () => generateSEOAnalysis(input.title, platform), () => heuristicSEO(input.title, platform)),
     safeCall('platforms', () => analyzeAllPlatforms({
       title: input.title,
       description: input.description,
@@ -142,11 +167,11 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       isVertical: input.isVertical,
       musicSource: input.musicSource,
     }), () => ([
-      mockPlatform('YouTube',   { durationSeconds: input.durationSeconds, hasAiVoiceover: input.aiGenerated, hasWatermark: input.hasWatermark }),
-      mockPlatform('TikTok',    { durationSeconds: input.durationSeconds, hasWatermark: input.hasWatermark }),
-      mockPlatform('Instagram', { hasWatermark: input.hasWatermark, isVertical: input.isVertical }),
-      mockPlatform('Facebook',  { durationSeconds: input.durationSeconds }),
-      mockPlatform('LinkedIn',  {}),
+      heuristicPlatform('YouTube',   { durationSeconds: input.durationSeconds, hasAiVoiceover: input.aiGenerated, hasWatermark: input.hasWatermark }),
+      heuristicPlatform('TikTok',    { durationSeconds: input.durationSeconds, hasWatermark: input.hasWatermark }),
+      heuristicPlatform('Instagram', { hasWatermark: input.hasWatermark, isVertical: input.isVertical }),
+      heuristicPlatform('Facebook',  { durationSeconds: input.durationSeconds }),
+      heuristicPlatform('LinkedIn',  {}),
     ])),
   ]);
 
@@ -162,8 +187,11 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
 
   const seo = seoResult.seoScore;
   const hook = hookResult.first10SecRetention;
+  // naturalness is null when no audio was analyzed — treat unknown as neutral (75)
+  // so we neither reward nor penalize a layer we did not measure.
+  const voiceNaturalness = voiceResult.naturalness ?? 75;
   const authenticity = conservativeScore(
-    100 - Math.round((scriptResult.gptProbability + (voiceResult.naturalness < 70 ? 30 : 10)) / 2),
+    100 - Math.round((scriptResult.gptProbability + (voiceNaturalness < 70 ? 30 : 10)) / 2),
   );
   const copyright = conservativeScore(
     copyrightResult.musicMatchRisk === 'Low' ? 96 : copyrightResult.musicMatchRisk === 'Medium' ? 75 : 45,
@@ -179,6 +207,9 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     (policyCompliance * 0.4) + ((100 - (copyrightResult.musicMatchRisk === 'High' ? 70 : copyrightResult.musicMatchRisk === 'Medium' ? 35 : 5)) * 0.3) + (authenticity * 0.3),
   ));
   const originality = conservativeScore(100 - scriptResult.gptProbability);
+  // Composition (thumbnail) doubles as our only editing signal. null when no
+  // thumbnail was analyzed — kept nullable for videoAnalysis, defaulted to 0 for
+  // the display-only scores.editing field.
   const editing = thumbnailResult.compositionScore;
 
   const overall = conservativeScore(Math.round(
@@ -192,6 +223,51 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
 
   const risk: RiskLevel = riskBand(overall);
 
+  // ── Creator-value insights ─────────────────────────────
+  // Deterministic "score potential": when a layer has at least one actionable
+  // fix, we assume applying it lifts that layer to the 88 safe band — never to
+  // perfection, and never above the layer's current score if already higher.
+  // Reweighted with the exact same formula as `overall`, so the projection is
+  // auditable rather than a marketing number.
+  const hasBlockingScript = scriptResult.issues.some(
+    (i) => i.monetizationImpact === 'demonetized' || i.reviewSeverity === 'critical',
+  );
+  const copyrightFixable = copyrightResult.musicMatchRisk !== 'Low';
+  const hookFixable = hookResult.first30SecRetention < 70;
+  const voiceFixable = voiceResult.syntheticArtifactRisk !== 'Low' || voiceResult.isMonotone === true;
+  // Unmeasured thumbnail (null) is not "fixable" — we don't manufacture a fix for
+  // a layer that never ran. Only a measured, sub-80 CTR counts.
+  const thumbnailFixable = (thumbnailResult.ctrPredictionScore ?? 100) < 80;
+  const authenticityFixable = scriptResult.issues.length > 0 || voiceFixable;
+  const monetizationFixable = hasBlockingScript || copyrightFixable;
+
+  const blockingCount =
+    scriptResult.issues.filter(
+      (i) => i.monetizationImpact === 'demonetized' || i.reviewSeverity === 'critical',
+    ).length + (copyrightResult.musicMatchRisk === 'High' ? 1 : 0);
+  const highCount =
+    scriptResult.issues.filter(
+      (i) =>
+        !(i.monetizationImpact === 'demonetized' || i.reviewSeverity === 'critical') &&
+        (i.monetizationImpact === 'demoted' || i.reviewSeverity === 'warning' || i.severity === 'high'),
+    ).length + (copyrightResult.musicMatchRisk === 'Medium' ? 1 : 0) + (hookFixable ? 1 : 0);
+  const totalFixes =
+    scriptResult.issues.length +
+    (hookFixable ? 1 : 0) +
+    (voiceFixable ? 1 : 0) +
+    (copyrightFixable ? 1 : 0) +
+    (thumbnailFixable ? 1 : 0);
+
+  const lift = (s: number, fixable: boolean) => (fixable && s < 88 ? 88 : s);
+  const scorePotential = Math.max(overall, Math.min(97, Math.round(
+    (lift(monetization, monetizationFixable) * 0.30) +
+    (lift(copyright,    copyrightFixable)    * 0.20) +
+    (lift(hook,         hookFixable)         * 0.15) +
+    (lift(authenticity, authenticityFixable) * 0.15) +
+    (seo          * 0.10) +
+    (brandSafety  * 0.10),
+  )));
+
   return {
     id: input.projectId,
     title: input.title,
@@ -203,8 +279,10 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     createdAt: new Date().toISOString(),
     assets: {
       thumbnailUrl: input.thumbnailUrl,
-      scriptText: input.scriptText,
-      videoDuration: input.durationSeconds ? `${Math.floor(input.durationSeconds / 60)}:${String(input.durationSeconds % 60).padStart(2, '0')}` : undefined,
+      scriptText: input.scriptText ?? transcribed?.transcript,
+      videoDuration: (input.durationSeconds ?? transcribed?.durationSeconds)
+        ? `${Math.floor((input.durationSeconds ?? transcribed?.durationSeconds ?? 0) / 60)}:${String((input.durationSeconds ?? transcribed?.durationSeconds ?? 0) % 60).padStart(2, '0')}`
+        : undefined,
       metaTitle: input.title,
       metaDescription: input.description,
       metaTags: input.tags,
@@ -218,9 +296,13 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       copyright,
       seo,
       hook,
-      editing,
+      editing: editing ?? 0,
     },
     scriptIssues:      scriptResult.issues,
+    scriptAnalysis: {
+      gptProbability: scriptResult.gptProbability,
+      storytellingArc: scriptResult.storytellingArc,
+    },
     voiceAnalysis:     voiceResult,
     // Honest state: we do not do frame-level video analysis yet. Report "Not analyzed"
     // rather than invent numbers. The only signals we truly have are the aiGenerated flag,
@@ -235,8 +317,8 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       compressionQuality: 'Unknown',
       recommendations: [
         input.aiGenerated
-          ? 'AI-generated visuals detected — disclose in metadata under YouTube 2026 synthetic content rules and EU AI Act Article 50.'
-          : 'Connect a video file or URL to enable frame-level analysis (pacing, transitions, compression).',
+          ? `The upload is flagged as containing AI-generated visuals, so before publishing decide whether they could be read as depicting a real person or real event — if they can (a real face, a real location, a news-style event), YouTube's synthetic-content policy expects the "Altered content" disclosure in the Details step, and for an EU audience the AI Act's transparency duty applies. If the AI visuals are clearly stylized b-roll or graphics that no viewer would mistake for real footage, disclosure isn't required; either way, self-labeling when in doubt keeps the choice on your terms rather than YouTube's, with no cost to reach.`
+          : `No video file or URL is connected, so frame-level checks — editing pace, scene-transition rate, hard-cut frequency, compression artifacts, and AI-visual tells — can't run and are reported as "not analyzed" rather than passed. Attach the exported ${platform === 'TikTok' || platform === 'Instagram' ? '9:16 ' : ''}master (the same file you'll upload) to turn these blanks into measured signals; pacing and transition density are the frame-level levers most tied to mid-video retention, so it's the check most worth connecting.`,
       ],
     },
     thumbnailAnalysis: thumbnailResult,
@@ -249,9 +331,12 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       competitorComparison: 'Comparison requires a connected channel — connect a YouTube channel in Settings for benchmarked ranking data.',
       suggestedTags: seoResult.tags.slice(0, 4),
       suggestedHashtags: seoResult.tags.slice(4, 7).map((t) => `#${t.replace(/\s+/g, '')}`),
+      generatedDescription: seoResult.description,
+      timestamps: seoResult.timestamps,
     },
     copyrightAnalysis: copyrightResult,
     hookAnalysis: hookResult,
     platformReports: platformResults,
+    insights: { scorePotential, blockingCount, highCount, totalFixes },
   };
 }

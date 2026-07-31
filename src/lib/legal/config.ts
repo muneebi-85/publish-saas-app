@@ -15,6 +15,7 @@ export const LEGAL = {
 export const LEGAL_LINKS = [
   { label: 'Terms of Service',    href: '/legal/terms' },
   { label: 'Privacy Policy',      href: '/legal/privacy' },
+  { label: 'Subprocessors',       href: '/legal/subprocessors' },
   { label: 'Refund Policy',       href: '/legal/refund' },
   { label: 'Subscription Terms',  href: '/legal/subscription-terms' },
   { label: 'Acceptable Use',      href: '/legal/acceptable-use' },

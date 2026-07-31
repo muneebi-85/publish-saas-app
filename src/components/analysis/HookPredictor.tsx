@@ -40,7 +40,7 @@ export const HookPredictor: React.FC<{ hook: HookRetentionMetric }> = ({ hook })
             <Flame className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-semibold tracking-tight text-ink-950">
+            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
               Hook &amp; retention
             </h2>
             <p className="text-xs text-ink-500 mt-0.5">
@@ -60,7 +60,7 @@ export const HookPredictor: React.FC<{ hook: HookRetentionMetric }> = ({ hook })
       </div>
 
       <div className="px-6 pb-6 pt-2">
-        <h4 className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-2 inline-flex items-center gap-1.5">
+        <h4 className="text-[12px] font-semibold text-brand-600 mb-2 inline-flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5" /> Stronger openers to try
         </h4>
         <div className="space-y-2">

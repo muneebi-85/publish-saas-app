@@ -16,6 +16,23 @@ import { env } from '../env';
 
 const LS_BASE = 'https://api.lemonsqueezy.com/v1';
 
+/** Lemon Squeezy is in the critical path of a purchase; never hang on it. */
+const LS_TIMEOUT_MS = 10_000;
+
+async function lsFetch(path: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LS_TIMEOUT_MS);
+  try {
+    return await fetch(`${LS_BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Plans ─────────────────────────────────────────────
 export type PlanId = 'starter' | 'pro' | 'agency';
 
@@ -30,14 +47,19 @@ export const PLANS: Record<PlanId, {
     name: 'Starter',
     monthly: 19,
     audits: 25,
-    features: ['All six review layers', '2 platform reports', 'AI script humanizer'],
+    features: ['All six review layers', '2 platform reports', 'Creator Script Optimizer'],
     variantEnvKey: 'LS_VARIANT_STARTER',
   },
   pro: {
     name: 'Pro',
     monthly: 39,
     audits: 100,
-    features: ['Everything in Starter', 'All 5 platforms', 'Unlimited humanizer', 'Priority processing'],
+    features: [
+      'Everything in Starter',
+      'All 5 platforms',
+      'Unlimited Script Optimizer runs',
+      'Priority processing',
+    ],
     variantEnvKey: 'LS_VARIANT_PRO',
   },
   agency: {
@@ -73,7 +95,7 @@ export async function createCheckoutUrl(params: CreateCheckoutParams): Promise<C
     throw new Error(`Variant id missing for plan "${params.planId}". Set ${String(plan.variantEnvKey)}.`);
   }
 
-  const res = await fetch(`${LS_BASE}/checkouts`, {
+  const res = await lsFetch(`/checkouts`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${env.LS_API_KEY}`,
@@ -167,3 +189,19 @@ export type LemonEvent =
   | 'subscription_payment_success'
   | 'subscription_payment_failed'
   | 'order_created';
+
+export async function cancelSubscription(subscriptionId: string): Promise<boolean> {
+  if (!env.LS_API_KEY) return false;
+
+  const res = await lsFetch(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${env.LS_API_KEY}`,
+      'Content-Type': 'application/vnd.api+json',
+      Accept: 'application/vnd.api+json',
+    },
+  });
+
+  return res.ok;
+}
+

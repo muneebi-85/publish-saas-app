@@ -2,35 +2,70 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/font.css');
 
 /* ─────────────────────────────
-   Design tokens
+   Design tokens — clean neutral SaaS
    ───────────────────────────── */
 :root {
-  --canvas:      #FAFAF9;
+  --canvas:      #FAFAFA;
   --panel:       #FFFFFF;
-  --sunken:      #F5F5F4;
-  --muted:       #EFEFEE;
+  --sunken:      #F5F5F5;
+  --muted:       #F0F0F0;
 
-  --ink-950: #0C0A09;
-  --ink-900: #1C1917;
-  --ink-800: #292524;
-  --ink-700: #44403C;
-  --ink-600: #57534E;
-  --ink-500: #78716C;
-  --ink-400: #A8A29E;
-  --ink-300: #D6D3D1;
-  --ink-200: #E7E5E4;
-  --ink-100: #F5F5F4;
+  --ink-950: #0A0A0A;
+  --ink-900: #111111;
+  --ink-800: #1F1F1F;
+  --ink-700: #3D3D3D;
+  --ink-600: #666666;
+  --ink-500: #8A8A8A;
+  --ink-400: #A3A3A3;
+  --ink-300: #D4D4D4;
+  --ink-200: #ECECEC;
+  --ink-150: #F0F0F0;
+  --ink-100: #F5F5F5;
+  --ink-50:  #FAFAFA;
 
+  --brand-600: #16A34A;
+  --brand-700: #15803D;
   --grass-500: #16A34A;
   --grass-600: #15803D;
   --amber-500: #F59E0B;
   --crimson-500: #EF4444;
 
-  --ring: rgba(28,25,23,0.12);
-  --ring-strong: rgba(28,25,23,0.32);
+  --ring: rgba(17,17,17,0.10);
+  --ring-strong: rgba(17,17,17,0.28);
+}
+
+.dark {
+  --canvas:      #0A0A0A;
+  --panel:       #111111;
+  --sunken:      #000000;
+  --muted:       #1F1F1F;
+
+  --ink-950: #FAFAFA;
+  --ink-900: #F5F5F5;
+  --ink-800: #ECECEC;
+  --ink-700: #D4D4D4;
+  --ink-600: #A3A3A3;
+  --ink-500: #8A8A8A;
+  --ink-400: #666666;
+  --ink-300: #3D3D3D;
+  --ink-200: #1F1F1F;
+  --ink-150: #1A1A1A;
+  --ink-100: #111111;
+  --ink-50:  #0A0A0A;
+
+  --brand-600: #16A34A;
+  --brand-700: #15803D;
+  --grass-500: #16A34A;
+  --grass-600: #15803D;
+  --amber-500: #F59E0B;
+  --crimson-500: #EF4444;
+
+  --ring: rgba(255,255,255,0.10);
+  --ring-strong: rgba(255,255,255,0.28);
 }
 
 * { -webkit-tap-highlight-color: transparent; }
@@ -43,28 +78,29 @@ html {
 body {
   color: var(--ink-900);
   background: var(--canvas);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-variant-numeric: tabular-nums;
 }
 
-/* Editorial display type */
+/* Display type — clean SaaS uses bold sans, NOT serif. */
 .font-display {
-  font-family: 'Inter Tight', 'Inter', system-ui, sans-serif;
-  letter-spacing: -0.02em;
+  font-family: 'Geist', 'Inter', -apple-system, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
 /* ─── Scrollbar ─── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #D6D3D1; border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background: #A8A29E; background-clip: padding-box; border: 2px solid transparent; }
-* { scrollbar-width: thin; scrollbar-color: #D6D3D1 transparent; }
+::-webkit-scrollbar-thumb { background: #D4D4D4; border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #A3A3A3; background-clip: padding-box; border: 2px solid transparent; }
+* { scrollbar-width: thin; scrollbar-color: #D4D4D4 transparent; }
 
 /* ─── Selection ─── */
-::selection { background: #1C1917; color: #FAFAF9; }
+::selection { background: #16A34A; color: #FFFFFF; }
 
 /* ─── Forms ─── */
 input, textarea, select { font-family: inherit; color: var(--ink-900); }
@@ -83,7 +119,7 @@ input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px; height: 16px;
   border-radius: 50%;
-  background: var(--ink-900);
+  background: var(--brand-600);
   border: 2.5px solid #fff;
   box-shadow: 0 1px 3px rgba(0,0,0,0.18);
   cursor: pointer;
@@ -92,7 +128,7 @@ input[type='range']::-webkit-slider-thumb {
 input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.14); }
 input[type='range']::-moz-range-thumb {
   width: 16px; height: 16px; border-radius: 50%;
-  background: var(--ink-900); border: 2.5px solid #fff;
+  background: var(--brand-600); border: 2.5px solid #fff;
   box-shadow: 0 1px 3px rgba(0,0,0,0.18);
 }
 
@@ -133,9 +169,9 @@ input[type='range']::-moz-range-thumb {
 
 /* Focus ring */
 .focus-ring:focus-visible {
-  outline: 2px solid var(--ink-900);
+  outline: 2px solid var(--brand-600);
   outline-offset: 2px;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 /* Subtle dotted rule */
@@ -147,8 +183,12 @@ input[type='range']::-moz-range-thumb {
   border: 0;
 }
 
-/* Logo mark stripe */
-.logo-strip {
-  mask-image: linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%);
+/* Print: the report export should be clean paper — no canvas grid, no app chrome */
+@media print {
+  html, body {
+    background: #fff !important;
+  }
+  .bg-grid {
+    background-image: none !important;
+  }
 }

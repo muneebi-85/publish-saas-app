@@ -8,12 +8,13 @@
  * Key design choices:
  * - Every call has a hard timeout (default 60s) so the analysis pipeline never hangs.
  * - Structured-JSON calls retry once with a "you produced invalid JSON, fix it" turn.
- * - When NVIDIA_API_KEY is absent, we return `null` rather than throwing — the caller
- *   decides whether to fall back to deterministic mock output. This keeps local dev
- *   working without any keys.
+ * - Transient failures (429 / 5xx / network) retry with backoff before giving up.
+ * - A failed call returns `null` rather than throwing. The caller decides how to
+ *   degrade — and every engine's fallback is explicitly labelled as unmeasured so
+ *   the UI never presents an inferred number as a measured one.
  */
 
-import { env, isMockMode } from '../env';
+import { env, hasLiveModel } from '../env';
 import { NIM_MODELS, NimModelKind } from './models';
 
 // ─── Types ─────────────────────────────────────────────
@@ -52,59 +53,91 @@ interface EmbeddingResponse {
 }
 
 // ─── Chat completion ───────────────────────────────────
+/** Status codes worth retrying: rate limits and transient upstream faults. */
+const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+
+function backoffMs(attempt: number): number {
+  // 400ms, 1200ms — deterministic (no jitter) so behaviour is reproducible.
+  return 400 * Math.pow(3, attempt - 1);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function chat(
   messages: ChatMessage[],
   opts: ChatOptions = {},
 ): Promise<string | null> {
-  if (isMockMode()) return null;
+  if (!hasLiveModel()) return null;
 
   const modelKind = opts.model ?? 'reasoning';
   const model = NIM_MODELS[modelKind];
   const timeoutMs = opts.timeoutMs ?? 60_000;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const res = await fetch(`${env.NVIDIA_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: opts.temperature ?? 0.4,
-        top_p: opts.topP ?? 0.95,
-        max_tokens: opts.maxTokens ?? 1024,
-        stream: false,
-        ...(opts.responseFormat === 'json'
-          ? { response_format: { type: 'json_object' } }
-          : {}),
-      }),
-      signal: controller.signal,
-    });
+    try {
+      const res = await fetch(`${env.NVIDIA_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: opts.temperature ?? 0.4,
+          top_p: opts.topP ?? 0.95,
+          max_tokens: opts.maxTokens ?? 1024,
+          stream: false,
+          ...(opts.responseFormat === 'json'
+            ? { response_format: { type: 'json_object' } }
+            : {}),
+        }),
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      console.error(`[NIM] ${res.status} ${model}: ${errText.slice(0, 400)}`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        // Never log the response body verbatim at info level — it can echo the
+        // prompt. Truncate, and keep the status/model for triage.
+        console.error(
+          `[NIM] ${res.status} ${model} (attempt ${attempt}/${MAX_ATTEMPTS}): ${errText.slice(0, 300)}`,
+        );
+        if (RETRYABLE.has(res.status) && attempt < MAX_ATTEMPTS) {
+          await sleep(backoffMs(attempt));
+          continue;
+        }
+        return null;
+      }
+
+      const data = (await res.json()) as ChatCompletionResponse;
+      return data.choices?.[0]?.message?.content ?? null;
+    } catch (err) {
+      const isTimeout = (err as Error).name === 'AbortError';
+      console.error(
+        isTimeout
+          ? `[NIM] Timed out after ${timeoutMs}ms on ${model} (attempt ${attempt}/${MAX_ATTEMPTS})`
+          : `[NIM] Request failed on ${model} (attempt ${attempt}/${MAX_ATTEMPTS}): ${(err as Error).message}`,
+      );
+      // A timeout already consumed the budget; retrying would double the wait
+      // on a route that has its own deadline. Only retry true network errors.
+      if (!isTimeout && attempt < MAX_ATTEMPTS) {
+        await sleep(backoffMs(attempt));
+        continue;
+      }
       return null;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const data = (await res.json()) as ChatCompletionResponse;
-    return data.choices?.[0]?.message?.content ?? null;
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') {
-      console.error(`[NIM] Timed out after ${timeoutMs}ms on model ${model}`);
-    } else {
-      console.error('[NIM] Request failed:', (err as Error).message);
-    }
-    return null;
-  } finally {
-    clearTimeout(timer);
   }
+
+  return null;
 }
 
 // ─── JSON-shaped generation with one auto-repair retry ─
@@ -177,20 +210,33 @@ export async function analyzeImage(
 
 // ─── Embeddings ────────────────────────────────────────
 export async function embed(texts: string[]): Promise<number[][] | null> {
-  if (isMockMode()) return null;
-  const res = await fetch(`${env.NVIDIA_BASE_URL}/embeddings`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: NIM_MODELS.embed,
-      input: texts,
-      input_type: 'query',
-    }),
-  });
-  if (!res.ok) return null;
-  const data = (await res.json()) as EmbeddingResponse;
-  return data.data.map((d) => d.embedding);
+  if (!hasLiveModel()) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch(`${env.NVIDIA_BASE_URL}/embeddings`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: NIM_MODELS.embed,
+        input: texts,
+        input_type: 'query',
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.error(`[NIM] embeddings ${res.status}`);
+      return null;
+    }
+    const data = (await res.json()) as EmbeddingResponse;
+    return data.data.map((d) => d.embedding);
+  } catch (err) {
+    console.error('[NIM] embeddings failed:', (err as Error).message);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }

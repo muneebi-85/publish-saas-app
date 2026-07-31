@@ -19,11 +19,11 @@ export const QuotaMeter: React.FC<{ className?: string }> = ({ className }) => {
 
   const nearLimit = percentUsed >= 80 && percentUsed < 100;
   const atLimit = percentUsed >= 100;
-  const barColor = atLimit ? 'bg-crimson-600' : nearLimit ? 'bg-amber-500' : 'bg-ink-900';
+  const barColor = atLimit ? 'bg-crimson-600' : nearLimit ? 'bg-amber-600' : 'bg-brand-600';
 
   if (loading) {
     return (
-      <div className={clsx('rounded-xl border border-ink-200 bg-white p-3.5 flex items-center justify-center h-[72px]', className)}>
+      <div className={clsx('rounded-lg border border-ink-200 bg-white p-3.5 flex items-center justify-center h-[72px]', className)}>
         <Loader2 className="w-4 h-4 animate-spin text-ink-300" />
       </div>
     );
@@ -31,19 +31,20 @@ export const QuotaMeter: React.FC<{ className?: string }> = ({ className }) => {
 
   return (
     <div className={clsx(
-      'rounded-xl border bg-white p-3.5 transition-colors',
+      'rounded-lg border bg-white p-3.5 transition-colors',
       atLimit ? 'border-crimson-500/30' : nearLimit ? 'border-amber-500/30' : 'border-ink-200',
       className,
     )}>
       <div className="flex items-baseline justify-between">
-        <span className="text-[12px] font-medium text-ink-700 tabular-nums">
-          {auditsUsed} / {auditsLimit} reviews
+        <span className="font-mono text-[11.5px] font-medium text-ink-700 tabular-nums">
+          {auditsUsed} / {auditsLimit}
         </span>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+        <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-ink-400">
           {PLAN_LABEL[plan] ?? plan}
         </span>
       </div>
-      <div className="mt-2 h-1.5 w-full rounded-full bg-ink-100 overflow-hidden">
+      <div className="mt-1 text-[10.5px] text-ink-400">reviews this cycle</div>
+      <div className="mt-2 h-1 w-full rounded-full bg-ink-100 overflow-hidden">
         <div
           className={clsx('h-full rounded-full transition-all duration-500', barColor)}
           style={{ width: `${Math.min(100, percentUsed)}%` }}
@@ -61,7 +62,7 @@ export const QuotaMeter: React.FC<{ className?: string }> = ({ className }) => {
           )}>
             {atLimit ? 'Limit reached' : nearLimit ? 'Almost out' : 'Get more reviews'}
           </span>
-          <span className="inline-flex items-center gap-0.5 text-[11.5px] font-semibold text-ink-900 group-hover:gap-1 transition-all">
+          <span className="inline-flex items-center gap-0.5 text-[11.5px] font-semibold text-brand-700 group-hover:gap-1 transition-all">
             Upgrade <ArrowUpRight className="w-3 h-3" />
           </span>
         </Link>

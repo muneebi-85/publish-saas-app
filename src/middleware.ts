@@ -9,6 +9,11 @@ const isPublicRoute = createRouteMatcher([
   '/legal(.*)',
   '/api/billing/webhook',
   '/api/billing/success',
+  '/api/webhooks/clerk',
+  '/api/analyze/worker',
+  // Authenticates itself with a constant-time CRON_SECRET bearer check, and
+  // refuses to run at all when that secret is unset.
+  '/api/cron/(.*)',
   '/api/health',
   '/restore',
 ]);
@@ -24,6 +29,10 @@ const isPublicRoute = createRouteMatcher([
  * gated route handler (Node runtime) via requireAuth()/requirePaidPlan() and
  * incrementAuditsInTx(). That is the single choke point a forged request cannot
  * bypass. See src/lib/api-guards.ts and src/lib/session.ts.
+ *
+ * Public routes above are either marketing pages or machine endpoints that
+ * verify their own signatures (Lemon Squeezy HMAC, Clerk svix, QStash).
+ * There is NO development bypass — auth behaves identically in every env.
  */
 export default clerkMiddleware(async (auth, req) => {
   if (isPublicRoute(req)) return NextResponse.next();

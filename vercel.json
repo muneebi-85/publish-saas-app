@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/reconcile",
+      "schedule": "17 3 * * *"
+    },
+    {
+      "path": "/api/cron/purge-deletions",
+      "schedule": "42 4 * * *"
+    }
+  ],
+  "functions": {
+    "src/app/api/analyze/worker/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/analyze/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

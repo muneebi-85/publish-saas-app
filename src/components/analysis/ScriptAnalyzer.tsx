@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { FileText, Sparkles, Check, Wand2, ArrowRight } from 'lucide-react';
+import { FileText, Sparkles, Check, Wand2, ArrowRight, TrendingUp } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { ScriptIssue } from '@/lib/types';
@@ -14,10 +14,25 @@ const TYPE_LABELS: Record<ScriptIssue['type'], string> = {
   'weak-cta':   'Weak CTA',
 };
 
-export const ScriptAnalyzer: React.FC<{ issues: ScriptIssue[]; scriptText?: string }> = ({ issues }) => {
+export const ScriptAnalyzer: React.FC<{ 
+  issues: ScriptIssue[]; 
+  scriptText?: string; 
+  scores: { humanAuthenticity: number, hook: number };
+  scriptAnalysis?: { gptProbability: number, storytellingArc: string };
+}> = ({ issues, scores, scriptAnalysis, scriptText }) => {
   const [fixedIds, setFixedIds] = useState<string[]>([]);
   const toggleFix = (id: string) =>
     setFixedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+
+  const gptProb = scriptAnalysis?.gptProbability ?? Math.max(0, 100 - scores.humanAuthenticity);
+  const storyArc = scriptAnalysis?.storytellingArc ?? (scores.hook >= 80 ? 'Strong retention' : 'Drop-off risk');
+
+  // Hand the report's script to the humanizer so the rewrite starts from the
+  // actual text instead of an empty editor.
+  const humanizerHref =
+    scriptText && scriptText.trim()
+      ? `/ai-humanizer?script=${encodeURIComponent(scriptText.slice(0, 15000))}`
+      : '/ai-humanizer';
 
   return (
     <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
@@ -27,7 +42,7 @@ export const ScriptAnalyzer: React.FC<{ issues: ScriptIssue[]; scriptText?: stri
             <FileText className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-semibold tracking-tight text-ink-950">
+            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
               Script analysis
             </h2>
             <p className="text-xs text-ink-500 mt-0.5">
@@ -35,7 +50,7 @@ export const ScriptAnalyzer: React.FC<{ issues: ScriptIssue[]; scriptText?: stri
             </p>
           </div>
         </div>
-        <Link href="/ai-humanizer">
+        <Link href={humanizerHref}>
           <Button variant="secondary" size="sm" leftIcon={<Wand2 className="w-3.5 h-3.5" />}>
             Open in humanizer
           </Button>
@@ -43,13 +58,13 @@ export const ScriptAnalyzer: React.FC<{ issues: ScriptIssue[]; scriptText?: stri
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-6 pb-4">
-        <MetricPill label="GPT probability" value="12%" tone="success" sub="Reads as human" />
-        <MetricPill label="Storytelling arc" value="Problem → payoff" tone="neutral" sub="Well structured" />
+        <MetricPill label="GPT probability" value={`${gptProb}%`} tone={gptProb <= 20 ? 'success' : gptProb <= 40 ? 'warning' : 'danger'} sub={gptProb <= 20 ? 'Reads as human' : 'AI phrasing detected'} />
+        <MetricPill label="Hook strength" value={`${scores.hook}/100`} tone={scores.hook >= 80 ? 'success' : scores.hook >= 60 ? 'warning' : 'danger'} sub={storyArc} />
         <MetricPill label="Detected issues" value={String(issues.length)} tone={issues.length > 0 ? 'warning' : 'success'} sub={issues.length ? 'Fixable below' : 'None'} />
       </div>
 
       <div className="p-6 pt-2 space-y-2.5">
-        <h3 className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-1">
+        <h3 className="text-[12px] font-semibold text-brand-600 mb-1">
           Rewrite suggestions ({issues.length - fixedIds.length} remaining)
         </h3>
 
@@ -70,7 +85,7 @@ export const ScriptAnalyzer: React.FC<{ issues: ScriptIssue[]; scriptText?: stri
                     <Badge variant={issue.severity === 'high' ? 'danger' : issue.severity === 'medium' ? 'warning' : 'default'}>
                       {TYPE_LABELS[issue.type]}
                     </Badge>
-                    <span className="text-[11px] text-ink-400 font-mono tabular-nums">Line {issue.line}</span>
+                    <span className="text-[11px] text-ink-400 tabular-nums">Line {issue.line}</span>
                   </div>
                   <button
                     onClick={() => toggleFix(issue.id)}
@@ -95,19 +110,35 @@ export const ScriptAnalyzer: React.FC<{ issues: ScriptIssue[]; scriptText?: stri
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  <div className="rounded-lg bg-surface-canvas border border-ink-200 p-3">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500 mb-1.5">
+                  <div className="rounded-xl bg-surface-canvas border border-ink-200 p-3">
+                    <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
                       Original
                     </div>
-                    <p className="text-[12.5px] text-ink-800 font-mono leading-relaxed">{issue.text}</p>
+                    <p className="text-[12.5px] text-ink-800 leading-relaxed">{issue.text}</p>
                   </div>
-                  <div className="rounded-lg bg-grass-50 border border-grass-100 p-3">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-grass-700 mb-1.5 flex items-center gap-1">
+                  <div className="rounded-xl bg-grass-50 border border-grass-100 p-3">
+                    <div className="text-[11px] font-semibold text-grass-700 mb-1.5 flex items-center gap-1">
                       Rewrite <ArrowRight className="w-2.5 h-2.5" />
                     </div>
                     <p className="text-[12.5px] text-ink-900 leading-relaxed">{issue.suggestion}</p>
                   </div>
                 </div>
+                {(issue.reasoning || issue.estimatedMetricImpact) && (
+                  <div className="mt-2.5 flex flex-col sm:flex-row gap-3 text-[12px] bg-ink-50/50 border border-ink-100 rounded-lg p-3">
+                    {issue.reasoning && (
+                      <div className="flex-1">
+                        <span className="font-semibold text-ink-700 mr-1.5">Why:</span>
+                        <span className="text-ink-600 leading-relaxed">{issue.reasoning}</span>
+                      </div>
+                    )}
+                    {issue.estimatedMetricImpact && (
+                      <div className="flex shrink-0 items-center gap-1.5 text-grass-700 font-medium whitespace-nowrap">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        {issue.estimatedMetricImpact}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           );

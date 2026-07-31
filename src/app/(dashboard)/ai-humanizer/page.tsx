@@ -1,31 +1,43 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Wand2, Copy, Check, ArrowRight, TrendingDown, TrendingUp, Loader2 } from 'lucide-react';
+import React, { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import {
+  Wand2, Copy, Check, ArrowRight, TrendingDown, TrendingUp, Loader2,
+  AlertTriangle, Info, ShieldCheck, Gauge, Sparkles,
+} from 'lucide-react';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { HumanizeOptions, HumanizeResult, mockHumanize } from '@/lib/ai/humanizer-engine';
+import { HumanizeOptions, HumanizeResult } from '@/lib/ai/humanizer-engine';
+import { ScriptOptimizerReport, ScriptSignal, SignalBand } from '@/lib/ai/script-optimizer-engine';
 import { PlanGate } from '@/components/PlanGate';
+
+type OptimizeResponse = HumanizeResult & { report: ScriptOptimizerReport };
 
 const SAMPLE_INPUT =
   `In this video, we delve into the comprehensive landscape of artificial intelligence. Furthermore, it is important to note that generative tools have evolved exponentially. Let's explore how creators can leverage these cutting-edge capabilities without compromising authentic human connection.`;
 
 const PLATFORMS = ['YouTube', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn'] as const;
 
-export default function AIHumanizerPage() {
+export default function ScriptOptimizerPage() {
   return (
     <PlanGate
-      feature="AI Humanizer"
+      feature="Creator Script Optimizer"
       requiredPlan="starter"
-      description="Rewrite AI-flavored passages into a natural, human voice. Included on Starter, Pro, and Agency plans."
+      description="Grade your script across 12 revenue signals before you record, then rewrite the weak spots in one pass. Included on Starter, Pro, and Agency plans."
     >
-      <AIHumanizerBody />
+      {/* Suspense: useSearchParams must sit below a boundary for prerendered pages. */}
+      <Suspense fallback={null}>
+        <ScriptOptimizerBody />
+      </Suspense>
     </PlanGate>
   );
 }
 
-function AIHumanizerBody() {
+function ScriptOptimizerBody() {
+  const searchParams = useSearchParams();
   const [rawText, setRawText] = useState(SAMPLE_INPUT);
   const [options, setOptions] = useState<HumanizeOptions>({
     tone: 'conversational',
@@ -35,162 +47,283 @@ function AIHumanizerBody() {
   });
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<HumanizeResult>(() => mockHumanize(SAMPLE_INPUT, {
-    tone: 'conversational', formality: 40, emotionIntensity: 75, targetPlatform: 'YouTube',
-  }));
+  const [result, setResult] = useState<OptimizeResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Handoff from a report's "Open in humanizer" — preload the actual script.
+  useEffect(() => {
+    const script = searchParams.get('script');
+    if (script) setRawText(script.slice(0, 15000));
+  }, [searchParams]);
 
   const handleRun = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch('/api/humanize', {
+      const res = await fetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scriptText: rawText, options }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as HumanizeResult;
+      if (!res.ok) {
+        let msg = `Error ${res.status}`;
+        try {
+          const errData = await res.json();
+          if (errData.error) msg = errData.error;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+      const data = (await res.json()) as OptimizeResponse;
       setResult(data);
-    } catch (err) {
-      // Graceful degradation — show deterministic rewrite if the API is unavailable.
-      console.error('[humanize]', err);
-      setResult(mockHumanize(rawText, options));
+    } catch (err: any) {
+      console.error('[optimize]', err);
+      setError(err.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCopy = () => {
+    if (!result) return;
     navigator.clipboard.writeText(result.humanizedText);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const scoreDelta = result.metricsBefore.gptProbabilityScore - result.metricsAfter.gptProbabilityScore;
+  const scoreDelta = result ? result.metricsBefore.gptProbabilityScore - result.metricsAfter.gptProbabilityScore : 0;
+  const report = result?.report;
 
   return (
-    <div className="space-y-8 animate-enter">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <div className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-2">Tool</div>
-          <h1 className="font-display text-3xl font-semibold tracking-[-0.02em] text-ink-950">AI Humanizer</h1>
-          <p className="text-sm text-ink-500 mt-2 max-w-2xl">
-            Rewrites robotic AI phrasing into how you actually talk. Preserves your meaning; drops
-            the &ldquo;delve into&rdquo; and &ldquo;furthermore&rdquo;.
-          </p>
-        </div>
-        <Badge variant="success" dot>Unlimited on Pro</Badge>
-      </div>
+    <div className="animate-enter">
+      <PageHeader
+        title="Creator Script Optimizer"
+        subtitle="Your pre-record quality check — grade the script across 12 revenue signals, then fix the weak spots."
+        actions={<Badge variant="ink" dot>Pro</Badge>}
+        showUtility
+      />
 
-      {/* Controls */}
-      <Card>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="text-[11.5px] font-medium text-ink-600 block mb-1.5">Tone</label>
-            <select
-              value={options.tone}
-              onChange={(e) => setOptions({ ...options, tone: e.target.value as HumanizeOptions['tone'] })}
-              className="w-full bg-white border border-ink-200 rounded-lg h-9 px-3 text-[13px] focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
-            >
-              <option value="conversational">Conversational</option>
-              <option value="storyteller">Storyteller</option>
-              <option value="energetic">High energy</option>
-              <option value="authoritative">Authoritative</option>
-            </select>
+      <div className="space-y-6">
+        {/* Controls */}
+        <Card>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="text-[13px] font-medium text-ink-700 block mb-1.5">Tone</label>
+              <select
+                value={options.tone}
+                onChange={(e) => setOptions({ ...options, tone: e.target.value as HumanizeOptions['tone'] })}
+                className="w-full bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+              >
+                <option value="conversational">Conversational</option>
+                <option value="storyteller">Storyteller</option>
+                <option value="energetic">High energy</option>
+                <option value="authoritative">Authoritative</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[13px] font-medium text-ink-700 block mb-1.5">Target platform</label>
+              <select
+                value={options.targetPlatform}
+                onChange={(e) => setOptions({ ...options, targetPlatform: e.target.value as HumanizeOptions['targetPlatform'] })}
+                className="w-full bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+              >
+                {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[13px] font-medium text-ink-700 block mb-1.5">
+                Formality — <span className="tabular-nums text-ink-900">{options.formality}%</span>
+              </label>
+              <input
+                type="range" min={0} max={100} value={options.formality}
+                onChange={(e) => setOptions({ ...options, formality: Number(e.target.value) })}
+                className="w-full mt-4 accent-brand-600"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button full size="lg" onClick={handleRun} isLoading={loading} leftIcon={loading ? undefined : <Wand2 className="w-4 h-4" />}>
+                {loading ? 'Analyzing…' : 'Optimize script'}
+              </Button>
+            </div>
           </div>
-          <div>
-            <label className="text-[11.5px] font-medium text-ink-600 block mb-1.5">Target platform</label>
-            <select
-              value={options.targetPlatform}
-              onChange={(e) => setOptions({ ...options, targetPlatform: e.target.value as HumanizeOptions['targetPlatform'] })}
-              className="w-full bg-white border border-ink-200 rounded-lg h-9 px-3 text-[13px] focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
-            >
-              {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
-            </select>
+        </Card>
+
+        {error && (
+          <div className="bg-crimson-50 border border-crimson-200 text-crimson-700 px-4 py-3 rounded-xl text-[13px] flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold">Optimization failed</div>
+              <div>{error}</div>
+            </div>
           </div>
+        )}
+
+        {/* Script Score verdict */}
+        {report && (
+          <div className="rounded-2xl border border-ink-200 bg-white p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+              <div className="shrink-0 sm:pr-6 sm:border-r sm:border-ink-200">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-brand-600">
+                  <Gauge className="w-3.5 h-3.5" /> Script Score
+                </div>
+                <div className="flex items-end gap-3 mt-1.5">
+                  <span className={`font-display text-[48px] leading-[0.9] font-bold tabular-nums tracking-tight ${scoreTone(report.overall).num}`}>
+                    {report.overall}
+                  </span>
+                  <span className="text-[13px] font-semibold text-ink-900 pb-1.5">{report.headline}</span>
+                </div>
+              </div>
+              <div className="flex-1 grid grid-cols-3 gap-4 text-center sm:text-left">
+                <Stat label="Words" value={report.wordCount.toString()} />
+                <Stat label="Est. read time" value={`${Math.floor(report.estimatedReadSeconds / 60)}:${String(report.estimatedReadSeconds % 60).padStart(2, '0')}`} />
+                <Stat label="Signals graded" value={`${report.signals.filter((s) => s.score !== null).length}/12`} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 12-signal QC grid */}
+        {report && (
           <div>
-            <label className="text-[11.5px] font-medium text-ink-600 block mb-1.5">
-              Formality — <span className="tabular-nums">{options.formality}%</span>
-            </label>
-            <input
-              type="range" min={0} max={100} value={options.formality}
-              onChange={(e) => setOptions({ ...options, formality: Number(e.target.value) })}
-              className="w-full mt-3.5"
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-brand-600" />
+              <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">Pre-publish signals</h3>
+              <span className="text-[12px] text-ink-500">Every one tied to reach, retention, or revenue</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {report.signals.map((sig) => <SignalCard key={sig.key} sig={sig} />)}
+            </div>
+          </div>
+        )}
+
+        {/* Rewrite metrics */}
+        {result && (
+        <>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <MetricRow label="AI-detection risk" before={`${result.metricsBefore.gptProbabilityScore}%`} after={`${result.metricsAfter.gptProbabilityScore}%`} good="down" />
+          <MetricRow label="Readability" before={result.metricsBefore.readabilityGrade} after={result.metricsAfter.readabilityGrade} good="down" />
+          <MetricRow label="Hook strength" before={result.metricsBefore.hookStrengthScore} after={result.metricsAfter.hookStrengthScore} good="up" />
+          <MetricRow label="Improvement" before="—" after={`+${Math.abs(scoreDelta)} pts`} good="up" />
+        </div>
+        <div className="flex items-start gap-2 text-[12px] text-ink-500">
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>Scores are estimates from the script text. No rewrite can guarantee content passes every third-party detector or qualifies for monetization.</span>
+        </div>
+        </>
+        )}
+
+        {/* Editor */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] font-semibold text-ink-700">Your script</span>
+              {result && <Badge variant="warning" dot>Est. AI risk {result.metricsBefore.gptProbabilityScore}%</Badge>}
+            </div>
+            <textarea
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              rows={12}
+              className="w-full bg-white border border-ink-200 rounded-xl p-4 text-[14px] text-ink-800 leading-relaxed resize-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
             />
           </div>
-          <div className="flex items-end">
-            <Button full onClick={handleRun} isLoading={loading} leftIcon={loading ? undefined : <Wand2 className="w-3.5 h-3.5" />}>
-              {loading ? 'Rewriting…' : 'Humanize'}
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      {/* Metrics row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MetricRow label="GPT probability" before={`${result.metricsBefore.gptProbabilityScore}%`} after={`${result.metricsAfter.gptProbabilityScore}%`} good="down" />
-        <MetricRow label="Readability" before={result.metricsBefore.readabilityGrade} after={result.metricsAfter.readabilityGrade} good="down" />
-        <MetricRow label="Hook strength" before={result.metricsBefore.hookStrengthScore} after={result.metricsAfter.hookStrengthScore} good="up" />
-        <MetricRow label="Improvement" before="—" after={`+${Math.abs(scoreDelta)} pts`} good="up" />
-      </div>
-
-      {/* Editor */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[12.5px] font-semibold text-ink-700">Input script</span>
-            <Badge variant="warning" dot>GPT risk {result.metricsBefore.gptProbabilityScore}%</Badge>
-          </div>
-          <textarea
-            value={rawText}
-            onChange={(e) => setRawText(e.target.value)}
-            rows={12}
-            className="w-full bg-white border border-ink-200 rounded-xl p-4 text-[13px] text-ink-800 font-mono leading-relaxed resize-none focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
-          />
-        </div>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[12.5px] font-semibold text-ink-700">Humanized output</span>
-            <Badge variant="success" dot>GPT risk {result.metricsAfter.gptProbabilityScore}%</Badge>
-          </div>
-          <div className="bg-white border border-ink-200 rounded-xl p-4 min-h-[298px] text-[13.5px] text-ink-800 leading-relaxed whitespace-pre-line relative">
-            {loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm rounded-xl">
-                <Loader2 className="w-5 h-5 animate-spin text-ink-500" />
-              </div>
-            )}
-            {result.humanizedText}
-          </div>
-          <div className="flex justify-end mt-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleCopy}
-              leftIcon={copied ? <Check className="w-3.5 h-3.5 text-grass-600" /> : <Copy className="w-3.5 h-3.5" />}
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Changes made */}
-      <Card>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-ink-900">Changes made</h3>
-          <Badge variant="outline">{result.changesSummary.length} improvements</Badge>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {result.changesSummary.map((c, i) => (
-            <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
-              <Check className="w-4 h-4 text-grass-600 shrink-0 mt-0.5" />
-              {c}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] font-semibold text-ink-700">Optimized rewrite</span>
+              {result && <Badge variant="success" dot>Est. AI risk {result.metricsAfter.gptProbabilityScore}%</Badge>}
             </div>
-          ))}
+            <div className="bg-white border border-ink-200 rounded-xl p-4 min-h-[298px] text-[14px] text-ink-800 leading-relaxed whitespace-pre-line relative">
+              {loading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm rounded-xl z-10">
+                  <Loader2 className="w-5 h-5 animate-spin text-brand-600" />
+                </div>
+              )}
+              {result ? result.humanizedText : <span className="text-ink-400 italic">Run the optimizer to grade your script and see the rewrite…</span>}
+            </div>
+            <div className="flex justify-end mt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleCopy}
+                leftIcon={copied ? <Check className="w-3.5 h-3.5 text-brand-600" /> : <Copy className="w-3.5 h-3.5" />}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+          </div>
         </div>
-      </Card>
+
+        {/* Changes made */}
+        {result && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">Rewrite changes</h3>
+            <Badge variant="outline">{result.changesSummary.length} edits</Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {result.changesSummary.map((c, i) => (
+              <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
+                <Check className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+                {c}
+              </div>
+            ))}
+          </div>
+        </Card>
+        )}
+
+        <div className="flex items-start gap-2 text-[11px] text-ink-500">
+          <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-ink-400" />
+          <span>The Script Score is a pre-record quality check derived from your text. It is not a guarantee of views, monetization, or that a video will pass automated review.</span>
+        </div>
+      </div>
     </div>
   );
 }
+
+const scoreTone = (v: number) =>
+  v >= 80 ? { num: 'text-grass-700', bar: 'bg-grass-600', chip: 'success' as const } :
+  v >= 60 ? { num: 'text-amber-700', bar: 'bg-amber-600', chip: 'warning' as const } :
+            { num: 'text-crimson-700', bar: 'bg-crimson-600', chip: 'danger' as const };
+
+const bandChip: Record<SignalBand, { label: string; variant: 'success' | 'warning' | 'danger' }> = {
+  good: { label: 'Good', variant: 'success' },
+  warn: { label: 'Improve', variant: 'warning' },
+  risk: { label: 'At risk', variant: 'danger' },
+};
+
+const Stat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div>
+    <div className="text-[10px] font-semibold text-ink-500 uppercase tracking-wide">{label}</div>
+    <div className="text-[18px] font-bold text-ink-900 tabular-nums mt-0.5">{value}</div>
+  </div>
+);
+
+const SignalCard: React.FC<{ sig: ScriptSignal }> = ({ sig }) => {
+  const measured = sig.score !== null;
+  const tone = measured ? scoreTone(sig.score as number) : { num: 'text-ink-400', bar: 'bg-ink-300', chip: 'outline' as const };
+  const chip = bandChip[sig.band];
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[13px] font-semibold text-ink-900">{sig.label}</span>
+        <div className="flex items-center gap-2">
+          {measured
+            ? <Badge variant={chip.variant} dot>{chip.label}</Badge>
+            : <Badge variant="outline">Estimate</Badge>}
+          <span className={`font-display text-[20px] font-bold tabular-nums leading-none ${tone.num}`}>
+            {measured ? sig.score : '—'}
+          </span>
+        </div>
+      </div>
+      <div className="relative mt-2.5 h-1 w-full bg-ink-100 rounded-full">
+        <div className={`h-full rounded-full transition-all duration-700 ${tone.bar}`} style={{ width: `${measured ? sig.score : 0}%` }} />
+      </div>
+      <p className="text-[12.5px] text-ink-600 leading-relaxed mt-3">{sig.finding}</p>
+      <div className="flex items-start gap-2 mt-2.5 pt-2.5 border-t border-ink-100 text-[12.5px] text-ink-800 leading-relaxed">
+        <ArrowRight className="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-600" />
+        <span><span className="font-semibold text-ink-900">Fix:</span> {sig.fix}</span>
+      </div>
+    </div>
+  );
+};
 
 const MetricRow: React.FC<{ label: string; before: string | number; after: string | number; good: 'up' | 'down' }> = ({
   label, before, after, good,
@@ -201,22 +334,22 @@ const MetricRow: React.FC<{ label: string; before: string | number; after: strin
   const improved = delta !== null ? (good === 'up' ? delta > 0 : delta < 0) : true;
 
   return (
-    <div className="rounded-xl border border-ink-200 bg-white p-4">
-      <div className="text-[11.5px] font-medium text-ink-500">{label}</div>
+    <Card padded={false} className="p-4">
+      <div className="text-[12px] font-semibold text-ink-600">{label}</div>
       <div className="flex items-center gap-2 mt-1.5">
         <span className="text-[13px] text-ink-500 line-through tabular-nums">{before}</span>
         <ArrowRight className="w-3 h-3 text-ink-400" />
-        <span className={`text-[14px] font-semibold tabular-nums ${improved ? 'text-grass-700' : 'text-ink-900'}`}>
+        <span className={`text-[15px] font-semibold tabular-nums ${improved ? 'text-brand-600' : 'text-ink-900'}`}>
           {after}
         </span>
       </div>
       <div className="text-[11px] text-ink-500 mt-1.5 flex items-center gap-1">
         {improved ? (
-          <><TrendingUp className="w-3 h-3 text-grass-600" /> Improved</>
+          <><TrendingUp className="w-3 h-3 text-brand-600" /> Improved</>
         ) : (
           <><TrendingDown className="w-3 h-3 text-ink-400" /> Held steady</>
         )}
       </div>
-    </div>
+    </Card>
   );
 };

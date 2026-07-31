@@ -14,7 +14,7 @@ export const CopyrightAuditor: React.FC<{ copyright: CopyrightMetric }> = ({ cop
             <Copyright className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-semibold tracking-tight text-ink-950">
+            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
               Copyright auditor
             </h2>
             <p className="text-xs text-ink-500 mt-0.5">
@@ -32,7 +32,7 @@ export const CopyrightAuditor: React.FC<{ copyright: CopyrightMetric }> = ({ cop
           { label: 'Music risk',     value: `${copyright.musicMatchRisk}`,                           sub: copyright.musicMatchRisk === 'Low' ? 'Royalty-free' : 'Review track licensing' },
           { label: 'Logos detected', value: copyright.detectedLogos.length ? copyright.detectedLogos.join(', ') : 'None', sub: 'Nominative fair use' },
           { label: 'Watermarks',     value: copyright.watermarkDetected ? 'Detected' : 'Clean',      sub: copyright.watermarkDetected ? 'Remove overlay' : 'No external marks' },
-          { label: 'Stock overlap',  value: copyright.stockFootageEstimate,                          sub: 'Original content dominates' },
+          { label: 'Stock overlap',  value: copyright.stockFootageEstimate ?? 'Not estimated',        sub: copyright.stockFootageEstimate ? 'Original content dominates' : 'No stock-footage signal provided' },
         ].map((m) => (
           <div key={m.label} className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
             <div className="text-[11px] font-medium text-ink-500">{m.label}</div>
@@ -43,7 +43,7 @@ export const CopyrightAuditor: React.FC<{ copyright: CopyrightMetric }> = ({ cop
       </div>
 
       <div className="px-6 pb-6 pt-1 space-y-2">
-        <h4 className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500">Findings</h4>
+        <h4 className="text-[12px] font-semibold text-brand-600">Findings</h4>
         {copyright.recommendations.map((rec, i) => (
           <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
             <CheckCircle2 className="w-4 h-4 text-grass-600 shrink-0 mt-0.5" />

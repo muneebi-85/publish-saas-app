@@ -218,8 +218,63 @@ export async function sendQuotaWarning(args: {
       preheader: `${pct}% of ${plan} quota used (${used}/${limit}).`,
       heading: 'Quota usage notice',
       bodyHtml: body,
-      ctaLabel: 'View usage',
-      ctaUrl: `${env.APP_URL}/dashboard/usage`,
+      ctaLabel: 'View your usage',
+      ctaUrl: `${env.APP_URL}/settings#billing`,
+    })
+  );
+}
+
+/**
+ * Account deletion scheduled. Sent on a best-effort basis: the in-app control in
+ * Settings → Data & privacy is the primary way to cancel, so a missing or broken
+ * mail key can never leave someone unable to reverse the request.
+ */
+export async function sendDeletionScheduled(args: {
+  to: string;
+  scheduledFor: Date;
+}): Promise<SendResult> {
+  const { to, scheduledFor } = args;
+  const when = scheduledFor.toUTCString();
+  const subject = 'Your Publish account is scheduled for deletion';
+  const body = `
+    <p style="margin:0 0 12px 0;">We received a request to delete your Publish account. Nothing has been erased yet.</p>
+    <p style="margin:0 0 12px 0;">Scheduled deletion: <strong>${escapeHtml(when)}</strong>.</p>
+    <p style="margin:0 0 12px 0;">Until then your account stays open and you can sign in as usual. Your subscription has been cancelled, so there will be no further charges.</p>
+    <p style="margin:0 0 12px 0;">To keep your account, open Settings &rarr; Data &amp; privacy and choose <strong>Keep my account</strong>. That cancels the deletion immediately.</p>
+    <p style="margin:0;">After the scheduled date, projects, reviews, reports, and comments are removed permanently and cannot be restored. Billing records are retained for the period tax law requires, without your profile details attached.</p>
+  `;
+  return send(
+    to,
+    subject,
+    shell({
+      preheader: `Deletion scheduled for ${when}. You can still cancel it.`,
+      heading: 'Deletion scheduled',
+      bodyHtml: body,
+      ctaLabel: 'Cancel deletion',
+      ctaUrl: `${env.APP_URL}/settings#privacy`,
+      footNote: 'If you did not request this, cancel it from Settings and change your password.',
+    })
+  );
+}
+
+/** Account deletion cancelled — confirms the account is no longer queued for erasure. */
+export async function sendDeletionCancelled(args: { to: string }): Promise<SendResult> {
+  const { to } = args;
+  const subject = 'Your Publish account deletion was cancelled';
+  const body = `
+    <p style="margin:0 0 12px 0;">The scheduled deletion of your Publish account has been cancelled. Your account and data remain intact.</p>
+    <p style="margin:0;">If you had a paid plan, it was cancelled when deletion was requested and was not reinstated. You can subscribe again from the pricing page whenever you want.</p>
+  `;
+  return send(
+    to,
+    subject,
+    shell({
+      preheader: 'Your account deletion was cancelled. Nothing was removed.',
+      heading: 'Deletion cancelled',
+      bodyHtml: body,
+      ctaLabel: 'Open dashboard',
+      ctaUrl: `${env.APP_URL}/dashboard`,
+      footNote: 'If you did not do this, contact privacy@genapps.online and change your password.',
     })
   );
 }

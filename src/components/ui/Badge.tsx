@@ -15,8 +15,8 @@ export const Badge: React.FC<BadgeProps> = ({
   const styles: Record<string, string> = {
     default: 'bg-ink-100 text-ink-700 border border-transparent',
     success: 'bg-grass-50 text-grass-700 border border-grass-100',
-    warning: 'bg-amber-50 text-amber-700 border border-amber-500/15',
-    danger:  'bg-crimson-50 text-crimson-700 border border-crimson-500/15',
+    warning: 'bg-amber-50 text-amber-700 border border-amber-500/20',
+    danger:  'bg-crimson-50 text-crimson-700 border border-crimson-500/20',
     ink:     'bg-ink-900 text-white border border-transparent',
     outline: 'bg-white text-ink-700 border border-ink-200',
   };
@@ -24,8 +24,8 @@ export const Badge: React.FC<BadgeProps> = ({
   const dotColors: Record<string, string> = {
     default: 'bg-ink-400',
     success: 'bg-grass-500',
-    warning: 'bg-amber-500',
-    danger:  'bg-crimson-500',
+    warning: 'bg-amber-600',
+    danger:  'bg-crimson-600',
     ink:     'bg-white',
     outline: 'bg-ink-400',
   };
@@ -37,7 +37,7 @@ export const Badge: React.FC<BadgeProps> = ({
 
   return (
     <span className={clsx(
-      'inline-flex items-center font-medium rounded-full leading-none',
+      'inline-flex items-center font-medium rounded-md leading-none',
       styles[variant],
       sizes[size],
       className,

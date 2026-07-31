@@ -19,6 +19,7 @@ interface Fix {
   problem: string;
   action: string;
   gain: string;
+  reasoning?: string;
 }
 
 const IMPACT_ORDER: Record<Impact, number> = { blocking: 0, high: 1, medium: 2, low: 3 };
@@ -47,10 +48,14 @@ function deriveFixes(p: ProjectData): Fix[] {
     else if (issue.severity === 'medium') impact = 'medium';
 
     const gainParts: string[] = [];
-    if (issue.viralityImpact === 'boost') gainParts.push('↑ virality');
-    if (issue.monetizationImpact === 'demonetized') gainParts.push('avoids demonetization');
-    else if (issue.monetizationImpact === 'demoted') gainParts.push('restores CPM');
-    if (gainParts.length === 0) gainParts.push(issue.type === 'weak-hook' ? '+12 pts hook' : '+6 pts authenticity');
+    if (issue.estimatedMetricImpact) {
+      gainParts.push(issue.estimatedMetricImpact);
+    } else {
+      if (issue.viralityImpact === 'boost') gainParts.push('↑ virality');
+      if (issue.monetizationImpact === 'demonetized') gainParts.push('avoids demonetization');
+      else if (issue.monetizationImpact === 'demoted') gainParts.push('restores CPM');
+      if (gainParts.length === 0) gainParts.push(issue.type === 'weak-hook' ? '+12 pts hook' : '+6 pts authenticity');
+    }
 
     fixes.push({
       id: `script-${issue.id}`,
@@ -60,6 +65,7 @@ function deriveFixes(p: ProjectData): Fix[] {
       problem: issue.text.length > 120 ? `${issue.text.slice(0, 120)}…` : issue.text,
       action: issue.specific_fix ?? issue.suggestion,
       gain: gainParts.join(' · '),
+      reasoning: issue.reasoning,
     });
   });
 
@@ -75,13 +81,13 @@ function deriveFixes(p: ProjectData): Fix[] {
     });
   }
 
-  if (p.voiceAnalysis.syntheticArtifactRisk !== 'Low' || p.voiceAnalysis.isMonotone) {
+  if (p.voiceAnalysis.syntheticArtifactRisk !== 'Low' || p.voiceAnalysis.isMonotone === true) {
     fixes.push({
       id: 'voice-artifacts',
       impact: p.voiceAnalysis.syntheticArtifactRisk === 'High' ? 'high' : 'medium',
       area: 'Voice',
       icon: Mic,
-      problem: p.voiceAnalysis.isMonotone
+      problem: p.voiceAnalysis.isMonotone === true
         ? 'Delivery reads as monotone, which correlates with early drop-off.'
         : 'Synthetic voice artifacts detected — may trigger AI-disclosure review.',
       action: p.voiceAnalysis.recommendations[0] ?? 'Re-record with wider pitch variation.',
@@ -101,7 +107,7 @@ function deriveFixes(p: ProjectData): Fix[] {
     });
   }
 
-  if (p.thumbnailAnalysis.ctrPredictionScore < 80) {
+  if (p.thumbnailAnalysis.ctrPredictionScore !== null && p.thumbnailAnalysis.ctrPredictionScore < 80) {
     fixes.push({
       id: 'thumbnail-ctr',
       impact: 'medium',
@@ -126,6 +132,17 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
   const remaining = fixes.length - done.length;
   const blocking = fixes.filter((f) => f.impact === 'blocking' && !done.includes(f.id)).length;
 
+  /** Carry the report's own inputs into a fresh review so re-running is one click. */
+  const rerun = () => {
+    const qs = new URLSearchParams();
+    if (project.title) qs.set('title', project.title);
+    if (project.assets?.scriptText) qs.set('script', project.assets.scriptText);
+    const platform = project.platformReports?.[0]?.platform;
+    if (platform) qs.set('platform', platform);
+    const suffix = qs.toString();
+    window.location.href = `/upload${suffix ? `?${suffix}` : ''}`;
+  };
+
   if (fixes.length === 0) {
     return (
       <div className="rounded-2xl border border-grass-100 bg-grass-50/50 p-6 flex items-start gap-4">
@@ -133,7 +150,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
           <Check className="w-4 h-4" strokeWidth={3} />
         </div>
         <div>
-          <h2 className="font-display text-lg font-semibold text-ink-950">Nothing to fix</h2>
+          <h2 className="font-display text-lg font-bold text-ink-900">Nothing to fix</h2>
           <p className="text-sm text-ink-700 mt-1.5 max-w-xl leading-relaxed">
             Every layer passed without a recommended change. That is rare — ship it.
           </p>
@@ -147,11 +164,11 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
       {/* Header */}
       <div className="p-6 border-b border-ink-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-xl bg-ink-900 text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shrink-0 shadow-subtle">
             <ListChecks className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-xl font-semibold tracking-tight text-ink-950">
+            <h2 className="font-display text-xl font-bold tracking-tight text-ink-900">
               Fix these first
             </h2>
             <p className="text-sm text-ink-500 mt-1 max-w-xl">
@@ -171,7 +188,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
       {/* Progress */}
       <div className="h-1 bg-ink-100">
         <div
-          className="h-full bg-ink-900 transition-all duration-500"
+          className="h-full bg-brand-600 transition-all duration-500"
           style={{ width: `${(done.length / fixes.length) * 100}%` }}
         />
       </div>
@@ -199,8 +216,8 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
                   className={clsx(
                     'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition-all',
                     isDone
-                      ? 'bg-ink-900 border-ink-900 text-white'
-                      : 'border-ink-300 hover:border-ink-900 bg-white',
+                      ? 'bg-brand-600 border-brand-600 text-white'
+                      : 'border-ink-300 hover:border-brand-600 bg-white',
                   )}
                 >
                   {isDone && <Check className="w-3 h-3" strokeWidth={3.5} />}
@@ -209,15 +226,15 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
                 <div className={clsx('flex-1 min-w-0', isDone && 'opacity-55')}>
                   {/* Meta row */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[10.5px] text-ink-400 tabular-nums">
-                      {String(i + 1).padStart(2, '0')}
+                    <span className="w-5 h-5 rounded-md bg-ink-900 text-white flex items-center justify-center text-[11px] font-bold shrink-0">
+                      {i + 1}
                     </span>
                     <Badge variant={style.badge}>{style.label}</Badge>
                     <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-ink-600">
                       <Icon className="w-3 h-3" /> {fix.area}
                     </span>
                     <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-grass-700 ml-auto">
-                      <TrendingUp className="w-3 h-3" /> {fix.gain}
+                      <TrendingUp className="w-3 h-3" /> {fix.gain} <span className="text-ink-400 font-normal">(estimated)</span>
                     </span>
                   </div>
 
@@ -229,10 +246,20 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
                     {fix.problem}
                   </p>
 
+                  {/* Reasoning */}
+                  {fix.reasoning && (
+                    <p className={clsx(
+                      'text-[13px] text-ink-600 mt-1.5 leading-relaxed',
+                      isDone && 'opacity-55'
+                    )}>
+                      <span className="font-medium text-ink-700">Why:</span> {fix.reasoning}
+                    </p>
+                  )}
+
                   {/* Action */}
                   <div className="mt-3 rounded-xl border border-ink-200 bg-surface-canvas p-3.5">
-                    <div className="text-2xs font-semibold uppercase tracking-[0.12em] text-ink-500 mb-1.5">
-                      Do this
+                    <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
+                      How
                     </div>
                     <p className="text-[13px] text-ink-700 leading-relaxed">{fix.action}</p>
                   </div>
@@ -256,12 +283,12 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
               <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
               Applying all {remaining} would raise your overall score to roughly{' '}
               <span className="font-semibold text-ink-900 tabular-nums">
-                {Math.min(99, project.scores.overall + remaining * 3)}
+                {project.insights?.scorePotential ?? Math.min(99, project.scores.overall + remaining * 3)}
               </span>.
             </>
           )}
         </div>
-        <Button size="sm" variant="secondary" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+        <Button size="sm" variant="secondary" rightIcon={<ArrowRight className="w-3.5 h-3.5" />} onClick={rerun}>
           Re-run review
         </Button>
       </div>

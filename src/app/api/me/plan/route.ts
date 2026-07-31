@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   const { userId } = auth();
+
   if (!userId) {
     return NextResponse.json(
       { plan: 'free', auditsUsed: 0, auditsLimit: 1, canAnalyze: false, authenticated: false },

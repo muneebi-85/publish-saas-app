@@ -56,3 +56,4 @@ next-env.d.ts
 # ─── Uploads / temp ───
 uploads/
 tmp/
+.gstack/

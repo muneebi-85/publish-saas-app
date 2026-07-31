@@ -5,6 +5,7 @@ const BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://publish.genapps.online'
 const LEGAL_PATHS = [
   '/legal/terms',
   '/legal/privacy',
+  '/legal/subprocessors',
   '/legal/refund',
   '/legal/subscription-terms',
   '/legal/acceptable-use',

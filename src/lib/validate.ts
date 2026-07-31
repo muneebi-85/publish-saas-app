@@ -47,3 +47,94 @@ export function boolean(input: unknown, field = 'value'): ValidateResult<boolean
   if (typeof input === 'boolean') return { ok: true, value: input };
   return { ok: false, error: `${field} must be a boolean` };
 }
+
+/** Hosts that resolve to the local network. Blocked to prevent SSRF. */
+const PRIVATE_HOST = /^(localhost|127\.|0\.|10\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?|.*\.local|.*\.internal)/i;
+
+/**
+ * Public https(s) URL. Rejects non-HTTP schemes (javascript:, data:, file:) and
+ * private/loopback/link-local hosts so a user-supplied URL can never be used to
+ * make the server fetch internal infrastructure (SSRF).
+ */
+export function url(input: unknown, {
+  field = 'url', max = 2048, allowHttp = false,
+}: { field?: string; max?: number; allowHttp?: boolean } = {}): ValidateResult<string> {
+  const s = string(input, { field, max, min: 1 });
+  if (!s.ok) return s;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(s.value);
+  } catch {
+    return { ok: false, error: `${field} must be a valid URL` };
+  }
+
+  const scheme = parsed.protocol.toLowerCase();
+  if (scheme !== 'https:' && !(allowHttp && scheme === 'http:')) {
+    return { ok: false, error: `${field} must use https` };
+  }
+  if (PRIVATE_HOST.test(parsed.hostname)) {
+    return { ok: false, error: `${field} must be a public address` };
+  }
+  return { ok: true, value: parsed.toString() };
+}
+
+/** Prisma cuid / cuid2 identifier. Guards id params before they reach the DB. */
+export function id(input: unknown, field = 'id'): ValidateResult<string> {
+  const s = string(input, { field, min: 1, max: 64 });
+  if (!s.ok) return s;
+  if (!/^[a-z0-9_-]{8,64}$/i.test(s.value)) {
+    return { ok: false, error: `${field} is not a valid identifier` };
+  }
+  return { ok: true, value: s.value };
+}
+
+/** Applies an item validator across an array, with a hard length cap. */
+export function arrayOf<T>(
+  input: unknown,
+  item: (value: unknown, index: number) => ValidateResult<T>,
+  { max = 50, min = 0, field = 'value' }: { max?: number; min?: number; field?: string } = {},
+): ValidateResult<T[]> {
+  if (!Array.isArray(input)) return { ok: false, error: `${field} must be an array` };
+  if (input.length < min) return { ok: false, error: `${field} needs at least ${min} item(s)` };
+  if (input.length > max) return { ok: false, error: `${field} accepts at most ${max} items` };
+
+  const out: T[] = [];
+  for (let i = 0; i < input.length; i++) {
+    const res = item(input[i], i);
+    if (!res.ok) return { ok: false, error: `${field}[${i}]: ${res.error}` };
+    out.push(res.value);
+  }
+  return { ok: true, value: out };
+}
+
+/**
+ * Parses a JSON request body with a size ceiling. Returns a plain object or an
+ * error — never throws, so routes cannot 500 on malformed input.
+ */
+export async function jsonBody(
+  req: Request,
+  { maxBytes = 1_000_000 }: { maxBytes?: number } = {},
+): Promise<ValidateResult<Record<string, unknown>>> {
+  const declared = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    return { ok: false, error: 'Request body is too large' };
+  }
+  let raw: string;
+  try {
+    raw = await req.text();
+  } catch {
+    return { ok: false, error: 'Could not read request body' };
+  }
+  if (raw.length > maxBytes) return { ok: false, error: 'Request body is too large' };
+  if (!raw.trim()) return { ok: true, value: {} };
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, error: 'Request body must be a JSON object' };
+    }
+    return { ok: true, value: parsed as Record<string, unknown> };
+  } catch {
+    return { ok: false, error: 'Request body must be valid JSON' };
+  }
+}

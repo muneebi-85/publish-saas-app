@@ -20,25 +20,41 @@ enum RiskLevel {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  clerkId        String    @unique
-  email          String?
-  name           String?
-  avatarUrl      String?
-  role           Role      @default(MEMBER)
-  plan           String    @default("free")
-  auditsUsed     Int       @default(0)
-  periodStart    DateTime?
-  periodEnd      DateTime?
-  lsCustomerId   String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  clerkId           String    @unique
+  email             String?
+  name              String?
+  avatarUrl         String?
+  role              Role      @default(MEMBER)
+  plan              String    @default("free")
+  auditsUsed        Int       @default(0)
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  lsCustomerId      String?
+  deleteScheduledAt DateTime?
+  /// Opt-out for non-essential mail (review-ready notices, quota warnings).
+  /// Transactional billing and security mail is always sent and is deliberately
+  /// not switchable — we cannot legally or safely suppress a payment failure.
+  productEmails     Boolean   @default(true)
+  /// Last time the user opened their activity feed. The feed itself is derived
+  /// from real rows (jobs, reports, subscriptions), so this single timestamp is
+  /// all the read-state that needs storing — anything newer than it is unread.
+  activitySeenAt    DateTime?
+  /// Brand-kit preferences (colors, fonts, tone, banned words) as saved from
+  /// Settings/Brand Kit. Null until the user saves at least once.
+  brandKit          Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  subscriptions  Subscription[]
-  reports        AnalysisReport[]
-  projects       Project[]
-  comments       Comment[]
-  apiKeys        ApiKey[]
+  subscriptions Subscription[]
+  reports       AnalysisReport[]
+  projects      Project[]
+  comments      Comment[]
+  apiKeys       ApiKey[]
+  channels      Channel[]
+  jobs          AnalysisJob[]
+
+  @@index([clerkId])
 }
 
 model Subscription {
@@ -63,7 +79,7 @@ model AnalysisReport {
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectId         String
   title             String
-  targetPlatform   String
+  targetPlatform    String
   monetizationScore Int
   overallScore      Int
   report            Json
@@ -73,20 +89,60 @@ model AnalysisReport {
   @@index([userId, projectId])
 }
 
+/// One audit run. Created at enqueue time so the client has a real row to poll
+/// and so the quota debit can happen before any work is dispatched (a job the
+/// user never paid for can never be queued). `reportId` is filled in only once
+/// the worker has actually persisted a report — until then the UI shows
+/// progress, never a link to something that does not exist.
+///
+/// `input` holds the validated review payload. The queue message carries only
+/// this row's id, so a replayed or forged message can never retarget another
+/// user or smuggle in unvalidated input — the worker always re-reads from here.
+model AnalysisJob {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId      String
+  title          String
+  targetPlatform String
+  input          Json
+  status         JobStatus @default(QUEUED)
+  reportId       String?
+  error          String?
+  quotaCharged   Boolean   @default(false)
+  attempts       Int       @default(0)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 model Project {
-  id          String     @id @default(cuid())
+  id          String      @id @default(cuid())
   title       String
   description String?
-  folder      String     @default("General")
+  folder      String      @default("General")
   tags        String[]
-  status      String     @default("Completed")
-  riskLevel   RiskLevel  @default(LOW)
+  status      String      @default("Completed")
+  riskLevel   RiskLevel   @default(LOW)
   userId      String
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   assets      MediaAsset?
   comments    Comment[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([userId, createdAt])
 }
 
 model MediaAsset {
@@ -113,14 +169,41 @@ model Comment {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   content   String
   createdAt DateTime @default(now())
+
+  @@index([projectId])
+}
+
+model Channel {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform    String
+  channelId   String
+  name        String
+  url         String?
+  avatarUrl   String?
+  subscribers Int      @default(0)
+  videosCount Int      @default(0)
+  viewsCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([platform, channelId])
+  @@index([userId])
 }
 
 model ApiKey {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name       String
-  key        String   @unique
-  usageCount Int      @default(0)
-  createdAt  DateTime @default(now())
+  key        String    @unique
+  usageCount Int       @default(0)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model WebhookEvent {
+  id        String   @id // Stores the dedupKey
+  createdAt DateTime @default(now())
 }

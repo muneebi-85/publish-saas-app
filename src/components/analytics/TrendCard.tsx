@@ -22,18 +22,17 @@ export const TrendCard: React.FC<TrendCardProps> = ({ label, series, suffix = '/
   const delta = Math.round(recentAvg - priorAvg);
 
   const TrendIcon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
-  const trendColor = delta > 0 ? 'text-emerald-700' : delta < 0 ? 'text-crimson-700' : 'text-ink-500';
-  const trendBg = delta > 0 ? 'bg-emerald-50' : delta < 0 ? 'bg-crimson-50' : 'bg-ink-100';
+  const trendColor = delta > 0 ? 'text-grass-700' : delta < 0 ? 'text-crimson-700' : 'text-ink-500';
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 flex items-center justify-between gap-5">
+    <div className="rounded-xl border border-ink-200 bg-white p-5 flex items-center justify-between gap-5">
       <div>
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-500">{label}</div>
+        <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-ink-500">{label}</div>
         <div className="mt-1.5 flex items-baseline gap-1.5">
-          <span className="text-[26px] font-semibold tabular-nums text-ink-950">{last}</span>
+          <span className="font-display text-[28px] leading-none font-medium tabular-nums text-ink-950">{last}</span>
           <span className="text-[13px] text-ink-500">{suffix}</span>
         </div>
-        <div className={`mt-1.5 inline-flex items-center gap-1 rounded-full ${trendBg} ${trendColor} px-2 py-0.5 text-[11px] font-medium`}>
+        <div className={`mt-1.5 inline-flex items-center gap-1 font-mono ${trendColor} text-[11px] font-medium`}>
           <TrendIcon className="w-3 h-3" />
           {delta > 0 ? '+' : ''}{delta} vs prior
         </div>

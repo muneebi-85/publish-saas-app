@@ -60,7 +60,7 @@ export const MethodologyCard: React.FC<Props> = ({
       {open && (
         <div className="mt-5 space-y-5 animate-enter">
           <div>
-            <div className="text-[11.5px] font-semibold text-ink-600 uppercase tracking-[0.1em] mb-3">
+            <div className="text-[11.5px] font-semibold text-ink-600 mb-3">
               Overall score weights
             </div>
             <div className="space-y-2">
@@ -87,7 +87,7 @@ export const MethodologyCard: React.FC<Props> = ({
           </div>
 
           <div>
-            <div className="text-[11.5px] font-semibold text-ink-600 uppercase tracking-[0.1em] mb-3">
+            <div className="text-[11.5px] font-semibold text-ink-600 mb-3">
               {activePlatform} policy source
             </div>
             <div className="rounded-xl border border-ink-200 bg-surface-canvas p-4 space-y-2">
@@ -109,7 +109,7 @@ export const MethodologyCard: React.FC<Props> = ({
               <ul className="mt-3 space-y-1.5">
                 {policy.rules.slice(0, 4).map((r, i) => (
                   <li key={i} className="flex items-start gap-2 text-[12px] text-ink-700 leading-relaxed">
-                    <span className="text-[10px] font-mono text-ink-400 mt-0.5 shrink-0">R{i + 1}</span>
+                    <span className="text-[10px] font-semibold text-ink-400 mt-0.5 shrink-0 tabular-nums">R{i + 1}</span>
                     {r}
                   </li>
                 ))}

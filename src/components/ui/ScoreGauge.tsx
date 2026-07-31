@@ -11,51 +11,67 @@ export interface ScoreGaugeProps {
 }
 
 /**
- * Ring gauge — semantic color mapping (green ≥85, amber 70-84, red <70).
- * Uses ink-900 for the center number to keep the palette monochromatic;
- * the ring itself carries the semantic color.
+ * Circular donut gauge — the brand's signature score visual. An emerald ring
+ * sweeps proportional to the score with the numeral centered. Amber/red for
+ * lower bands. Ring color mirrors the "safe to publish" thresholds.
  */
+const SIZES = {
+  sm: { box: 44,  stroke: 4,  num: 'text-[13px]', denom: false, label: 'text-[9px]' },
+  md: { box: 64,  stroke: 5,  num: 'text-[18px]', denom: false, label: 'text-[10px]' },
+  lg: { box: 104, stroke: 7,  num: 'text-[30px]', denom: true,  label: 'text-[11px]' },
+  xl: { box: 148, stroke: 9,  num: 'text-[44px]', denom: true,  label: 'text-[12px]' },
+} as const;
+
 export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
-  score, label, size = 'md', showLabel = true, subtitle, showTrack = true,
+  score, label, size = 'md', showLabel = true, subtitle,
 }) => {
-  const clamped = Math.max(0, Math.min(100, score));
-  const color =
-    clamped >= 85 ? '#16A34A' :
-    clamped >= 70 ? '#D97706' :
-    '#DC2626';
-
-  const sizes = {
-    sm: { r: 15, sw: 3,   box: 'w-10 h-10',  num: 'text-[11px]', gap: 'gap-1' },
-    md: { r: 26, sw: 3.5, box: 'w-16 h-16',  num: 'text-[15px] font-semibold', gap: 'gap-1.5' },
-    lg: { r: 40, sw: 4.5, box: 'w-24 h-24',  num: 'text-2xl font-semibold', gap: 'gap-2' },
-    xl: { r: 56, sw: 5.5, box: 'w-32 h-32',  num: 'text-3xl font-semibold', gap: 'gap-2.5' },
-  } as const;
-
-  const { r, sw, box, num, gap } = sizes[size];
+  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  const { box, stroke, num, denom, label: labelSize } = SIZES[size];
+  const r = (box - stroke) / 2;
   const c = 2 * Math.PI * r;
   const offset = c - (clamped / 100) * c;
 
+  const ringColor =
+    clamped >= 85 ? '#16A34A' :
+    clamped >= 70 ? '#F59E0B' :
+    '#EF4444';
+
+  const band =
+    clamped >= 85 ? 'Excellent' :
+    clamped >= 70 ? 'Good' :
+    clamped >= 50 ? 'Fair' : 'Needs work';
+
   return (
-    <div className={clsx('flex flex-col items-center', gap)}>
-      <div className="relative inline-flex items-center justify-center">
-        <svg className={clsx(box, '-rotate-90')}>
-          {showTrack && (
-            <circle cx="50%" cy="50%" r={r} stroke="#E7E5E4" strokeWidth={sw} fill="none" />
-          )}
+    <div className="inline-flex flex-col items-center gap-2">
+      <div className="relative" style={{ width: box, height: box }}>
+        <svg width={box} height={box} className="-rotate-90">
           <circle
-            cx="50%" cy="50%" r={r}
-            stroke={color} strokeWidth={sw}
+            cx={box / 2} cy={box / 2} r={r}
+            fill="none" stroke="#F0F0F0" strokeWidth={stroke}
+          />
+          <circle
+            cx={box / 2} cy={box / 2} r={r}
+            fill="none" stroke={ringColor} strokeWidth={stroke}
             strokeDasharray={c} strokeDashoffset={offset}
-            strokeLinecap="round" fill="none"
-            className="transition-all duration-1000 ease-out"
+            strokeLinecap="round"
+            className="transition-[stroke-dashoffset] duration-1000 ease-out"
           />
         </svg>
-        <span className={clsx('absolute text-ink-900 tabular-nums tracking-tight', num)}>{clamped}</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={clsx('font-display font-bold text-ink-900 tabular-nums leading-none', num)}>
+            {clamped}
+          </span>
+          {denom && <span className="text-[10px] text-ink-400 font-medium mt-0.5">/100</span>}
+        </div>
       </div>
       {showLabel && label && (
         <div className="text-center">
-          <span className="text-xs font-medium text-ink-700 block">{label}</span>
-          {subtitle && <span className="text-[11px] text-ink-500 block mt-0.5">{subtitle}</span>}
+          <span className={clsx('font-medium text-ink-700 block', labelSize)}>{label}</span>
+          {subtitle
+            ? <span className="text-[11px] text-ink-500 block mt-0.5">{subtitle}</span>
+            : (size === 'lg' || size === 'xl') && (
+              <span className="text-[12px] font-medium block mt-0.5" style={{ color: ringColor }}>{band}</span>
+            )}
         </div>
       )}
     </div>

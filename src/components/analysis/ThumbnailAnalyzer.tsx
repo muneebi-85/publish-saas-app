@@ -2,12 +2,25 @@
 
 import React from 'react';
 import { Image as ImageIcon, Eye, CheckCircle2 } from 'lucide-react';
+import Image from 'next/image';
 import { Badge } from '../ui/Badge';
 import { ThumbnailMetric } from '@/lib/types';
 
 export const ThumbnailAnalyzer: React.FC<{ thumbnail: ThumbnailMetric; thumbnailUrl?: string }> = ({
   thumbnail, thumbnailUrl,
 }) => {
+  const measured = thumbnail.measured;
+  const pct = (v: number | null) => (v === null ? 'Not measured' : `${v}%`);
+  const score = (v: number | null) => (v === null ? 'Not measured' : `${v}/100`);
+  const faceEmotion =
+    thumbnail.faceCount === null
+      ? 'Not measured'
+      : `${thumbnail.faceCount} face${thumbnail.faceCount === 1 ? '' : 's'} · ${thumbnail.dominantEmotion}`;
+  const readability =
+    thumbnail.textReadabilityScore === null
+      ? 'Not measured'
+      : `${thumbnail.textReadabilityScore}% · ${thumbnail.contrastRating}`;
+
   return (
     <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
@@ -16,7 +29,7 @@ export const ThumbnailAnalyzer: React.FC<{ thumbnail: ThumbnailMetric; thumbnail
             <ImageIcon className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-semibold tracking-tight text-ink-950">
+            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
               Thumbnail analysis
             </h2>
             <p className="text-xs text-ink-500 mt-0.5">
@@ -24,31 +37,45 @@ export const ThumbnailAnalyzer: React.FC<{ thumbnail: ThumbnailMetric; thumbnail
             </p>
           </div>
         </div>
-        <Badge variant={thumbnail.clickbaitRisk === 'Low' ? 'success' : 'warning'} dot>
-          Clickbait risk: {thumbnail.clickbaitRisk}
-        </Badge>
+        {measured ? (
+          <Badge variant={thumbnail.clickbaitRisk === 'Low' ? 'success' : 'warning'} dot>
+            Clickbait risk: {thumbnail.clickbaitRisk}
+          </Badge>
+        ) : (
+          <Badge variant="default" dot>
+            Not measured
+          </Badge>
+        )}
       </div>
+
+      {!measured && (
+        <div className="mx-6 mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12.5px] text-amber-800 leading-relaxed">
+          No thumbnail image was analyzed. Connect a thumbnail to enable CTR, composition,
+          contrast, and clickbait scoring — we don&apos;t estimate these without an image.
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 p-6">
         <div className="relative rounded-xl overflow-hidden border border-ink-200 aspect-video bg-ink-100">
-          <img
+          <Image
             src={thumbnailUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}
             alt="Thumbnail preview"
-            className="w-full h-full object-cover"
+            fill
+            className="object-cover"
           />
           <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-1 bg-black/70 backdrop-blur-sm rounded-md text-[11px] font-medium text-white">
-            <Eye className="w-3 h-3" /> Predicted CTR {thumbnail.ctrPredictionScore}%
+            <Eye className="w-3 h-3" /> {thumbnail.ctrPredictionScore === null ? 'CTR not measured' : `Predicted CTR ${thumbnail.ctrPredictionScore}%`}
           </div>
         </div>
 
         <div className="md:col-span-2 grid grid-cols-2 gap-2.5">
-          <TileMini label="Face & emotion" value={`${thumbnail.faceCount} face${thumbnail.faceCount === 1 ? '' : 's'} · ${thumbnail.dominantEmotion}`} sub="Strong human connection" />
-          <TileMini label="Text readability" value={`${thumbnail.textReadabilityScore}% · ${thumbnail.contrastRating}`} sub="Mobile-optimized" />
-          <TileMini label="Composition" value={`${thumbnail.compositionScore}/100`} sub="Rule-of-thirds respected" />
-          <TileMini label="Clickbait risk" value={thumbnail.clickbaitRisk} sub={thumbnail.clickbaitRisk === 'Low' ? 'Below platform threshold' : 'Reduce sensational text'} tone={thumbnail.clickbaitRisk === 'Low' ? 'success' : 'warning'} />
+          <TileMini label="Face & emotion" value={faceEmotion} sub={measured ? 'Strong human connection' : 'Connect a thumbnail'} />
+          <TileMini label="Text readability" value={readability} sub={measured ? 'Mobile-optimized' : 'Connect a thumbnail'} />
+          <TileMini label="Composition" value={score(thumbnail.compositionScore)} sub={measured ? 'Rule-of-thirds respected' : 'Connect a thumbnail'} />
+          <TileMini label="Clickbait risk" value={measured ? thumbnail.clickbaitRisk : 'Not measured'} sub={measured ? (thumbnail.clickbaitRisk === 'Low' ? 'Below platform threshold' : 'Reduce sensational text') : 'Connect a thumbnail'} tone={measured && thumbnail.clickbaitRisk !== 'Low' ? 'warning' : measured ? 'success' : 'default'} />
 
           <div className="col-span-2 space-y-2 mt-1">
-            <h4 className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500">CTR improvements</h4>
+            <h4 className="text-[12px] font-semibold text-brand-600 mb-2">{measured ? 'CTR improvements' : 'How to enable this layer'}</h4>
             {thumbnail.recommendations.map((rec, i) => (
               <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
                 <CheckCircle2 className="w-4 h-4 text-grass-600 shrink-0 mt-0.5" />

@@ -10,7 +10,12 @@ export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
   if (!WEBHOOK_SECRET) {
-    throw new Error('Please add CLERK_WEBHOOK_SECRET from Clerk Dashboard to .env or .env.local');
+    // A deployment without the secret can never verify a webhook. Return a
+    // clean 503 instead of letting the throw become a raw 500.
+    return NextResponse.json(
+      { error: 'Webhook verification is not configured on this deployment.' },
+      { status: 503 },
+    );
   }
 
   const headerPayload = headers();

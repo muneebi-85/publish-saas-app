@@ -43,16 +43,30 @@ model User {
   /// Brand-kit preferences (colors, fonts, tone, banned words) as saved from
   /// Settings/Brand Kit. Null until the user saves at least once.
   brandKit          Json?
+  /// Unique referral code for the "share and earn" program. Generated
+  /// automatically the first time the user visits the referral section.
+  referralCode      String?   @unique
+  /// Free audits earned through the referral or challenge program. Consumed
+  /// before the plan's monthly allowance, so bonus credits extend the wall.
+  referralCredits   Int       @default(0)
+  /// Opt-in for the public leaderboard ("best scores this week"). Off by
+  /// default — nothing about a creator's scores is public unless they flip
+  /// this on. Only opted-in users' reports can appear on /community.
+  leaderboardOptIn  Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  subscriptions Subscription[]
-  reports       AnalysisReport[]
-  projects      Project[]
-  comments      Comment[]
-  apiKeys       ApiKey[]
-  channels      Channel[]
-  jobs          AnalysisJob[]
+  subscriptions    Subscription[]
+  reports          AnalysisReport[]
+  projects         Project[]
+  comments         Comment[]
+  channels         Channel[]
+  jobs             AnalysisJob[]
+  referralsGiven   Referral[]        @relation("referrer")
+  referralsUsed    Referral[]        @relation("referee")
+  challengesGiven  Challenge[]       @relation("challenger")
+  challengesBeat   Challenge[]       @relation("acceptedBy")
+  coachThreads     CoachThread[]
 
   @@index([clerkId])
 }
@@ -77,6 +91,11 @@ model AnalysisReport {
   id                String   @id @default(cuid())
   userId            String
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Human-facing correlation id for one review run (`pub_<base36>`), generated
+  /// at enqueue time and echoed inside the report payload so a support request
+  /// can be traced to a run. Deliberately NOT a foreign key to `Project`: the
+  /// review pipeline never creates a Project row, so an FK here would reject
+  /// every insert. Reports are the app's own top-level unit and cascade from User.
   projectId         String
   title             String
   targetPlatform    String
@@ -188,22 +207,104 @@ model Channel {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([platform, channelId])
+  /// Scoped to the owner, not global. A global unique on (platform, channelId)
+  /// meant the second user to connect the same channel hit a P2002 conflict
+  /// instead of the intended 403 — and made the ownership check unenforceable,
+  /// since the row could only ever belong to whoever connected first. Two
+  /// creators sharing a channel (agency + client) is normal and must work.
+  @@unique([userId, platform, channelId])
   @@index([userId])
-}
-
-model ApiKey {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name       String
-  key        String    @unique
-  usageCount Int       @default(0)
-  lastUsedAt DateTime?
-  createdAt  DateTime  @default(now())
+  /// Backs the cross-owner "is this channel already connected?" lookup in
+  /// POST /api/channels, which is not covered by the owner-scoped unique above.
+  @@index([platform, channelId])
 }
 
 model WebhookEvent {
   id        String   @id // Stores the dedupKey
   createdAt DateTime @default(now())
+}
+
+/// A referral signup: the referrer got credit, the referee got a free audit.
+model Referral {
+  id         String   @id @default(cuid())
+  code       String
+  /// The user whose link was shared (internal DB id).
+  referrerId String
+  referrer   User     @relation("referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  /// The account created from that link (internal DB id).
+  refereeId  String   @unique
+  referee    User     @relation("referee", fields: [refereeId], references: [id], onDelete: Cascade)
+  /// Both sides are credited once per referral. Set false until the credit
+  /// transaction commits, so a retried attach cannot double-pay.
+  granted    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([referrerId])
+  @@index([code])
+}
+
+/// A "challenge a friend" share. The token is the anchored report id (a cuid,
+/// unguessable), so issuing a challenge is just sharing a link — but the row
+/// records who accepted, against which report, so both sides can be credited
+/// exactly once and the challenger can be notified.
+model Challenge {
+  id                String    @id @default(cuid())
+  /// The report whose score is the one to beat (any user's shared report).
+  reportId          String
+  /// The creator who issued the challenge (owner of `reportId`).
+  challengerId      String
+  challenger        User      @relation("challenger", fields: [challengerId], references: [id], onDelete: Cascade)
+  /// The person who accepted and produced their own report, once set.
+  acceptedByUserId  String?
+  acceptedBy        User?     @relation("acceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  /// Their report id, once they finish a challenge-context review.
+  acceptedReportId  String?
+  acceptedAt        DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([challengerId])
+  @@index([reportId])
+}
+
+/// A persisted AI Coach conversation. The client sends and receives plain
+/// messages exactly as before; this row is where they live between visits.
+/// `reportId` is optional — when set, the coach builds its context from that
+/// report's scores and top fixes so the advice is grounded in the creator's
+/// actual review instead of being generic.
+model CoachThread {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String   @default("New conversation")
+  reportId   String?
+  messages   Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
+/// A landing-page newsletter signup.
+///
+/// The form used to call `setSubscribed(true)` and nothing else: it told the
+/// visitor to "check your inbox" while the address was discarded on the spot.
+/// This row is where an address goes now, so the promise the form makes is one
+/// the app can keep.
+///
+/// No `User` relation — most signups happen before anyone has an account, and
+/// tying the row to a user would mean either dropping anonymous addresses or
+/// creating shell accounts for them.
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  /// Lower-cased and trimmed before write, so `A@b.com` and `a@b.com ` are one
+  /// subscriber rather than two.
+  email     String   @unique
+  /// Which surface it came from, for when there is more than one form.
+  source    String   @default("landing-footer")
+  /// Set when the address is unsubscribed. Kept rather than deleted so a
+  /// re-signup cannot quietly resurrect someone who opted out.
+  unsubscribedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

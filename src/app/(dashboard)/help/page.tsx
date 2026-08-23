@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   FileText, ExternalLink, Mail, Keyboard, Search, BookOpen,
@@ -10,13 +10,21 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 
+/**
+ * Help Center.
+ *
+ * The search input filters the FAQ list live (title + answer match). Category
+ * cards set the same filter to their topic term, so clicking one behaves like
+ * typing it. "N articles" is dropped: the FAQ below is the entire knowledge
+ * base, and showing 44 phantom article counts was a lie.
+ */
 const CATEGORIES = [
-  { title: 'Getting started',     desc: 'Run your first review from upload to PDF.',                        icon: BookOpen,     count: 8 },
-  { title: 'Analyses & scores',   desc: 'What Low / Medium / High risk actually means.',                    icon: FileText,     count: 12 },
-  { title: 'Billing & plans',     desc: 'Upgrades, invoices, cancellations, and refunds.',                  icon: CreditCard,   count: 6 },
-  { title: 'Security & privacy',  desc: 'How your data is stored, encrypted, and deleted.',                 icon: Lock,         count: 5 },
-  { title: 'Account & settings',  desc: 'Profile, notifications, and data controls.',                       icon: User,         count: 7 },
-  { title: 'Support & contact',   desc: 'How to reach us, and what you can expect back.',                   icon: ExternalLink, count: 6 },
+  { title: 'Getting started',     term: 'review',        desc: 'Run your first review from upload to PDF.',   icon: BookOpen },
+  { title: 'Analyses & scores',   term: 'score',         desc: 'What Low / Medium / High risk actually means.', icon: FileText },
+  { title: 'Billing & plans',     term: 'subscription',  desc: 'Upgrades, invoices, cancellations, and refunds.', icon: CreditCard },
+  { title: 'Security & privacy',  term: 'data',          desc: 'How your data is stored, encrypted, and deleted.', icon: Lock },
+  { title: 'Account & settings',  term: 'settings',      desc: 'Profile, notifications, and data controls.',  icon: User },
+  { title: 'Support & contact',   term: 'support',       desc: 'How to reach us, and what you can expect back.', icon: ExternalLink },
 ];
 
 const POPULAR = [
@@ -40,10 +48,40 @@ const FAQ = [
   { q: 'How do I export a PDF report?', a: 'Open any analysis and use the Export button in the top-right corner of the report. A printer-friendly PDF downloads instantly, with your scores and issue list included.' },
   { q: 'What platforms does Publish check against?', a: 'YouTube, TikTok, Instagram, Facebook, and LinkedIn — each with platform-specific rules for monetization, hook strength, retention, and SEO.' },
   { q: 'How do I delete my account and data?', a: 'Go to Settings → Data → Delete account. Your reports and files are purged within 30 days, and if you had a paid plan it is cancelled at the same time.' },
+  { q: 'How does the free plan work?', a: 'The free plan includes one review per month. No credit card is required to sign up, and your first analysis is always free.' },
+  { q: 'How do I cancel my subscription?', a: 'From Settings → Billing & plan → Manage subscription. Cancelling stops the next renewal; your data stays accessible for 30 days after the paid period ends.' },
+  { q: 'Where can I get support?', a: 'Email support@genapps.online. Pro and Agency customers get a reply within 4 business hours; free and Creator plans are handled in the order they arrive.' },
 ];
 
 export default function HelpPage() {
   const [query, setQuery] = useState('');
+
+  const trimmed = query.trim();
+  const isSearching = trimmed.length > 0;
+
+  // Match against question + answer so searching "quota" finds the re-run
+  // entry, whose answer mentions quota but whose title does not.
+  const results = useMemo(() => {
+    if (!isSearching) return FAQ.map((f, i) => ({ ...f, index: i }));
+    const needle = trimmed.toLowerCase();
+    return FAQ.map((f, i) => ({ ...f, index: i })).filter(
+      (f) => f.q.toLowerCase().includes(needle) || f.a.toLowerCase().includes(needle),
+    );
+  }, [trimmed, isSearching]);
+
+  // Real counts: how many FAQ entries a category term actually matches. A card
+  // that matches nothing says so rather than advertising articles that do not exist.
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const cat of CATEGORIES) {
+      const needle = cat.term.toLowerCase();
+      counts.set(
+        cat.title,
+        FAQ.filter((f) => f.q.toLowerCase().includes(needle) || f.a.toLowerCase().includes(needle)).length,
+      );
+    }
+    return counts;
+  }, []);
 
   return (
     <div className="animate-enter">
@@ -60,69 +98,128 @@ export default function HelpPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search the docs — try 'quota' or 'export'"
-            className="w-full bg-white border border-ink-200 rounded-xl pl-11 pr-4 h-11 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+            placeholder="Search the FAQ — try 'quota' or 'export'"
+            aria-label="Search the FAQ"
+            className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl pl-11 pr-24 h-11 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
           />
+          {isSearching && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-medium text-ink-500 hover:text-white px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
-        {/* Category grid */}
-        <div>
-          <h2 className="font-display text-lg font-bold tracking-tight text-ink-900 mb-3">Browse topics</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {CATEGORIES.map((cat) => {
-              const Icon = cat.icon;
-              return (
-                <Card key={cat.title} hover className="cursor-pointer group">
-                  <div className="flex items-start gap-3.5">
-                    <div className="w-9 h-9 rounded-full bg-ink-100 flex items-center justify-center shrink-0 group-hover:bg-brand-600 transition-colors">
-                      <Icon className="w-4 h-4 text-ink-600 group-hover:text-white transition-colors" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-[14px] font-semibold text-ink-900">{cat.title}</h3>
-                        <span className="text-[12px] text-ink-400 tabular-nums">{cat.count} articles</span>
+        {/* Category grid — hidden while searching so the results are the focus */}
+        {!isSearching && (
+          <div>
+            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900 mb-3">Browse topics</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {CATEGORIES.map((cat) => {
+                const Icon = cat.icon;
+                const count = categoryCounts.get(cat.title) ?? 0;
+                return (
+                  <button
+                    key={cat.title}
+                    type="button"
+                    onClick={() => setQuery(cat.term)}
+                    className="text-left rounded-2xl border border-white/[0.06] bg-surface-panel p-5 group hover:border-white/[0.14] hover:shadow-card transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                  >
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-9 h-9 rounded-full bg-white/[0.08] flex items-center justify-center shrink-0 group-hover:bg-brand-600 transition-colors">
+                        <Icon className="w-4 h-4 text-ink-600 group-hover:text-white transition-colors" />
                       </div>
-                      <p className="text-[12.5px] text-ink-500 mt-0.5 leading-relaxed">{cat.desc}</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-[14px] font-semibold text-ink-900">{cat.title}</h3>
+                          <span className="text-[12px] text-ink-400 tabular-nums shrink-0">
+                            {count} {count === 1 ? 'answer' : 'answers'}
+                          </span>
+                        </div>
+                        <p className="text-[12.5px] text-ink-500 mt-0.5 leading-relaxed">{cat.desc}</p>
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Popular articles */}
-        <div>
-          <h2 className="font-display text-lg font-bold tracking-tight text-ink-900 mb-3">Popular articles</h2>
-          <Card padded={false}>
-            <div className="divide-y divide-ink-100">
-              {POPULAR.map((article) => (
-                <Link
-                  key={article.title}
-                  href={article.href}
-                  className="flex items-center justify-between px-5 py-3.5 hover:bg-ink-50 transition-colors group"
-                >
-                  <span className="text-[13.5px] text-ink-900 group-hover:text-brand-600 transition-colors">{article.title}</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-ink-400 group-hover:text-brand-600 transition-colors shrink-0" />
-                </Link>
-              ))}
+                  </button>
+                );
+              })}
             </div>
-          </Card>
-        </div>
+          </div>
+        )}
+
+        {/* Popular articles — anchors into the FAQ, so hide them while filtered */}
+        {!isSearching && (
+          <div>
+            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900 mb-3">Popular questions</h2>
+            <Card padded={false}>
+              <div className="divide-y divide-ink-100">
+                {POPULAR.map((article) => (
+                  <Link
+                    key={article.title}
+                    href={article.href}
+                    className="flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.06] transition-colors group"
+                  >
+                    <span className="text-[13.5px] text-ink-900 group-hover:text-brand-600 transition-colors">{article.title}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-ink-400 group-hover:text-brand-600 transition-colors shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
 
         {/* FAQ */}
         <div>
-          <h2 className="font-display text-lg font-bold tracking-tight text-ink-900 mb-3">Common questions</h2>
-          <Card padded={false}>
-            <div className="divide-y divide-ink-100">
-              {FAQ.map((f, i) => (
-                <div key={i} id={`faq-${i}`} className="p-5">
-                  <div className="text-[13.5px] font-semibold text-ink-900">{f.q}</div>
-                  <div className="text-[13px] text-ink-600 mt-1.5 leading-relaxed">{f.a}</div>
+          <div className="flex items-baseline justify-between gap-3 mb-3">
+            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+              {isSearching ? 'Search results' : 'Common questions'}
+            </h2>
+            {isSearching && (
+              <span className="text-[12px] text-ink-500 tabular-nums">
+                {results.length} of {FAQ.length}
+              </span>
+            )}
+          </div>
+
+          {results.length > 0 ? (
+            <Card padded={false}>
+              <div className="divide-y divide-ink-100">
+                {results.map((f) => (
+                  <div key={f.index} id={`faq-${f.index}`} className="p-5">
+                    <div className="text-[13.5px] font-semibold text-ink-900">{f.q}</div>
+                    <div className="text-[13px] text-ink-600 mt-1.5 leading-relaxed">{f.a}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : (
+            <Card>
+              <div className="text-center py-6">
+                <div className="w-10 h-10 rounded-full bg-white/[0.08] flex items-center justify-center mx-auto mb-3">
+                  <Search className="w-4 h-4 text-ink-400" />
                 </div>
-              ))}
-            </div>
-          </Card>
+                <p className="text-[14px] font-semibold text-ink-900">
+                  No answers for &ldquo;{trimmed}&rdquo;
+                </p>
+                <p className="text-[13px] text-ink-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
+                  This FAQ is short by design. If your question is not here, email
+                  support and we will answer it directly.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setQuery('')}>
+                    Clear search
+                  </Button>
+                  <Link href="mailto:support@genapps.online">
+                    <Button variant="dark" size="sm" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+                      Email support
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* Shortcuts */}
@@ -139,7 +236,7 @@ export default function HelpPage() {
                   {s.keys.map((k) => (
                     <kbd
                       key={k}
-                      className="min-w-[22px] h-[22px] px-1.5 flex items-center justify-center bg-ink-100 border border-ink-200 rounded text-[10.5px] font-sans text-ink-700"
+                      className="min-w-[22px] h-[22px] px-1.5 flex items-center justify-center bg-white/[0.08] border border-ink-200 rounded text-[10.5px] font-sans text-ink-700"
                     >
                       {k}
                     </kbd>

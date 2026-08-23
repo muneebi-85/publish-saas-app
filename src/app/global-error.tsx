@@ -4,14 +4,14 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, RotateCw, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { reportClientError } from '@/lib/report-error';
 
 export default function GlobalError({
   error, reset,
 }: { error: Error & { digest?: string }; reset: () => void }) {
-  useEffect(() => {
-    // TODO: forward to Sentry / PostHog once wired.
-    console.error('[client error]', error);
-  }, [error]);
+  // Forwarded to /api/telemetry so the copy below ("already been reported") is
+  // true rather than reassuring.
+  useEffect(() => { reportClientError(error, 'client error'); }, [error]);
 
   return (
     <html lang="en">

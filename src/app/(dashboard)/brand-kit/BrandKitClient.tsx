@@ -1,38 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Plus, X, UploadCloud, Palette, Type, ImageIcon, Volume2, Ban, Check } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Plus, X, UploadCloud, Palette, Type, ImageIcon, Volume2, Ban, Check, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-
-export const DEFAULT_KIT = {
-  colors: [
-    { name: 'Brand green', hex: '#16A34A' },
-    { name: 'Ink', hex: '#111111' },
-    { name: 'Accent amber', hex: '#F59E0B' },
-    { name: 'Soft sand', hex: '#F5F1E8' },
-  ],
-  headingFont: 'General Sans',
-  bodyFont: 'Inter',
-  tones: ['Friendly', 'Expert'],
-  description:
-    'We help everyday creators grow with honest, practical advice. We sound like a knowledgeable friend — warm, clear, and never hype-y.',
-  banned: ['guaranteed', 'get rich quick', 'literally', 'guys', 'insane'],
-};
+import { type Kit } from '@/lib/brand-kit';
 
 const HEADING_FONTS = ['Inter', 'General Sans', 'Söhne', 'Poppins', 'Space Grotesk'];
 const BODY_FONTS = ['Inter', 'Söhne', 'Georgia', 'System UI', 'IBM Plex Sans'];
 const TONE_OPTIONS = ['Friendly', 'Expert', 'Bold', 'Playful', 'Calm'];
 
-interface Kit {
-  colors: { name: string; hex: string }[];
-  headingFont: string;
-  bodyFont: string;
-  tones: string[];
-  description: string;
-  banned: string[];
-}
+/** Mirrors the `logo` slot allowlist in /api/upload/presign. SVG is excluded there. */
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 
 export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) => {
   const [colors, setColors] = useState(initialKit.colors);
@@ -42,9 +23,28 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
   const [description, setDescription] = useState(initialKit.description);
   const [banned, setBanned] = useState<string[]>(initialKit.banned);
   const [bannedDraft, setBannedDraft] = useState('');
+  const [logoUrl, setLogoUrl] = useState<string | null>(initialKit.logoUrl);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Object URLs are revoked on replace/unmount so a long editing session cannot
+  // leak one blob per preview.
+  const previewRef = useRef<string | null>(null);
+  useEffect(() => {
+    return () => {
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    };
+  }, []);
+
+  const setPreview = (url: string | null) => {
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    previewRef.current = url;
+    setLogoPreview(url);
+  };
 
   const addColor = () => {
     setColors((prev) => [...prev, { name: 'New color', hex: '#22C55E' }]);
@@ -77,6 +77,76 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
     setBanned((prev) => prev.filter((w) => w !== word));
   };
 
+  /**
+   * Logo upload: presign → PUT to storage → keep the returned public URL.
+   * The URL is only held in state here; it is persisted by "Save changes"
+   * along with the rest of the kit, so one Save covers the whole page.
+   */
+  const onLogoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset immediately so re-picking the same file fires change again.
+    e.target.value = '';
+    if (!file) return;
+
+    setLogoError(null);
+
+    if (!LOGO_TYPES.includes(file.type)) {
+      setLogoError('Logo must be a PNG, JPG, or WebP file.');
+      return;
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setLogoError('Logo must be 5 MB or smaller.');
+      return;
+    }
+
+    setPreview(URL.createObjectURL(file));
+    setLogoUploading(true);
+    try {
+      const presignRes = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slot: 'logo',
+          filename: file.name,
+          contentType: file.type,
+          size: file.size,
+        }),
+      });
+      const presign = await presignRes.json().catch(() => null);
+      if (!presignRes.ok) {
+        throw new Error(presign?.error ?? 'Could not prepare the upload.');
+      }
+      if (!presign?.publicUrl) {
+        // Without a public read origin there is no URL we could render later,
+        // so surface that rather than storing a key that resolves to nothing.
+        throw new Error(
+          'This deployment has no public storage URL configured, so logos cannot be displayed yet.',
+        );
+      }
+
+      const put = await fetch(presign.signedUrl, {
+        method: 'PUT',
+        headers: presign.requiredHeaders,
+        body: file,
+      });
+      if (!put.ok) throw new Error(`Storage rejected the upload (${put.status}).`);
+
+      setLogoUrl(presign.publicUrl);
+      setPreview(null);
+    } catch (err) {
+      setPreview(null);
+      setLogoError(err instanceof Error ? err.message : 'Could not upload the logo.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const removeLogo = () => {
+    setPreview(null);
+    setLogoUrl(null);
+    setLogoError(null);
+  };
+
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -86,7 +156,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brandKit: { colors, headingFont, bodyFont, tones, description, banned },
+          brandKit: { colors, headingFont, bodyFont, tones, description, banned, logoUrl },
         }),
       });
       if (!res.ok) {
@@ -103,7 +173,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
   };
 
   const inputClass =
-    'w-full bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors';
+    'w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors';
 
   return (
     <div className="animate-enter">
@@ -113,7 +183,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
         showUtility
         actions={
           <div className="flex items-center gap-2">
-            {error && <span className="text-[12.5px] text-crimson-600">{error}</span>}
+            {error && <span className="text-[12.5px] text-crimson-700">{error}</span>}
             {saved && (
               <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-grass-700">
                 <Check className="w-3.5 h-3.5" /> Saved
@@ -132,8 +202,14 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
           <SectionHead
             icon={<Palette className="w-4 h-4" />}
             title="Brand colors"
-            desc="The palette we pull from for thumbnails, captions, and overlays."
+            desc="Your saved palette, kept in one place so hex codes are here when you build a thumbnail."
           />
+          {colors.length === 0 && (
+            <p className="text-[13px] text-ink-500 mb-4">
+              No colors yet. Add the ones you actually use and their hex codes stay
+              with your kit.
+            </p>
+          )}
           <div className="flex flex-wrap gap-4">
             {colors.map((c, i) => (
               <div key={i} className="group relative w-28">
@@ -151,7 +227,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
                     type="button"
                     onClick={() => removeColor(i)}
                     aria-label={`Remove ${c.name}`}
-                    className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/90 text-ink-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:text-ink-900"
+                    className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/90 text-ink-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:text-white"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -166,7 +242,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
             <button
               type="button"
               onClick={addColor}
-              className="w-28 h-20 rounded-xl border border-dashed border-ink-300 flex flex-col items-center justify-center gap-1 text-ink-500 hover:border-brand-600 hover:text-brand-600 transition-colors"
+              className="w-28 h-20 rounded-xl border border-dashed border-white/[0.14] flex flex-col items-center justify-center gap-1 text-ink-500 hover:border-brand-600 hover:text-brand-600 transition-colors"
               aria-label="Add color"
             >
               <Plus className="w-5 h-5" />
@@ -180,7 +256,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
           <SectionHead
             icon={<Type className="w-4 h-4" />}
             title="Typography"
-            desc="Fonts applied to generated titles and on-screen text."
+            desc="The pairing you use for titles and body copy, previewed below."
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -227,25 +303,80 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
           <SectionHead
             icon={<ImageIcon className="w-4 h-4" />}
             title="Logo & watermark"
-            desc="Used as an overlay on exported clips and thumbnails."
+            desc="Stored with your kit so it is one click away when you need it."
           />
           <div className="grid grid-cols-1 sm:grid-cols-[auto,1fr] gap-4 items-stretch">
-            <div className="w-full sm:w-40 h-40 rounded-2xl border border-ink-200 bg-surface-canvas flex flex-col items-center justify-center gap-2 text-ink-500">
-              <div className="w-12 h-12 rounded-xl bg-brand-600 text-white flex items-center justify-center font-display font-bold text-xl">
-                A
-              </div>
-              <span className="text-[12px] font-medium">Current logo</span>
+            <div className="relative w-full sm:w-40 h-40 rounded-2xl border border-ink-200 bg-surface-canvas flex flex-col items-center justify-center gap-2 text-ink-500 overflow-hidden">
+              {logoPreview || logoUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded asset on an
+                      arbitrary storage origin; next/image would need every deployment's CDN in
+                      remotePatterns, and this renders at a fixed 160px box. */}
+                  <img
+                    src={logoPreview ?? logoUrl ?? ''}
+                    alt="Your brand logo"
+                    className="max-w-[80%] max-h-[70%] object-contain"
+                  />
+                  <span className="text-[12px] font-medium">
+                    {logoUploading ? 'Uploading…' : 'Current logo'}
+                  </span>
+                  {!logoUploading && (
+                    <button
+                      type="button"
+                      onClick={removeLogo}
+                      aria-label="Remove logo"
+                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 border border-ink-200 text-ink-600 flex items-center justify-center hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {logoUploading && (
+                    <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 animate-spin text-brand-600" />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="w-12 h-12 rounded-xl border border-dashed border-white/[0.14] flex items-center justify-center">
+                    <ImageIcon className="w-5 h-5 text-ink-400" />
+                  </div>
+                  <span className="text-[12px] font-medium text-ink-500">No logo yet</span>
+                </>
+              )}
             </div>
-            <label className="rounded-2xl border border-dashed border-ink-300 flex flex-col items-center justify-center gap-2 p-6 text-center cursor-pointer hover:border-brand-600 transition-colors">
-              <div className="w-11 h-11 rounded-full bg-ink-100 flex items-center justify-center text-ink-600">
-                <UploadCloud className="w-5 h-5" />
+            <label
+              className={`rounded-2xl border border-dashed border-white/[0.14] flex flex-col items-center justify-center gap-2 p-6 text-center transition-colors focus-within:border-brand-600 ${
+                logoUploading ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:border-brand-600'
+              }`}
+            >
+              <div className="w-11 h-11 rounded-full bg-white/[0.08] flex items-center justify-center text-ink-600">
+                {logoUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
               </div>
-              <div className="text-[14px] font-semibold text-ink-900">Upload a new logo</div>
-              <div className="text-[13px] text-ink-500">PNG or SVG with transparent background, up to 5MB.</div>
-              <input type="file" accept="image/png,image/svg+xml" className="sr-only" />
-              <span className="text-[12px] font-semibold text-brand-600 mt-1">Browse files</span>
+              <div className="text-[14px] font-semibold text-ink-900">
+                {logoUrl ? 'Replace your logo' : 'Upload a logo'}
+              </div>
+              <div className="text-[13px] text-ink-500">PNG, JPG, or WebP with a transparent background, up to 5MB.</div>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="sr-only"
+                disabled={logoUploading}
+                onChange={onLogoSelected}
+              />
+              <span className="text-[12px] font-semibold text-brand-600 mt-1">
+                {logoUploading ? 'Uploading…' : 'Browse files'}
+              </span>
             </label>
           </div>
+          {logoError && (
+            <p role="alert" className="text-[12.5px] text-crimson-700 mt-3">{logoError}</p>
+          )}
+          {logoUrl && !logoError && (
+            <p className="text-[12.5px] text-ink-500 mt-3">
+              Uploaded. Choose <span className="font-medium text-ink-700">Save changes</span> to keep it on your kit.
+            </p>
+          )}
         </Card>
 
         {/* Tone of voice */}
@@ -253,7 +384,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
           <SectionHead
             icon={<Volume2 className="w-4 h-4" />}
             title="Tone of voice"
-            desc="Guides how the AI rewrites hooks, titles, and scripts for you."
+            desc="Selected tones and your brand description steer the AI when it rewrites scripts for you."
           />
           <div className="flex flex-wrap gap-2 mb-5">
             {TONE_OPTIONS.map((tone) => {
@@ -267,7 +398,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
                   className={`px-3.5 h-9 rounded-full text-[13px] font-medium border transition-colors ${
                     active
                       ? 'bg-brand-50 border-brand-600 text-brand-700'
-                      : 'bg-white border-ink-200 text-ink-600 hover:border-ink-300 hover:text-ink-900'
+                      : 'bg-white/[0.03] border-white/[0.08] text-ink-600 hover:border-white/[0.16] hover:text-white'
                   }`}
                 >
                   {tone}
@@ -275,6 +406,12 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
               );
             })}
           </div>
+          {tones.length === 0 && (
+            <p className="text-[13px] text-ink-500 mb-5 -mt-2">
+              No tone selected. Until you pick one, rewrites follow the script&apos;s
+              own voice rather than a brand tone.
+            </p>
+          )}
           <div>
             <label htmlFor="brand-description" className="text-[13px] font-medium text-ink-700 block mb-1.5">
               Brand description
@@ -284,7 +421,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full bg-white border border-ink-200 rounded-xl px-3.5 py-2.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors resize-none"
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors resize-none"
               placeholder="Describe who you are and how you want to sound."
             />
           </div>
@@ -295,7 +432,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
           <SectionHead
             icon={<Ban className="w-4 h-4" />}
             title="Banned words / do-not-say"
-            desc="We'll avoid these words and phrases in every generated draft."
+            desc="Script rewrites are told to avoid these, then checked — anything that slips through is flagged on the result."
           />
           <form onSubmit={addBanned} className="flex gap-2 mb-4">
             <input
@@ -316,14 +453,14 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
               {banned.map((word) => (
                 <span
                   key={word}
-                  className="inline-flex items-center gap-1.5 pl-3 pr-1.5 h-8 rounded-full bg-ink-100 text-[13px] font-medium text-ink-700"
+                  className="inline-flex items-center gap-1.5 pl-3 pr-1.5 h-8 rounded-full bg-white/[0.08] text-[13px] font-medium text-ink-700"
                 >
                   {word}
                   <button
                     type="button"
                     onClick={() => removeBanned(word)}
                     aria-label={`Remove ${word}`}
-                    className="w-5 h-5 rounded-full flex items-center justify-center text-ink-400 hover:text-ink-900 hover:bg-ink-200 transition-colors"
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-ink-400 hover:text-white hover:bg-white/[0.09] transition-colors"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>

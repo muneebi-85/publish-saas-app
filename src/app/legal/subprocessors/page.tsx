@@ -2,7 +2,10 @@ import { LEGAL } from '@/lib/legal/config';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: `Subprocessors · ${LEGAL.productName}`,
+  // The root layout sets a title template of '%s · Publish', so the product
+  // name is appended for us. Repeating it here produced
+  // "Subprocessors · Publish · Publish" in the tab and in search results.
+  title: 'Subprocessors',
   description: 'The vendors we rely on to run the service, updated whenever the list changes.',
 };
 

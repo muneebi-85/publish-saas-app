@@ -15,12 +15,12 @@ const RetentionBar: React.FC<{ label: string; value: number; hint: string; tone:
   };
   const [txt, bar] = toneMap[tone].split(' ');
   return (
-    <div className="rounded-xl border border-ink-200 bg-white p-4">
+    <div className="rounded-xl border border-white/[0.06] bg-surface-panel p-4">
       <div className="flex items-baseline justify-between">
         <div className="text-[11px] font-medium text-ink-500">{label}</div>
         <div className={`text-xl font-semibold tabular-nums tracking-tight ${txt}`}>{value}%</div>
       </div>
-      <div className="mt-3 h-1.5 w-full bg-ink-100 rounded-full overflow-hidden">
+      <div className="mt-3 h-1.5 w-full bg-white/[0.08] rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${bar}`} style={{ width: `${value}%` }} />
       </div>
       <div className="text-[11.5px] text-ink-500 mt-2 leading-snug">{hint}</div>
@@ -33,10 +33,10 @@ export const HookPredictor: React.FC<{ hook: HookRetentionMetric }> = ({ hook })
     v >= 85 ? 'success' : v >= 65 ? 'warning' : 'danger';
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
+    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-ink-900 text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
             <Flame className="w-4 h-4" />
           </div>
           <div>
@@ -66,7 +66,7 @@ export const HookPredictor: React.FC<{ hook: HookRetentionMetric }> = ({ hook })
         <div className="space-y-2">
           {hook.recommendedHooks.map((h, i) => (
             <div key={i} className="flex items-start gap-3 p-3.5 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-800 leading-relaxed">
-              <span className="w-5 h-5 rounded-md bg-ink-900 text-white text-[10.5px] font-semibold flex items-center justify-center shrink-0 tabular-nums">
+              <span className="w-5 h-5 rounded-md bg-white/[0.06] text-white text-[10.5px] font-semibold flex items-center justify-center shrink-0 tabular-nums">
                 {i + 1}
               </span>
               &ldquo;{h}&rdquo;

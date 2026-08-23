@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/api-guards';
 import { prisma } from '@/lib/db';
 import { rateLimit, userKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
+import { env } from '@/lib/env';
 import * as v from '@/lib/validate';
 
 export const runtime = 'nodejs';
@@ -19,6 +20,40 @@ const MAX_COLORS = 12;
 const MAX_BANNED = 50;
 const MAX_TONES = 6;
 const MAX_STR_LEN = 200;
+
+/**
+ * The logo URL is rendered in an <img>, so it is not free-form text: it must be
+ * an https URL under the storage origin this deployment actually uploaded to.
+ * Accepting an arbitrary URL here would let a caller point the tag anywhere
+ * (tracking pixel, mixed content, or a payload host).
+ */
+function validateLogoUrl(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw === null || raw === undefined || raw === '') return { ok: true, value: null };
+  if (typeof raw !== 'string' || raw.length > 2_048) {
+    return { ok: false, error: 'logoUrl must be a string under 2048 characters.' };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return { ok: false, error: 'logoUrl must be a valid absolute URL.' };
+  }
+  if (parsed.protocol !== 'https:') {
+    return { ok: false, error: 'logoUrl must use https.' };
+  }
+
+  const origin = env.S3_PUBLIC_URL;
+  if (!origin) {
+    return { ok: false, error: 'This deployment has no public storage origin configured, so a logo URL cannot be stored.' };
+  }
+  const allowed = origin.replace(/\/+$/, '');
+  if (raw !== allowed && !raw.startsWith(`${allowed}/`)) {
+    return { ok: false, error: 'logoUrl must point at this deployment’s storage origin.' };
+  }
+
+  return { ok: true, value: raw };
+}
 
 function sanitizeBrandKit(raw: unknown): { ok: true; value: unknown } | { ok: false; error: string } {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -72,9 +107,20 @@ function sanitizeBrandKit(raw: unknown): { ok: true; value: unknown } | { ok: fa
     banned.push(b.trim().toLowerCase());
   }
 
+  const logoUrl = validateLogoUrl(r.logoUrl);
+  if (!logoUrl.ok) return { ok: false, error: logoUrl.error };
+
   return {
     ok: true,
-    value: { colors, headingFont: headingFont.value, bodyFont: bodyFont.value, description: description.value, tones, banned },
+    value: {
+      colors,
+      headingFont: headingFont.value,
+      bodyFont: bodyFont.value,
+      description: description.value,
+      tones,
+      banned,
+      logoUrl: logoUrl.value,
+    },
   };
 }
 

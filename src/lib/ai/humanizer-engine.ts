@@ -7,7 +7,7 @@
  * creator's own text, so the route degrades instead of failing.
  */
 
-import { chatJSON, chat } from './nvidia';
+import { chatJSON } from './nvidia';
 import { TRUST_SYSTEM_PREAMBLE, scrubForbidden } from './guardrails';
 
 export interface HumanizeOptions {
@@ -15,6 +15,19 @@ export interface HumanizeOptions {
   formality: number;         // 0 (casual) .. 100 (formal)
   emotionIntensity: number;  // 0 (flat)   .. 100 (high)
   targetPlatform: 'YouTube' | 'TikTok' | 'Instagram' | 'Facebook' | 'LinkedIn';
+  /**
+   * The caller's saved brand kit, when they have one. The Brand Kit page tells
+   * users their tone selections guide rewrites and their banned words are kept
+   * out of generated drafts — this is what makes that true. Both are enforced
+   * twice: in the system prompt, and again by `stripBanned()` on the way out, so
+   * the promise holds even when the model ignores an instruction or when the
+   * deterministic fallback runs.
+   */
+  brandVoice?: {
+    tones: string[];
+    banned: string[];
+    description: string;
+  };
 }
 
 export interface HumanizeResult {
@@ -23,6 +36,44 @@ export interface HumanizeResult {
   changesSummary: string[];
   metricsBefore: { gptProbabilityScore: number; readabilityGrade: string; hookStrengthScore: number };
   metricsAfter:  { gptProbabilityScore: number; readabilityGrade: string; hookStrengthScore: number };
+  /**
+   * Present only when the caller had a brand kit saved. `bannedRemaining` is the
+   * honest half of the contract: we ask the model to avoid these, check the
+   * output, and ask once more — but we never claim a word is gone without
+   * looking, so anything still present is surfaced instead of hidden.
+   */
+  brandVoice?: {
+    tonesApplied: string[];
+    bannedChecked: number;
+    bannedRemaining: string[];
+  };
+}
+
+/** Escape a user-supplied phrase for safe use inside a RegExp. */
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Which banned phrases actually survive in `text`.
+ *
+ * Matched on word boundaries so a banned "ai" does not fire on "said", and
+ * case-insensitively because the creator types "Crypto" but the model writes
+ * "crypto". Deliberately a detector, not a rewriter: deleting a word mid-sentence
+ * produces broken copy, and inventing a replacement would put words in the
+ * creator's mouth. We report what is left and let the model or the user fix it.
+ */
+export function findBanned(text: string, banned: string[]): string[] {
+  const hay = text;
+  return banned.filter((phrase) => {
+    const p = phrase.trim();
+    if (!p) return false;
+    // \b is only meaningful next to a word character; phrases can start or end
+    // with punctuation, so anchor loosely in that case.
+    const lead = /^\w/.test(p) ? '\\b' : '';
+    const tail = /\w$/.test(p) ? '\\b' : '';
+    return new RegExp(`${lead}${escapeRe(p)}${tail}`, 'i').test(hay);
+  });
 }
 
 interface RawHumanizeResponse {
@@ -51,13 +102,26 @@ function buildSystemPrompt(o: HumanizeOptions): string {
     LinkedIn: 'Professional narrative arc, first-person insight, no hype language.',
   };
 
+  // Brand-kit block. Only emitted when the creator actually saved something, so
+  // an empty kit costs no tokens and steers nothing.
+  const bv = o.brandVoice;
+  const brandBlock = [
+    bv?.tones.length ? `Brand tone — the creator selected: ${bv.tones.join(', ')}. Layer this over the delivery style above; where they conflict, the brand tone wins.` : '',
+    bv?.description.trim() ? `Brand description, in the creator's own words: """${bv.description.trim().slice(0, 600)}"""` : '',
+    bv?.banned.length
+      ? `BANNED WORDS — the creator has forbidden these words and phrases: ${bv.banned.map((b) => `"${b}"`).join(', ')}. Do not use any of them in humanizedText or changesSummary. If one appears in their original script, rewrite around it and say so in the summary. This is a hard constraint, not a preference.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
   return `${TRUST_SYSTEM_PREAMBLE}
 
 You are the AI-Humanizer review layer.
 
 Rewrite the given script to sound ${toneMap[o.tone]}. Formality: ${formality}. Emotion intensity: ${o.emotionIntensity}/100.
 Platform: ${o.targetPlatform}. ${platformNotes[o.targetPlatform]}
-
+${brandBlock ? `\n${brandBlock}\n` : ''}
 Rules:
 - Preserve the creator's meaning exactly. Do not invent new facts, quotes, statistics, or brand mentions.
 - Remove "AI-flavored" phrases (delve into, furthermore, in conclusion, cutting-edge, landscape of, harness the power of).
@@ -90,25 +154,77 @@ export async function humanizeScriptContent(
   options: HumanizeOptions,
 ): Promise<HumanizeResult> {
   const trimmed = rawScript.trim();
+  const banned = options.brandVoice?.banned ?? [];
 
-  const raw = await chatJSON<RawHumanizeResponse>(
-    [
-      { role: 'system', content: buildSystemPrompt(options) },
-      { role: 'user',   content: `Rewrite this script:\n\n"""${trimmed.slice(0, 8000)}"""` },
-    ],
-    { model: 'reasoning', temperature: 0.6, maxTokens: 1600 },
-  );
+  const messages = [
+    { role: 'system' as const, content: buildSystemPrompt(options) },
+    { role: 'user' as const, content: `Rewrite this script:\n\n"""${trimmed.slice(0, 8000)}"""` },
+  ];
+
+  let raw = await chatJSON<RawHumanizeResponse>(messages, {
+    model: 'reasoning',
+    temperature: 0.6,
+    maxTokens: 1600,
+  });
 
   if (!raw) return heuristicHumanize(rawScript, options);
 
+  // Enforce the banned list rather than trusting the instruction. One corrective
+  // pass only: if the model still cannot avoid the words, we report them instead
+  // of looping the user's request into a retry storm.
+  if (banned.length > 0) {
+    const leaked = findBanned(raw.humanizedText || '', banned);
+    if (leaked.length > 0) {
+      const retry = await chatJSON<RawHumanizeResponse>(
+        [
+          ...messages,
+          { role: 'assistant', content: JSON.stringify(raw) },
+          {
+            role: 'user',
+            content: `Your rewrite still contains banned ${leaked.length === 1 ? 'phrase' : 'phrases'}: ${leaked
+              .map((b) => `"${b}"`)
+              .join(', ')}. Rewrite the affected sentences so the meaning survives without those words. Return the same JSON schema.`,
+          },
+        ],
+        { model: 'reasoning', temperature: 0.4, maxTokens: 1600 },
+      );
+      // Only accept the retry if it genuinely improved on the leak.
+      if (retry?.humanizedText && findBanned(retry.humanizedText, banned).length < leaked.length) {
+        raw = retry;
+      }
+    }
+  }
+
+  const humanizedText = scrubForbidden(raw.humanizedText || rawScript).clean;
+  const changesSummary = (raw.changesSummary ?? []).slice(0, 6).map((c) => scrubForbidden(c).clean);
+
   return {
     originalText:  rawScript,
-    humanizedText: scrubForbidden(raw.humanizedText || rawScript).clean,
-    changesSummary: (raw.changesSummary ?? [])
-      .slice(0, 6)
-      .map((c) => scrubForbidden(c).clean),
+    humanizedText,
+    changesSummary,
     metricsBefore: raw.metricsBefore,
     metricsAfter:  raw.metricsAfter,
+    ...brandVoiceReport(humanizedText, options),
+  };
+}
+
+/**
+ * Build the `brandVoice` block for a finished rewrite, or nothing when the
+ * caller had no kit. Reports what was actually enforced — including any banned
+ * phrase still present, which the UI shows rather than quietly swallowing.
+ */
+function brandVoiceReport(
+  humanizedText: string,
+  options: HumanizeOptions,
+): Pick<HumanizeResult, 'brandVoice'> {
+  const bv = options.brandVoice;
+  if (!bv || (bv.tones.length === 0 && bv.banned.length === 0)) return {};
+  return {
+    brandVoice: {
+      tonesApplied: bv.tones,
+      bannedChecked: bv.banned.length,
+      bannedRemaining: findBanned(humanizedText, bv.banned),
+    },
   };
 }
 
@@ -138,6 +254,16 @@ export function heuristicHumanize(rawScript: string, options: HumanizeOptions): 
       humanized = humanized.replace(re, replacement);
     }
   });
+
+  // Banned-words pass. Without the model there is no safe way to rewrite around
+  // a forbidden phrase — deleting it breaks the sentence, and substituting one
+  // would put words in the creator's mouth. So the fallback detects rather than
+  // edits, and the summary names each phrase and where it sits. That keeps the
+  // Brand Kit promise honest in degraded mode: checked every time, never
+  // silently claimed clean.
+  const bannedFound = options.brandVoice?.banned.length
+    ? findBanned(humanized, options.brandVoice.banned)
+    : [];
 
   // Hook edit — only counts when a "Today" anchor is actually present to rewrite.
   let hookRewritten = false;
@@ -176,6 +302,11 @@ export function heuristicHumanize(rawScript: string, options: HumanizeOptions): 
       `Flagged ${longSentences} sentence${longSentences > 1 ? 's' : ''} over ~30 words for splitting — long clauses are hard to deliver on camera in one breath and blur the point on a sound-on watch; break each at its natural "and"/"but" seam into two spoken lines.`,
     );
   }
+  if (bannedFound.length > 0) {
+    changesSummary.push(
+      `Your brand kit bans ${bannedFound.map((b) => `"${b}"`).join(', ')}, and ${bannedFound.length > 1 ? 'these are' : 'this is'} still in the script — the live rewriter was unreachable on this pass, and rewriting around a banned phrase without it would mean inventing wording you never approved. Search the draft for ${bannedFound.map((b) => `"${b}"`).join(', ')} and swap in your own preferred term, or re-run once the rewriter is back.`,
+    );
+  }
   changesSummary.push(
     `Kept every fact, number, and name from your original intact — this pass only changes phrasing and rhythm, so nothing here affects claims you'd need to stand behind. These are text-level estimates, not a detector reading; run the rewrite through your own AI-detector of record before relying on a specific score.`,
   );
@@ -203,5 +334,6 @@ export function heuristicHumanize(rawScript: string, options: HumanizeOptions): 
       readabilityGrade: 'Grade 7 (Conversational)',
       hookStrengthScore: afterHookScore,
     },
+    ...brandVoiceReport(humanized, options),
   };
 }

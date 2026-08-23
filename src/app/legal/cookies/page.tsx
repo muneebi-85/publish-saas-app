@@ -2,7 +2,10 @@ import { LEGAL } from '@/lib/legal/config';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: `Cookie Policy · ${LEGAL.productName}`,
+  // The root layout sets a title template of '%s · Publish', so the product
+  // name is appended for us. Repeating it here produced
+  // "Cookie Policy · Publish · Publish" in the tab and in search results.
+  title: 'Cookie Policy',
   description: 'What cookies we use and how to manage them.',
 };
 

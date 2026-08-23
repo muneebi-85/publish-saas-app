@@ -10,7 +10,6 @@ export const ThumbnailAnalyzer: React.FC<{ thumbnail: ThumbnailMetric; thumbnail
   thumbnail, thumbnailUrl,
 }) => {
   const measured = thumbnail.measured;
-  const pct = (v: number | null) => (v === null ? 'Not measured' : `${v}%`);
   const score = (v: number | null) => (v === null ? 'Not measured' : `${v}/100`);
   const faceEmotion =
     thumbnail.faceCount === null
@@ -22,10 +21,10 @@ export const ThumbnailAnalyzer: React.FC<{ thumbnail: ThumbnailMetric; thumbnail
       : `${thumbnail.textReadabilityScore}% · ${thumbnail.contrastRating}`;
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
+    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-ink-900 text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
             <ImageIcon className="w-4 h-4" />
           </div>
           <div>
@@ -56,16 +55,26 @@ export const ThumbnailAnalyzer: React.FC<{ thumbnail: ThumbnailMetric; thumbnail
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 p-6">
-        <div className="relative rounded-xl overflow-hidden border border-ink-200 aspect-video bg-ink-100">
-          <Image
-            src={thumbnailUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}
-            alt="Thumbnail preview"
-            fill
-            className="object-cover"
-          />
-          <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-1 bg-black/70 backdrop-blur-sm rounded-md text-[11px] font-medium text-white">
-            <Eye className="w-3 h-3" /> {thumbnail.ctrPredictionScore === null ? 'CTR not measured' : `Predicted CTR ${thumbnail.ctrPredictionScore}%`}
-          </div>
+        <div className="relative rounded-xl overflow-hidden border border-ink-200 aspect-video bg-white/[0.08]">
+          {thumbnailUrl ? (
+            <Image
+              src={thumbnailUrl}
+              alt="Thumbnail preview"
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-400">
+              <ImageIcon className="w-7 h-7" />
+              <span className="text-[11.5px] font-medium">No thumbnail attached</span>
+            </div>
+          )}
+          {thumbnailUrl && (
+            <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-1 bg-black/70 backdrop-blur-sm rounded-md text-[11px] font-medium text-white">
+              <Eye className="w-3 h-3" /> {thumbnail.ctrPredictionScore === null ? 'CTR not measured' : `Predicted CTR ${thumbnail.ctrPredictionScore}%`}
+            </div>
+          )}
         </div>
 
         <div className="md:col-span-2 grid grid-cols-2 gap-2.5">
@@ -78,7 +87,7 @@ export const ThumbnailAnalyzer: React.FC<{ thumbnail: ThumbnailMetric; thumbnail
             <h4 className="text-[12px] font-semibold text-brand-600 mb-2">{measured ? 'CTR improvements' : 'How to enable this layer'}</h4>
             {thumbnail.recommendations.map((rec, i) => (
               <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
-                <CheckCircle2 className="w-4 h-4 text-grass-600 shrink-0 mt-0.5" />
+                <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
                 {rec}
               </div>
             ))}

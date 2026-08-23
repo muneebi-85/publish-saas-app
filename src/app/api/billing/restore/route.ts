@@ -21,21 +21,28 @@ import { rateLimit, userKey, tooManyRequests } from '@/lib/ratelimit';
 import { env } from '@/lib/env';
 import { prisma } from '@/lib/db';
 import { requireAuth } from '@/lib/api-guards';
-import { setUserPlan, resetQuota, Plan } from '@/lib/session';
+import { primaryEmailOf } from '@/lib/clerk-identity';
+import { resolvePlan, type VariantMap } from '@/lib/billing/plan-resolution';
+import { setUserPlan, resetQuota } from '@/lib/session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** Map a purchased variant to a tier. Returns null when unmapped — never guesses. */
-function planFromVariant(variantId: string): Plan | null {
-  if (!variantId) return null;
-  if (variantId === env.LS_VARIANT_AGENCY) return 'agency';
-  if (variantId === env.LS_VARIANT_PRO) return 'pro';
-  if (variantId === env.LS_VARIANT_STARTER) return 'starter';
-  return null;
-}
+/**
+ * Variant → tier mapping, shared with the webhook via plan-resolution.ts so the
+ * two paths that can grant a paid plan cannot drift apart. resolvePlan() never
+ * returns 'free' and never matches an unset env var against an empty variant id.
+ */
+const VARIANT_MAP: VariantMap = {
+  starter: env.LS_VARIANT_STARTER,
+  pro: env.LS_VARIANT_PRO,
+  agency: env.LS_VARIANT_AGENCY,
+};
 
-export async function POST(_req: Request) {
+// No parameter: the restore decision is made entirely from the authenticated
+// session and Lemon Squeezy's answer, so the request body is never read (see the
+// security note above — accepting an email here would be the whole vulnerability).
+export async function POST() {
   const authCtx = await requireAuth();
   if (authCtx instanceof NextResponse) return authCtx;
 
@@ -54,10 +61,7 @@ export async function POST(_req: Request) {
 
   // Only the verified session email is trusted — never a body-supplied one.
   const clerkUser = await currentUser();
-  const email =
-    clerkUser?.emailAddresses?.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-    clerkUser?.emailAddresses?.[0]?.emailAddress ??
-    null;
+  const email = primaryEmailOf(clerkUser);
 
   if (!email) {
     return NextResponse.json(
@@ -95,7 +99,16 @@ export async function POST(_req: Request) {
       return NextResponse.json({ found: false, reason: 'no_active_subscription' }, { status: 404 });
     }
 
-    const plan = planFromVariant(String(active.attributes?.variant_id ?? ''));
+    // Variant id only. Unlike the webhook, there is no signed custom_data here
+    // and the product name is not a claim we should act on: this endpoint runs
+    // on an email match, so a loose fallback would be the weakest link in the
+    // chain that decides who gets a paid tier.
+    const plan = resolvePlan(
+      String(active.attributes?.variant_id ?? ''),
+      null,
+      null,
+      VARIANT_MAP,
+    );
     if (!plan) {
       // A real subscription on an unmapped variant. Do not guess a paid tier and
       // do not silently give them 'free' — tell them, and log it for the operator.

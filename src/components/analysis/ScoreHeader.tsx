@@ -3,11 +3,12 @@
 import React from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, Download, Share2, RefreshCw,
+  ArrowLeft, Download, RefreshCw,
   ChevronRight, Info, ShieldCheck, Gauge,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { ShareScoreButton } from '@/components/analysis/ShareScoreButton';
 import { ProjectData } from '@/lib/types';
 
 interface ScoreHeaderProps {
@@ -110,19 +111,7 @@ export const ScoreHeader: React.FC<ScoreHeaderProps> = ({ project }) => {
           <Link href="/upload">
             <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>Re-run</Button>
           </Link>
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<Share2 className="w-3.5 h-3.5" />}
-            onClick={() => {
-              if (typeof window !== 'undefined') {
-                navigator.clipboard.writeText(window.location.href);
-                alert('Link copied to clipboard!');
-              }
-            }}
-          >
-            Share
-          </Button>
+          <ShareScoreButton reportId={project.id} reportTitle={title} />
           <Button
             size="sm"
             leftIcon={<Download className="w-3.5 h-3.5" />}
@@ -138,7 +127,7 @@ export const ScoreHeader: React.FC<ScoreHeaderProps> = ({ project }) => {
       </div>
 
       {/* Publish Score verdict panel */}
-      <div className="rounded-2xl border border-ink-200 bg-white p-6 sm:p-7">
+      <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-6 sm:p-7">
         <div className="flex flex-col lg:flex-row lg:items-center gap-6">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
@@ -180,7 +169,7 @@ export const ScoreHeader: React.FC<ScoreHeaderProps> = ({ project }) => {
                 {publish}
               </span>
               <div className="pb-1.5">
-                <div className="relative h-1 w-32 rounded-full bg-ink-100">
+                <div className="relative h-1 w-32 rounded-full bg-white/[0.08]">
                   <div
                     className={`h-full rounded-full transition-all duration-1000 ${overallTone.bar}`}
                     style={{ width: `${publish}%` }}
@@ -211,7 +200,7 @@ export const ScoreHeader: React.FC<ScoreHeaderProps> = ({ project }) => {
           const measured = m.value !== null;
           const tone = measured ? toneFor(m.value as number) : { num: 'text-ink-400', bar: 'bg-ink-300' };
           return (
-            <div key={m.label} className="bg-white p-4 sm:p-5 group relative">
+            <div key={m.label} className="bg-surface-panel p-4 sm:p-5 group relative">
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-semibold text-ink-500">{m.label}</span>
                 <Info className="w-3 h-3 text-ink-300 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -219,14 +208,14 @@ export const ScoreHeader: React.FC<ScoreHeaderProps> = ({ project }) => {
               <div className={`font-display text-[26px] leading-none font-bold tabular-nums mt-2.5 tracking-tight ${tone.num}`}>
                 {measured ? m.value : '—'}
               </div>
-              <div className="relative mt-3 h-1 w-full bg-ink-100 rounded-full">
+              <div className="relative mt-3 h-1 w-full bg-white/[0.08] rounded-full">
                 <div
                   className={`h-full rounded-full transition-all duration-1000 ${tone.bar}`}
                   style={{ width: `${measured ? m.value : 0}%` }}
                 />
                 <div className="absolute -top-[3px] h-[10px] w-px bg-ink-300" style={{ left: '85%' }} aria-hidden="true" />
               </div>
-              <div className="text-[10.5px] text-ink-500 mt-2.5 leading-snug opacity-0 group-hover:opacity-100 transition-opacity absolute left-4 right-4 bottom-2 bg-white pt-1">
+              <div className="text-[10.5px] text-ink-500 mt-2.5 leading-snug opacity-0 group-hover:opacity-100 transition-opacity absolute left-4 right-4 bottom-2 bg-surface-panel pt-1">
                 {measured ? m.why : 'Not measured yet — connect the source to unlock this signal.'}
               </div>
             </div>

@@ -10,54 +10,59 @@
 import { prisma } from './db';
 import { Role } from '@prisma/client';
 import { cache } from 'react';
+import {
+  decideEntitlement,
+  isPaidPeriodOverdue,
+  normalizePlan,
+  PLAN_LIMITS,
+  RENEWAL_GRACE_MS,
+  type Plan,
+} from './entitlement';
 
-export type Plan = 'free' | 'starter' | 'pro' | 'agency';
+// The rules themselves live in `entitlement.ts`, which is pure and unit-tested.
+// They are re-exported here because this module has always been the import site
+// for plan types and limits, and every route depends on that.
+export {
+  PLAN_LIMITS,
+  QuotaExceededError,
+  decideEntitlement,
+  isPaidPeriodOverdue,
+  normalizePlan,
+} from './entitlement';
+export type { Plan, SubscriptionFacts, EntitlementVerdict } from './entitlement';
 
-export const PLAN_LIMITS: Record<Plan, number> = {
-  free: 1,
-  starter: 25,
-  pro: 100,
-  agency: 500,
-};
-
-/**
- * Paid access is honoured this far past `periodEnd`. A renewal webhook that is
- * slow, retried, or briefly lost must never lock out someone who has paid — we
- * would rather give away three days than break a customer's workflow.
- */
-const RENEWAL_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
-
-/**
- * How long a failing card keeps access while Lemon Squeezy retries the charge.
- * LS gives up after roughly two weeks of dunning, so this is the outer bound.
- */
-const DUNNING_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
-
-/** Subscription statuses that still represent a live, paid-for entitlement. */
-const LIVE_STATUSES = new Set(['active', 'on_trial']);
-/** Statuses where the charge is failing but LS has not given up yet. */
-const RETRYING_STATUSES = new Set(['past_due', 'unpaid']);
-
-function normalizePlan(plan: string): Plan {
-  const p = plan.toLowerCase();
-  if (p === 'starter' || p === 'pro' || p === 'agency') return p;
-  return 'free';
-}
+import { QuotaExceededError } from './entitlement';
 
 /**
  * Upsert a User row keyed by Clerk id. Cached per request.
+ *
+ * `avatarUrl` is written here as well as in the Clerk webhook. The webhook only
+ * fires for accounts created or edited after it was configured, so on its own it
+ * leaves every pre-existing user with a null avatar forever — and Settings then
+ * renders the initial-letter fallback for people who do have a profile picture.
+ * This path runs on every authenticated request, so it backfills them.
  */
-export const ensureUser = cache(async (clerkId: string, email?: string) => {
-  // Try to find first to avoid unnecessary write transactions if the user exists and email hasn't changed.
+export const ensureUser = cache(async (clerkId: string, email?: string, avatarUrl?: string) => {
+  // Read first so the common case (nothing changed) costs one query and no write
+  // transaction. A write on every request would put the whole app behind the
+  // primary and serialize concurrent requests from the same user.
   const existing = await prisma.user.findUnique({ where: { clerkId } });
-  if (existing && (!email || existing.email === email)) {
+  const emailFresh = !email || existing?.email === email;
+  const avatarFresh = !avatarUrl || existing?.avatarUrl === avatarUrl;
+  if (existing && emailFresh && avatarFresh) {
     return existing;
   }
-  
+
   return prisma.user.upsert({
     where: { clerkId },
-    create: { clerkId, email: email ?? null },
-    update: email ? { email } : {},
+    create: { clerkId, email: email ?? null, avatarUrl: avatarUrl ?? null },
+    // Only overwrite what Clerk actually gave us. Writing `undefined` through
+    // would be a no-op in Prisma, but writing null would erase a good value on
+    // a request where Clerk simply did not return the field.
+    update: {
+      ...(email ? { email } : {}),
+      ...(avatarUrl ? { avatarUrl } : {}),
+    },
   });
 });
 
@@ -92,10 +97,9 @@ async function downgradeToFree(userId: string, why: string): Promise<void> {
  * no charge behind it. The read path is the one place guaranteed to run, so the
  * check lives here and self-heals the row when it fires.
  *
- * The bias is deliberate and asymmetric: we only revoke when the local record
- * gives us positive evidence that the entitlement is over. Ambiguity (LS still
- * reports "active" but our period boundary looks stale) keeps access and logs an
- * anomaly, because wrongly locking out a payer is far worse than a late sweep.
+ * This is the I/O shell only: the decision itself is `decideEntitlement`, which
+ * is pure and unit-tested. The cheap guards stay here so the overdue path — and
+ * its extra query — is the exception, not the rule.
  */
 async function reconcileEntitlement(user: {
   id: string;
@@ -107,9 +111,7 @@ async function reconcileEntitlement(user: {
   // No period boundary at all means the tier was granted out of band (an admin
   // comp, a seed). Nothing to expire against, so leave it be.
   if (!user.periodEnd) return stored;
-
-  const overdueMs = Date.now() - user.periodEnd.getTime();
-  if (overdueMs <= RENEWAL_GRACE_MS) return stored;
+  if (!isPaidPeriodOverdue(user.periodEnd, Date.now())) return stored;
 
   // Only now — on the rare overdue path — do we pay for the extra query.
   const sub = await prisma.subscription.findFirst({
@@ -118,39 +120,21 @@ async function reconcileEntitlement(user: {
     select: { status: true, currentPeriodEnd: true, lsSubscriptionId: true },
   });
 
-  if (!sub) {
-    await downgradeToFree(user.id, 'paid period ended and no subscription is on record');
-    return 'free';
+  const verdict = decideEntitlement(stored, user.periodEnd, sub, Date.now());
+
+  if (verdict.anomaly && verdict.reason) {
+    console.warn(`[entitlement] ${user.id} ${verdict.reason}`);
   }
 
-  const status = sub.status.toLowerCase();
-
-  // A newer period than the user row knows about: the renewal landed on the
-  // subscription but the user row was not carried forward. Trust the newer one.
-  if (sub.currentPeriodEnd.getTime() - user.periodEnd.getTime() > 60_000 && LIVE_STATUSES.has(status)) {
+  if (verdict.write === 'downgrade') {
+    await downgradeToFree(user.id, verdict.reason ?? 'entitlement expired');
+  } else if (verdict.write === 'extend-period' && verdict.periodEnd) {
     await prisma.user
-      .update({ where: { id: user.id }, data: { periodEnd: sub.currentPeriodEnd } })
+      .update({ where: { id: user.id }, data: { periodEnd: verdict.periodEnd } })
       .catch(() => undefined);
-    return stored;
   }
 
-  if (LIVE_STATUSES.has(status)) {
-    console.warn(
-      `[entitlement] ${user.id} is past periodEnd but subscription ${sub.lsSubscriptionId} ` +
-        `still reads "${status}" — keeping "${stored}". A renewal webhook was likely missed.`,
-    );
-    return stored;
-  }
-
-  if (RETRYING_STATUSES.has(status)) {
-    if (overdueMs <= DUNNING_GRACE_MS) return stored;
-    await downgradeToFree(user.id, `payment has been failing since ${user.periodEnd.toISOString()}`);
-    return 'free';
-  }
-
-  // cancelled / expired / paused, and the period they paid for is over.
-  await downgradeToFree(user.id, `subscription status "${status}" with the paid period ended`);
-  return 'free';
+  return verdict.plan;
 }
 
 /**
@@ -201,25 +185,6 @@ export async function reconcileExpiredPlans(limit = 500): Promise<{
     if (next === 'free') downgraded += 1;
   }
   return { scanned: candidates.length, downgraded };
-}
-
-/**
- * Thrown by incrementAuditsInTx when the plan's monthly allowance is spent.
- * A distinct class so routes can answer 402 (payment required) instead of
- * mistaking a quota boundary for a 500.
- */
-export class QuotaExceededError extends Error {
-  readonly plan: Plan;
-  readonly auditsUsed: number;
-  readonly auditsLimit: number;
-
-  constructor(plan: Plan, auditsUsed: number, auditsLimit: number) {
-    super(`Audit limit reached for plan "${plan}" (${auditsUsed}/${auditsLimit}).`);
-    this.name = 'QuotaExceededError';
-    this.plan = plan;
-    this.auditsUsed = auditsUsed;
-    this.auditsLimit = auditsLimit;
-  }
 }
 
 /**

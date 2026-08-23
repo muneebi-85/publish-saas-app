@@ -57,8 +57,8 @@ export const UpgradePrompt: React.FC<Props> = ({
   }
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-6 text-center">
-      <div className="w-10 h-10 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mx-auto">
+    <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-6 text-center">
+      <div className="w-10 h-10 rounded-xl bg-white/[0.08] text-ink-500 flex items-center justify-center mx-auto">
         <Lock className="w-4 h-4" />
       </div>
       <h3 className="font-display text-lg font-semibold text-ink-950 mt-4">{feature}</h3>
@@ -68,7 +68,7 @@ export const UpgradePrompt: React.FC<Props> = ({
       <p className="text-[12.5px] text-ink-500 mt-3">
         Available on <span className="font-semibold text-ink-900">{planLabel}</span> and above.
       </p>
-      {error && <p className="text-[12px] text-crimson-600 mt-2">{error}</p>}
+      {error && <p className="text-[12px] text-crimson-700 mt-2">{error}</p>}
       <Button
         className="mt-5"
         onClick={handleUpgrade}

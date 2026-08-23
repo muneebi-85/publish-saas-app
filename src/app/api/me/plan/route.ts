@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getUserPlanState } from '@/lib/session';
+import { rateLimit, userKey, clientKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,14 +14,36 @@ export const dynamic = 'force-dynamic';
  * never consulted. Plan changes happen exclusively through the Lemon Squeezy
  * webhook after a signature-verified payment event.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  // The client polls this on every focus and dashboard render; a reconcile can
+  // WRITE, so it gets the cheap authenticated-read budget. Unauthenticated
+  // callers are keyed by IP so a poll flood cannot share one user's bucket.
   const { userId } = auth();
 
   if (!userId) {
+    const limit = await rateLimit(
+      clientKey(req, 'plan-anon'),
+      LIMITS.READ.limit,
+      LIMITS.READ.windowMs,
+    );
+    if (!limit.success) {
+      const r = tooManyRequests(limit);
+      return NextResponse.json(r.body, r.init);
+    }
     return NextResponse.json(
       { plan: 'free', auditsUsed: 0, auditsLimit: 1, canAnalyze: false, authenticated: false },
       { status: 200, headers: { 'Cache-Control': 'no-store' } },
     );
+  }
+
+  const limit = await rateLimit(
+    userKey(userId, 'plan'),
+    LIMITS.READ.limit,
+    LIMITS.READ.windowMs,
+  );
+  if (!limit.success) {
+    const r = tooManyRequests(limit);
+    return NextResponse.json(r.body, r.init);
   }
 
   const state = await getUserPlanState(userId);

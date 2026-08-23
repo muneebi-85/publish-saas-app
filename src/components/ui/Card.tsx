@@ -16,10 +16,10 @@ export const Card: React.FC<CardProps> = ({
   return (
     <Tag
       className={clsx(
-        'bg-white border border-ink-200 rounded-2xl',
+        'bg-surface-panel border border-white/[0.06] rounded-2xl',
         padded && 'p-5 sm:p-6',
         (hover || interactive) && 'transition-all duration-200',
-        hover && 'hover:shadow-card hover:border-ink-300',
+        hover && 'hover:border-white/[0.14]',
         interactive && 'cursor-pointer',
         className
       )}
@@ -46,7 +46,7 @@ export const Section: React.FC<SectionProps> = ({
     <div className="flex items-start justify-between gap-4">
       <div className="flex items-start gap-3 min-w-0">
         {icon && (
-          <div className="w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-xl bg-brand-600 text-[#060606] flex items-center justify-center shrink-0">
             {icon}
           </div>
         )}
@@ -71,26 +71,28 @@ export const Section: React.FC<SectionProps> = ({
 interface StatTileProps {
   label: string;
   value: string | number;
+  /** Free-form footnote. Callers pass their own direction indicator here, which is
+   *  why the tile has no `trend` prop of its own — a delta only means something
+   *  next to the comparison it was measured against. */
   hint?: React.ReactNode;
   icon?: React.ReactNode;
-  trend?: 'up' | 'down' | 'neutral';
   className?: string;
   emphasis?: 'default' | 'success' | 'warning' | 'danger';
 }
 
 export const StatTile: React.FC<StatTileProps> = ({
-  label, value, hint, icon, trend, className, emphasis = 'default',
+  label, value, hint, icon, className, emphasis = 'default',
 }) => {
   const emphasisMap: Record<string, string> = {
     default: 'text-ink-900',
     success: 'text-brand-600',
-    warning: 'text-amber-600',
-    danger:  'text-crimson-600',
+    warning: 'text-amber-700',
+    danger:  'text-crimson-700',
   };
   return (
     <div className={clsx(
-      'bg-white border border-ink-200 rounded-2xl p-5',
-      'hover:border-ink-300 transition-colors',
+      'bg-surface-panel border border-white/[0.06] rounded-2xl p-5',
+      'hover:border-white/[0.14] transition-colors',
       className,
     )}>
       <div className="flex items-center gap-2 text-ink-600">

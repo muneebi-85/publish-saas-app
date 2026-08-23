@@ -19,13 +19,15 @@ import { useClerk } from '@clerk/nextjs';
 import {
   Check, Plus, Shield, LogOut, Youtube, Instagram, Facebook,
   Linkedin, Video, User as UserIcon, CreditCard, Bell, Lock, Sparkles,
-  AlertTriangle, X,
+  AlertTriangle, X, Gift, Trophy,
 } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { DataPrivacyPanel } from '@/components/settings/DataPrivacyPanel';
+import { useConnectChannel } from '@/components/channels/useConnectChannel';
+import { ReferralPanel } from '@/components/referral/ReferralPanel';
 
 export interface SettingsUser {
   name: string;
@@ -36,6 +38,7 @@ export interface SettingsUser {
   auditsLimit: number;
   periodEnd: string | null;
   productEmails: boolean;
+  leaderboardOptIn: boolean;
   deleteScheduledAt: string | null;
 }
 
@@ -51,6 +54,7 @@ const SECTIONS = [
   { id: 'profile',       label: 'Profile',        icon: UserIcon },
   { id: 'billing',       label: 'Billing & plan', icon: CreditCard },
   { id: 'channels',      label: 'Channels',       icon: Youtube },
+  { id: 'referrals',     label: 'Referrals',      icon: Gift },
   { id: 'notifications', label: 'Notifications',  icon: Bell },
   { id: 'security',      label: 'Security',       icon: Lock },
   { id: 'privacy',       label: 'Data & privacy', icon: Shield },
@@ -105,12 +109,19 @@ export default function SettingsClient({
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [prefsError, setPrefsError] = useState('');
 
-  // Channels
+  // Public leaderboard opt-in
+  const [leaderboardOptIn, setLeaderboardOptIn] = useState(user.leaderboardOptIn);
+  const [savingLeaderboard, setSavingLeaderboard] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState('');
+
+  // Channels — the same connect/OAuth flow as the Connected Channels page.
   const [channelsList, setChannelsList] = useState<SettingsChannel[]>(initialChannels);
   const [isConnecting, setIsConnecting] = useState(false);
   const [newPlatform, setNewPlatform] = useState('YOUTUBE');
-  const [isConnectingLoading, setIsConnectingLoading] = useState(false);
-  const [connectError, setConnectError] = useState('');
+  const { pending, error: connectError, notice, connect, disconnect } = useConnectChannel(
+    '/settings?tab=channels',
+    (channel) => setChannelsList((prev) => [channel, ...prev.filter((c) => c.id !== channel.id)]),
+  );
 
   const plan = user.plan || 'free';
   const auditsUsed = user.auditsUsed ?? 0;
@@ -180,44 +191,41 @@ export default function SettingsClient({
     }
   };
 
-  const handleConnectChannel = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsConnectingLoading(true);
-    setConnectError('');
+  const handleToggleLeaderboard = async () => {
+    const next = !leaderboardOptIn;
+    setLeaderboardOptIn(next);
+    setSavingLeaderboard(true);
+    setLeaderboardError('');
     try {
-      // No handle is sent: the server reads the channel identity and its counts
-      // from the platform's own API using the OAuth token, so anything typed
-      // here would be an unverified claim about someone else's channel.
-      const res = await fetch('/api/channels', {
+      const res = await fetch('/api/me/preferences', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform: newPlatform }),
+        body: JSON.stringify({ leaderboardOptIn: next }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Connection failed');
-      setChannelsList((prev) => [
-        data.channel,
-        ...prev.filter((c) => c.id !== data.channel?.id),
-      ]);
-      setIsConnecting(false);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not save your preference.');
+      }
     } catch (err) {
-      setConnectError(err instanceof Error ? err.message : 'Failed to connect channel.');
+      setLeaderboardOptIn(!next);
+      setLeaderboardError(err instanceof Error ? err.message : 'Could not save your preference.');
     } finally {
-      setIsConnectingLoading(false);
+      setSavingLeaderboard(false);
     }
+  };
+
+  const handleConnectChannel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // No handle is sent: the server reads the channel identity and its counts
+    // from the platform's own API using the OAuth token, so anything typed
+    // here would be an unverified claim about someone else's channel.
+    if (await connect(newPlatform)) setIsConnecting(false);
   };
 
   const handleDeleteChannel = async (id: string) => {
     if (!confirm('Disconnect this channel? Past reports are kept.')) return;
-    try {
-      const res = await fetch(`/api/channels?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to disconnect channel');
-      }
+    if (await disconnect(id)) {
       setChannelsList((prev) => prev.filter((c) => c.id !== id));
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to disconnect channel.');
     }
   };
 
@@ -260,7 +268,7 @@ export default function SettingsClient({
                 className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13.5px] font-medium whitespace-nowrap transition-colors ${
                   active
                     ? 'bg-brand-50 text-brand-700'
-                    : 'text-ink-600 hover:text-ink-900 hover:bg-ink-50'
+                    : 'text-ink-600 hover:text-ink-900 hover:bg-white/[0.06]'
                 }`}
               >
                 <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-brand-600' : 'text-ink-400'}`} />
@@ -281,7 +289,7 @@ export default function SettingsClient({
                 <img
                   src={user.avatar}
                   alt=""
-                  className="w-12 h-12 rounded-full object-cover bg-ink-100"
+                  className="w-12 h-12 rounded-full object-cover bg-white/[0.08]"
                   referrerPolicy="no-referrer"
                 />
               ) : (
@@ -310,7 +318,7 @@ export default function SettingsClient({
                     onChange={(e) => setName(e.target.value)}
                     maxLength={80}
                     placeholder={fallbackName}
-                    className="w-full bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                    className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
                   />
                 </div>
                 <div>
@@ -332,7 +340,7 @@ export default function SettingsClient({
               </div>
               <div className="flex items-center justify-end gap-3 mt-5">
                 {nameStatus && (
-                  <span className={`text-[12.5px] font-medium ${nameStatus.kind === 'ok' ? 'text-grass-600' : 'text-crimson-600'}`}>
+                  <span className={`text-[12.5px] font-medium ${nameStatus.kind === 'ok' ? 'text-grass-700' : 'text-crimson-700'}`}>
                     {nameStatus.text}
                   </span>
                 )}
@@ -362,7 +370,7 @@ export default function SettingsClient({
                       ? 'Upgrade to unlock more analyses and advanced insights.'
                       : 'Your subscription is billed securely via Lemon Squeezy.'}
                     {user.periodEnd && (
-                      <> Renews {new Date(user.periodEnd).toLocaleDateString()}.</>
+                      <> Renews {new Date(user.periodEnd).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.</>
                     )}
                   </p>
                 </div>
@@ -376,7 +384,14 @@ export default function SettingsClient({
                       <Button variant="dark" size="sm">Change plan</Button>
                     </Link>
                   )}
-                  <Link href={plan === 'free' ? '/pricing' : '/api/billing/portal'}>
+                  {/* prefetch={false}: this href is an API route that calls Lemon
+                      Squeezy and consumes a rate-limit slot. Link prefetches on
+                      viewport entry, so leaving it on would spend the budget
+                      before the customer clicks — and could 429 the real click. */}
+                  <Link
+                    href={plan === 'free' ? '/pricing' : '/api/billing/portal'}
+                    prefetch={false}
+                  >
                     <Button variant="secondary" size="sm">Manage subscription</Button>
                   </Link>
                 </div>
@@ -390,7 +405,7 @@ export default function SettingsClient({
                     {auditsUsed} / {auditsLimit}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-ink-100 overflow-hidden">
+                <div className="h-2 rounded-full bg-white/[0.08] overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${usagePct >= 100 ? 'bg-crimson-500' : usagePct >= 80 ? 'bg-amber-500' : 'bg-brand-600'}`}
                     style={{ width: `${usagePct}%` }}
@@ -404,7 +419,7 @@ export default function SettingsClient({
                 <p className="text-[11.5px] text-ink-500 mt-2">
                   {Math.max(0, auditsLimit - auditsUsed)} analyses remaining.{' '}
                   {user.periodEnd
-                    ? <>Resets {new Date(user.periodEnd).toLocaleDateString()}.</>
+                    ? <>Resets {new Date(user.periodEnd).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.</>
                     : <>Resets at the start of your next billing period.</>}
                 </p>
               </div>
@@ -424,6 +439,12 @@ export default function SettingsClient({
             </div>
           </Card>
 
+          {/* Referrals */}
+          <Card>
+            <SectionHead id="referrals" title="Referrals" desc="Earn a free review every time a creator signs up through your link." />
+            <ReferralPanel />
+          </Card>
+
           {/* Connected Channels */}
           <Card>
             <div className="flex items-center justify-between mb-5">
@@ -441,7 +462,7 @@ export default function SettingsClient({
                     id="new-platform"
                     value={newPlatform}
                     onChange={(e) => setNewPlatform(e.target.value)}
-                    className="w-full sm:max-w-xs bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                    className="w-full sm:max-w-xs bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
                   >
                     <option value="YOUTUBE">YouTube</option>
                     <option value="TIKTOK">TikTok</option>
@@ -452,17 +473,18 @@ export default function SettingsClient({
                     account first if you have not already.
                   </p>
                 </div>
-                {connectError && <p className="text-[12px] text-crimson-600 font-medium">{connectError}</p>}
+                {connectError && <p className="text-[12px] text-crimson-700 font-medium">{connectError}</p>}
+                {notice && <p className="text-[12px] text-grass-700 font-medium">{notice}</p>}
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="secondary" size="sm" onClick={() => setIsConnecting(false)}>Cancel</Button>
-                  <Button type="submit" size="sm" isLoading={isConnectingLoading}>Connect</Button>
+                  <Button type="submit" size="sm" isLoading={pending === newPlatform}>Connect</Button>
                 </div>
               </form>
             )}
 
             {channelsList.length === 0 ? (
               <div className="flex flex-col items-center text-center py-10">
-                <div className="w-12 h-12 rounded-full bg-ink-100 flex items-center justify-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-white/[0.08] flex items-center justify-center mb-3">
                   <Youtube className="w-5 h-5 text-ink-400" />
                 </div>
                 <h4 className="font-display text-[15px] font-bold text-ink-900">No channels connected</h4>
@@ -482,7 +504,7 @@ export default function SettingsClient({
                   return (
                     <div key={c.id} className="py-3 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-ink-100 text-ink-700 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-full bg-white/[0.08] text-ink-700 flex items-center justify-center">
                           <PlatformIcon className="w-4 h-4" />
                         </div>
                         <div>
@@ -493,7 +515,7 @@ export default function SettingsClient({
                           </div>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => handleDeleteChannel(c.id)} className="text-crimson-600 hover:text-crimson-700 hover:bg-crimson-50">Disconnect</Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteChannel(c.id)} className="text-crimson-700 hover:text-crimson-700 hover:bg-crimson-50">Disconnect</Button>
                     </div>
                   );
                 })}
@@ -511,11 +533,35 @@ export default function SettingsClient({
               disabled={savingPrefs}
               onChange={handleToggleProductEmails}
             />
-            {prefsError && <p className="text-[12px] text-crimson-600 font-medium mt-3">{prefsError}</p>}
+            {prefsError && <p className="text-[12px] text-crimson-700 font-medium mt-3">{prefsError}</p>}
             <p className="text-[11.5px] text-ink-500 mt-4 leading-relaxed border-t border-ink-100 pt-4">
               Billing and security email — failed payments, plan changes, deletion notices — is always sent.
               Suppressing it would leave you unable to act on a lapsed subscription or a change to your account.
             </p>
+          </Card>
+
+          {/* Community / leaderboard */}
+          <Card>
+            <SectionHead
+              id="community"
+              title="Community leaderboard"
+              desc="Share your best scores on the public leaderboard."
+            />
+            <Toggle
+              label="Show my scores on the public leaderboard"
+              desc="When on, your highest-scoring reports appear on /community with a link to your score card. Off by default — your reports stay private until you choose."
+              on={leaderboardOptIn}
+              disabled={savingLeaderboard}
+              onChange={handleToggleLeaderboard}
+            />
+            {leaderboardError && <p className="text-[12px] text-crimson-700 font-medium mt-3">{leaderboardError}</p>}
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-white/[0.06] bg-surface-canvas p-3.5">
+              <Trophy className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+              <p className="text-[12px] text-ink-600 leading-relaxed">
+                Only the title, score, platform, and a link to your public score card are shown — never
+                your script, fixes, or email. You can turn this off any time.
+              </p>
+            </div>
           </Card>
 
           {/* Security */}
@@ -542,7 +588,7 @@ export default function SettingsClient({
               </div>
               <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-ink-200 bg-surface-canvas">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-white/[0.08] text-ink-700 flex items-center justify-center shrink-0">
                     <LogOut className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">

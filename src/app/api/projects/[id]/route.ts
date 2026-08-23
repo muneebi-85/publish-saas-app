@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/api-guards';
 import { prisma } from '@/lib/db';
 import * as v from '@/lib/validate';
+import { rateLimit, userKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -11,6 +12,12 @@ export const runtime = 'nodejs';
 // part of every predicate, so another user's report resolves to 404, not 403.
 const OWNED = (id: string, userId: string) => ({ id, userId });
 
+// PATCH/DELETE mutate a user's report, so they get the per-item write budget
+// rather than the generous read budget. Not the ACCOUNT tier: clearing out a
+// dozen old reports is normal use, and 5/hour would 429 that.
+const limitWrite = (clerkId: string, action: string) =>
+  rateLimit(userKey(clerkId, `project-${action}`), LIMITS.PROJECT_WRITE.limit, LIMITS.PROJECT_WRITE.windowMs);
+
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
@@ -18,6 +25,12 @@ export async function PATCH(
   try {
     const authCtx = await requireAuth();
     if (authCtx instanceof NextResponse) return authCtx;
+
+    const limit = await limitWrite(authCtx.clerkId, 'update');
+    if (!limit.success) {
+      const r = tooManyRequests(limit);
+      return NextResponse.json(r.body, r.init);
+    }
 
     const id = v.id(params.id, 'id');
     if (!id.ok) return NextResponse.json({ error: id.error }, { status: 400 });
@@ -50,6 +63,12 @@ export async function DELETE(
   try {
     const authCtx = await requireAuth();
     if (authCtx instanceof NextResponse) return authCtx;
+
+    const limit = await limitWrite(authCtx.clerkId, 'delete');
+    if (!limit.success) {
+      const r = tooManyRequests(limit);
+      return NextResponse.json(r.body, r.init);
+    }
 
     const id = v.id(params.id, 'id');
     if (!id.ok) return NextResponse.json({ error: id.error }, { status: 400 });

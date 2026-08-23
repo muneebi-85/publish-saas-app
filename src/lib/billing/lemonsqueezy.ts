@@ -34,46 +34,70 @@ async function lsFetch(path: string, init: RequestInit): Promise<Response> {
 }
 
 // ─── Plans ─────────────────────────────────────────────
-export type PlanId = 'starter' | 'pro' | 'agency';
+import { PLANS as PLAN_CATALOGUE, type PaidPlan } from '../plans';
+
+/** Purchasable tiers. `free` is not one of them, so it is excluded upstream. */
+export type PlanId = PaidPlan;
+
+/** Monthly vs. annual billing. The interval selects which LS variant is bought. */
+export type BillingInterval = 'monthly' | 'yearly';
+
+export const BILLING_INTERVALS: BillingInterval[] = ['monthly', 'yearly'];
+
+/**
+ * `yearly` is the effective per-month price when billed annually (two months
+ * free: 10 months of the monthly rate, rounded to a clean annual figure). The
+ * quoted store prices must match what the yearly Lemon Squeezy variants charge.
+ */
+/**
+ * Name, price, allowance and features all come from the catalogue in
+ * `src/lib/plans.ts`; the only thing this registry adds is which env var holds
+ * the Lemon Squeezy variant id for each tier and interval. Splitting it this way
+ * is what stops the store's quoted allowance from drifting away from the
+ * allowance the app actually enforces — they are now the same value.
+ */
+const VARIANT_KEYS: Record<PlanId, {
+  variantEnvKey: keyof typeof env;
+  variantYearlyEnvKey: keyof typeof env;
+}> = {
+  starter: { variantEnvKey: 'LS_VARIANT_STARTER', variantYearlyEnvKey: 'LS_VARIANT_STARTER_YEARLY' },
+  pro: { variantEnvKey: 'LS_VARIANT_PRO', variantYearlyEnvKey: 'LS_VARIANT_PRO_YEARLY' },
+  agency: { variantEnvKey: 'LS_VARIANT_AGENCY', variantYearlyEnvKey: 'LS_VARIANT_AGENCY_YEARLY' },
+};
 
 export const PLANS: Record<PlanId, {
   name: string;
   monthly: number;
+  yearly: number;
   audits: number;
   features: string[];
   variantEnvKey: keyof typeof env;
+  variantYearlyEnvKey: keyof typeof env;
 }> = {
-  starter: {
-    name: 'Starter',
-    monthly: 19,
-    audits: 25,
-    features: ['All six review layers', '2 platform reports', 'Creator Script Optimizer'],
-    variantEnvKey: 'LS_VARIANT_STARTER',
-  },
-  pro: {
-    name: 'Pro',
-    monthly: 39,
-    audits: 100,
-    features: [
-      'Everything in Starter',
-      'All 5 platforms',
-      'Unlimited Script Optimizer runs',
-      'Priority processing',
-    ],
-    variantEnvKey: 'LS_VARIANT_PRO',
-  },
-  agency: {
-    name: 'Agency',
-    monthly: 79,
-    audits: 500,
-    features: ['Everything in Pro', 'White-label PDFs', 'Team seats', 'API access'],
-    variantEnvKey: 'LS_VARIANT_AGENCY',
-  },
+  starter: buildPlan('starter'),
+  pro: buildPlan('pro'),
+  agency: buildPlan('agency'),
 };
+
+function buildPlan(id: PlanId) {
+  const spec = PLAN_CATALOGUE[id];
+  return {
+    name: spec.name,
+    // Agency is quote-only in the catalogue (`null`). Checkout still needs a
+    // number, and the LS variant is the authority on what is charged, so 0 here
+    // means "whatever the variant says" rather than "free".
+    monthly: spec.monthly ?? 0,
+    yearly: spec.yearly ?? 0,
+    audits: spec.audits,
+    features: spec.features,
+    ...VARIANT_KEYS[id],
+  };
+}
 
 // ─── Checkout creation ─────────────────────────────────
 export interface CreateCheckoutParams {
   planId: PlanId;
+  interval?: BillingInterval;
   userEmail?: string;
   userId?: string;
   successUrl?: string;
@@ -90,9 +114,14 @@ export async function createCheckoutUrl(params: CreateCheckoutParams): Promise<C
   }
 
   const plan = PLANS[params.planId];
-  const variantId = env[plan.variantEnvKey];
+  const interval: BillingInterval = params.interval === 'yearly' ? 'yearly' : 'monthly';
+  const variantId = env[interval === 'yearly' ? plan.variantYearlyEnvKey : plan.variantEnvKey];
   if (!variantId) {
-    throw new Error(`Variant id missing for plan "${params.planId}". Set ${String(plan.variantEnvKey)}.`);
+    throw new Error(
+      `Variant id missing for plan "${params.planId}" (${interval}). Set ${
+        String(interval === 'yearly' ? plan.variantYearlyEnvKey : plan.variantEnvKey)
+      }.`,
+    );
   }
 
   const res = await lsFetch(`/checkouts`, {
@@ -111,6 +140,7 @@ export async function createCheckoutUrl(params: CreateCheckoutParams): Promise<C
             custom: {
               user_id: params.userId ?? '',
               plan: params.planId,
+              interval,
             },
           },
           product_options: {

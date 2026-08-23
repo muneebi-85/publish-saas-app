@@ -99,7 +99,7 @@ function SEOBody() {
                 placeholder="Paste the exact title you plan to publish"
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleAnalyze(); }}
-                className="w-full bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
               />
             </div>
             <div className="md:col-span-3">
@@ -108,7 +108,7 @@ function SEOBody() {
                 id="seo-platform"
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value as typeof PLATFORMS[number])}
-                className="w-full bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
               >
                 {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
               </select>
@@ -150,11 +150,11 @@ function SEOBody() {
                 <Card key={s.label} padded={false} className="p-5">
                   <div className="text-[12px] font-semibold text-ink-600">{s.label}</div>
                   <div className={`font-display text-[32px] font-bold tabular-nums tracking-tight mt-1 ${
-                    s.value >= 85 ? 'text-brand-600' : s.value >= 70 ? 'text-amber-600' : 'text-crimson-600'
+                    s.value >= 85 ? 'text-brand-600' : s.value >= 70 ? 'text-amber-700' : 'text-crimson-700'
                   }`}>
                     {s.value}
                   </div>
-                  <div className="mt-3 h-1.5 w-full bg-ink-100 rounded-full overflow-hidden">
+                  <div className="mt-3 h-1.5 w-full bg-white/[0.08] rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full ${
                         s.value >= 85 ? 'bg-brand-600' : s.value >= 70 ? 'bg-amber-500' : 'bg-crimson-500'
@@ -182,7 +182,7 @@ function SEOBody() {
                     <span className="text-[14px] text-ink-800 leading-relaxed">{t}</span>
                     <button
                       onClick={() => copyText(t, `title-${i}`)}
-                      className="text-ink-400 hover:text-ink-900 transition-colors shrink-0"
+                      className="text-ink-400 hover:text-white transition-colors shrink-0"
                       aria-label="Copy title"
                     >
                       {copied === `title-${i}` ? <Check className="w-4 h-4 text-brand-600" /> : <Copy className="w-4 h-4" />}
@@ -205,7 +205,7 @@ function SEOBody() {
                   <button
                     key={i}
                     onClick={() => copyText(tag, `tag-${i}`)}
-                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-ink-100 hover:bg-ink-200 text-[12px] font-medium text-ink-800 transition-colors"
+                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white/[0.08] hover:bg-white/[0.09] text-[12px] font-medium text-ink-800 transition-colors"
                   >
                     <Hash className="w-3 h-3 text-ink-400" />
                     {tag}

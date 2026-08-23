@@ -15,6 +15,7 @@ export default async function SettingsPage() {
       email: true,
       avatarUrl: true,
       productEmails: true,
+      leaderboardOptIn: true,
       deleteScheduledAt: true,
       channels: {
         select: {
@@ -43,6 +44,7 @@ export default async function SettingsPage() {
     auditsLimit: state.auditsLimit,
     periodEnd: state.periodEnd ? state.periodEnd.toISOString() : null,
     productEmails: dbUser?.productEmails ?? true,
+    leaderboardOptIn: dbUser?.leaderboardOptIn ?? false,
     deleteScheduledAt: dbUser?.deleteScheduledAt
       ? dbUser.deleteScheduledAt.toISOString()
       : null,

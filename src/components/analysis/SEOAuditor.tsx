@@ -7,10 +7,10 @@ import { SEOMetric } from '@/lib/types';
 
 export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
+    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-ink-900 text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
             <Search className="w-4 h-4" />
           </div>
           <div>
@@ -51,7 +51,7 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
           </div>
           <div className="flex flex-wrap gap-1.5">
             {seo.suggestedTags.map((tag, i) => (
-              <span key={i} className="inline-flex items-center px-2.5 py-1 bg-ink-100 hover:bg-ink-200 transition-colors text-ink-800 text-[12px] font-medium rounded-md cursor-default">
+              <span key={i} className="inline-flex items-center px-2.5 py-1 bg-white/[0.08] hover:bg-white/[0.09] transition-colors text-ink-800 text-[12px] font-medium rounded-md cursor-default">
                 {tag}
               </span>
             ))}
@@ -109,9 +109,9 @@ const CopyableText: React.FC<{ title: string; icon: React.ReactNode; text: strin
         </div>
         <button
           onClick={handleCopy}
-          className="text-[11px] font-medium text-ink-500 hover:text-ink-900 flex items-center gap-1 transition-colors"
+          className="text-[11px] font-medium text-ink-500 hover:text-white flex items-center gap-1 transition-colors"
         >
-          {copied ? <Check className="w-3.5 h-3.5 text-grass-600" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? <Check className="w-3.5 h-3.5 text-grass-700" /> : <Copy className="w-3.5 h-3.5" />}
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>

@@ -13,21 +13,21 @@ export const Badge: React.FC<BadgeProps> = ({
   children, variant = 'default', className, dot = false, size = 'sm',
 }) => {
   const styles: Record<string, string> = {
-    default: 'bg-ink-100 text-ink-700 border border-transparent',
-    success: 'bg-grass-50 text-grass-700 border border-grass-100',
-    warning: 'bg-amber-50 text-amber-700 border border-amber-500/20',
-    danger:  'bg-crimson-50 text-crimson-700 border border-crimson-500/20',
-    ink:     'bg-ink-900 text-white border border-transparent',
-    outline: 'bg-white text-ink-700 border border-ink-200',
+    default: 'bg-white/[0.06] text-ink-700 border border-transparent',
+    success: 'bg-brand-600/10 text-brand-600 border border-brand-600/20',
+    warning: 'bg-amber-500/10 text-amber-500 border border-amber-500/20',
+    danger:  'bg-crimson-500/10 text-crimson-500 border border-crimson-500/20',
+    ink:     'bg-brand-600 text-[#060606] border border-transparent',
+    outline: 'bg-transparent text-ink-700 border border-white/[0.12]',
   };
 
   const dotColors: Record<string, string> = {
-    default: 'bg-ink-400',
-    success: 'bg-grass-500',
-    warning: 'bg-amber-600',
-    danger:  'bg-crimson-600',
-    ink:     'bg-white',
-    outline: 'bg-ink-400',
+    default: 'bg-ink-500',
+    success: 'bg-brand-600',
+    warning: 'bg-amber-500',
+    danger:  'bg-crimson-500',
+    ink:     'bg-[#060606]',
+    outline: 'bg-ink-500',
   };
 
   const sizes: Record<string, string> = {

@@ -1,28 +1,101 @@
+/* eslint-disable @next/next/no-img-element -- local raster assets from the
+   design comp; next/image adds a loader round-trip for no benefit here. */
 'use client';
 
-import React, { useState } from 'react';
+/**
+ * Landing page.
+ *
+ * A 1:1 port of the Google Stitch comp "Publish — Final SaaS Enhancements"
+ * (project 16733385608411739388, screen e325b2b5…). The comp's own markup is
+ * checked in at .stitch/design.html and is the spec for this file — section
+ * order, copy, spacing, and every hover state come from there.
+ *
+ * Deliberate departures from a literal port:
+ *
+ *  - Type sizes and small radii are written as explicit px. The comp assumes
+ *    stock Tailwind, and this project overrides both scales in
+ *    tailwind.config.js for the product UI, so `text-5xl` here would not be
+ *    the comp's 48px. Bracket values pin them to what the comp renders.
+ *
+ *  - The hero is a single viewport. A separate above-the-fold reference render
+ *    frames the header and the whole hero together, so from lg up the section
+ *    takes 100svh minus the header and the h1 scales with viewport height.
+ *
+ *  - The imagery is a later, higher-resolution set supplied outside Stitch
+ *    (originals under .stitch/bak/, prefixed orig-): the photographed phone
+ *    shot, the three report cards that float off it, both creator strips, the
+ *    testimonial portrait, the before/after thumbnails and the algorithm graph.
+ *    Stitch's own hero image 403s and its avatars are misgenerated, so those
+ *    used to be drawn in DOM; the supplied files replace them. All nine are
+ *    WebP — as PNG the set is 4.4MB against 715KB, which the hero pays for in
+ *    LCP.
+ *
+ * The comp's remaining rasters were repaired in place (also .stitch/bak/): the
+ * six check icons and both logos shipped as opaque white plates with the label
+ * baked in, which drew white boxes over the translucent header and an illegible
+ * smear in the footer, so they are cropped to their ink and alpha-cleared;
+ * rocket.png got the same treatment.
+ */
+
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import BackgroundShader from '@/components/landing/BackgroundShader';
+import { MegaMenu } from '@/components/landing/MegaMenu';
+import { RESOURCES_MENU } from '@/components/landing/navData';
+import { PLANS, priceLabel } from '@/lib/plans';
 import {
-  ArrowRight, ChevronDown, Check, Shield, Wand2, Image as ImageIcon,
-  Target, Search, ListChecks, Upload, Play, TrendingUp, Clock,
-  FileText, Sparkles, Star, AlertTriangle, Lightbulb, Zap, BarChart3,
-  Youtube, Send,
-} from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { Logo } from '@/components/ui/Logo';
-import { ScoreGauge } from '@/components/ui/ScoreGauge';
+  YouTubeMark,
+  TikTokMark,
+  InstagramMark,
+  FacebookMark,
+  LinkedInMark,
+} from '@/components/landing/BrandMarks';
+
+/* The comp's content column: Tailwind's max-w-7xl (1280px) with its
+   px-4 / sm:px-6 / lg:px-8 gutter. One constant so every section's left
+   edge lands on the same line. */
+const SHELL = 'mx-auto w-full max-w-[1280px] px-4 sm:px-6 lg:px-8';
+const SHELL_NARROW = 'mx-auto w-full max-w-[768px] px-4';
+
+const NAV = [
+  { label: 'How it works', href: '#how' },
+  { label: 'Checks', href: '#checks' },
+  { label: 'Pricing', href: '#pricing' },
+];
+
+const CTA_LABEL = 'Check a video — free';
 
 export default function LandingClient({ isLoggedIn, plan }: { isLoggedIn: boolean; plan: string }) {
-  const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const startHref = isLoggedIn ? '/dashboard' : '/sign-up';
+
+  /* The comp's reveal observer: add .revealed on first intersection and leave
+     it there. Everything it drives — the fade-up, the score bars growing out
+     of their left edge — is CSS, gated behind .lp-anim, which is added here.
+     So before hydration, or with JS off, nothing on the page is hidden and
+     every bar sits at its real width. */
+  useEffect(() => {
+    document.documentElement.classList.add('lp-anim');
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add('revealed');
+          io.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -60px 0px' },
+    );
+    document.querySelectorAll('.reveal-element').forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
 
   const handleUpgrade = async (planId: string) => {
     setLoadingId(planId);
     setCheckoutError('');
 
-    // Plan changes for an existing subscriber go through the portal so they
-    // never end up with a second billable subscription.
     if (plan !== 'free' && plan !== planId) {
       window.location.href = '/api/billing/portal';
       return;
@@ -32,7 +105,7 @@ export default function LandingClient({ isLoggedIn, plan }: { isLoggedIn: boolea
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({ planId, interval: 'monthly' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Checkout failed');
@@ -45,653 +118,1493 @@ export default function LandingClient({ isLoggedIn, plan }: { isLoggedIn: boolea
   };
 
   return (
-    <div className="min-h-screen bg-surface-canvas text-ink-900">
-      {/* ──────────────── NAV ──────────────── */}
-      <nav className="sticky top-0 z-50 border-b border-ink-200 bg-white/85 backdrop-blur-md">
-        <div className="max-w-[1200px] mx-auto px-6 h-16 flex items-center justify-between">
-          <Logo />
-          <div className="hidden md:flex items-center gap-1 text-[14px] font-medium">
-            {[
-              { label: 'Features', href: '#features' },
-              { label: 'How It Works', href: '#how' },
-              { label: 'Pricing', href: '#pricing' },
-              { label: 'Resources', href: '#faq' },
-            ].map((l) => (
-              <a key={l.label} href={l.href}
-                className="px-3.5 py-2 rounded-lg text-ink-600 hover:text-ink-900 hover:bg-ink-50 transition-colors">
-                {l.label}
+    <div className="landing-page-root relative min-h-screen overflow-x-hidden antialiased">
+      <BackgroundShader />
+
+      <Header
+        startHref={startHref}
+        isLoggedIn={isLoggedIn}
+        open={mobileMenuOpen}
+        setOpen={setMobileMenuOpen}
+      />
+
+      <main className="relative z-10 pt-20">
+        <Hero startHref={startHref} />
+        <AsSeenOn />
+        <TrustBar />
+        <Checks />
+        <AlgorithmPanel />
+        <Testimonial />
+        <HowItWorks />
+        <Pricing
+          startHref={startHref}
+          plan={plan}
+          loadingId={loadingId}
+          checkoutError={checkoutError}
+          onUpgrade={handleUpgrade}
+        />
+        <Faq />
+        <FinalCta startHref={startHref} />
+      </main>
+
+      <SiteFooter />
+    </div>
+  );
+}
+
+/* ── Shared bits ─────────────────────────────────────────────────── */
+
+/**
+ * The arrow that trails every red CTA in the comp.
+ *
+ * No built-in size. It used to hard-code `h-5 w-5` and then concatenate the
+ * caller's class, so `<CtaArrow className="h-4 w-4" />` emitted
+ * `class="h-5 w-5 h-4 w-4"` and rendered at 16px only because Tailwind happens to
+ * order `h-4` after `h-5` in the generated stylesheet. Nothing in the markup
+ * decided that — a change to class ordering would silently resize four CTAs. The
+ * size now comes from exactly one place: the caller.
+ */
+function CtaArrow({ className = 'h-5 w-5' }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+    </svg>
+  );
+}
+
+/** The comp's inline check: a bare 2px tick, no disc. */
+function Tick({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+    </svg>
+  );
+}
+
+
+/* ── Header ──────────────────────────────────────────────────────
+   The comp's nav is `hidden md:flex` with no small-screen fallback, so
+   the hamburger and the panel below it are additions — a landing page
+   whose nav disappears under 768px is broken. The comp swaps them in at
+   md, where the logo, four links and the auth pair need more than 768px
+   and wrap onto two lines, so the switch happens at lg instead; at the
+   comp's own 1280 reference width nothing changes. Everything else, down
+   to the h-20 bar and the hover lift on each link, is the comp's.
+   ───────────────────────────────────────────────────────────────── */
+
+const NAV_LINK =
+  'text-[16px] font-medium text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:text-red-brand';
+
+function Header({
+  startHref,
+  isLoggedIn,
+  open,
+  setOpen,
+}: {
+  startHref: string;
+  isLoggedIn: boolean;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+}) {
+  return (
+    <header className="fixed top-0 z-50 w-full border-b border-gray-100/50 bg-white/70 backdrop-blur-xl transition-all duration-500">
+      <div className={SHELL}>
+        <div className="flex h-20 items-center justify-between">
+          <Link
+            href="/"
+            className="flex shrink-0 items-center gap-2 transition-transform duration-300 hover:scale-105"
+          >
+            <img
+              src="/images/landing/logo.png"
+              alt="Publish"
+              width={379}
+              height={81}
+              className="h-[29px] w-auto object-contain"
+            />
+          </Link>
+
+          <nav className="hidden items-center gap-8 lg:flex">
+            {NAV.map((item) => (
+              <a key={item.label} href={item.href} className={NAV_LINK}>
+                {item.label}
               </a>
             ))}
+            <MegaMenu label="Resources" groups={RESOURCES_MENU} footer={{ label: 'Visit the help center', href: '/help' }} />
+          </nav>
+
+          <div className="hidden items-center gap-6 lg:flex">
+            <Link href={isLoggedIn ? '/dashboard' : '/sign-in'} className={NAV_LINK}>
+              {isLoggedIn ? 'Dashboard' : 'Log in'}
+            </Link>
+            <Link
+              href={startHref}
+              className="shimmer-hover flex items-center gap-2 rounded-full bg-red-brand px-6 py-2.5 text-[16px] font-medium text-white"
+            >
+              {CTA_LABEL}
+              <CtaArrow className="h-4 w-4" />
+            </Link>
           </div>
-          <div className="flex items-center gap-2">
-            {isLoggedIn ? (
-              <Link href="/dashboard">
-                <Button variant="dark" size="md" rightIcon={<ArrowRight className="w-4 h-4" />}>
-                  Go to Dashboard
-                </Button>
-              </Link>
-            ) : (
-              <>
-                <Link href="/sign-in"><Button variant="ghost" size="md">Log in</Button></Link>
-                <Link href="/upload">
-                  <Button variant="dark" size="md" leftIcon={<Upload className="w-4 h-4" />}>
-                    Analyze My Video
-                  </Button>
-                </Link>
-              </>
-            )}
-          </div>
+
+          {/* small screens */}
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-label={open ? 'Close menu' : 'Open menu'}
+            className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full text-gray-900 transition-colors hover:bg-gray-100 lg:hidden"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              {open ? (
+                <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+              ) : (
+                <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+              )}
+            </svg>
+          </button>
         </div>
-      </nav>
+      </div>
 
-      {/* ──────────────── HERO ──────────────── */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-radial-fade pointer-events-none" />
-        <div className="max-w-[1200px] mx-auto px-6 pt-20 pb-16 grid lg:grid-cols-2 gap-14 items-center relative">
-          <div>
-            <h1 className="font-display text-[52px] sm:text-[60px] leading-[1.03] font-bold tracking-[-0.035em] text-ink-900 text-balance">
-              Publish Every Video With Confidence
-            </h1>
-            <p className="text-[18px] text-ink-600 mt-6 max-w-lg leading-relaxed">
-              Analyze your videos before publishing. Improve monetization, retention, SEO,
-              thumbnails, and content quality with actionable recommendations — not guesswork.
-            </p>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mt-9">
-              <Link href={isLoggedIn ? '/dashboard' : '/upload'}>
-                <Button size="xl" variant="dark" leftIcon={<Upload className="w-4 h-4" />}>
-                  {isLoggedIn ? 'Go to Dashboard' : 'Analyze My First Video'}
-                </Button>
-              </Link>
-              <Link href="#how">
-                <Button size="xl" variant="secondary" leftIcon={<Play className="w-4 h-4" />}>
-                  Watch 2-Minute Demo
-                </Button>
-              </Link>
-            </div>
-            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13.5px] text-ink-500">
-              <span className="inline-flex items-center gap-2">
-                <Check className="w-4 h-4 text-brand-600" /> No credit card
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <Check className="w-4 h-4 text-brand-600" /> First analysis free
-              </span>
-            </div>
-          </div>
-          <HeroPreview />
-        </div>
-      </section>
-
-      {/* ──────────────── STATS ──────────────── */}
-      <section className="max-w-[1200px] mx-auto px-6 py-10">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { icon: Play, value: '28,657+', label: 'Videos Analyzed' },
-            { icon: FileText, value: '94,213+', label: 'Reports Generated' },
-            { icon: Clock, value: '18.6 hrs', label: 'Avg. Time Saved / Month' },
-            { icon: Star, value: '98%', label: 'Creator Satisfaction' },
-          ].map((s) => {
-            const Icon = s.icon;
-            return (
-              <div key={s.label} className="bg-white border border-ink-200 rounded-2xl p-5">
-                <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center mb-3">
-                  <Icon className="w-[18px] h-[18px] text-brand-600" />
-                </div>
-                <div className="font-display text-[26px] font-bold tracking-tight text-ink-900">{s.value}</div>
-                <div className="text-[13px] text-ink-500 mt-1">{s.label}</div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ──────────────── PROBLEM / SOLUTION / HOW ──────────────── */}
-      <section id="how" className="max-w-[1200px] mx-auto px-6 py-16">
-        <div className="grid lg:grid-cols-3 gap-8">
-          <div>
-            <h3 className="font-display text-lg font-bold text-ink-900 mb-5">The Problem</h3>
-            <div className="space-y-4">
-              {[
-                { icon: AlertTriangle, title: 'You publish without knowing the risks', body: 'Low retention, monetization issues, or copyright problems can hurt your channel.' },
-                { icon: Target, title: "You're guessing what works", body: 'Thumbnails, titles, and hooks are based on assumptions, not data.' },
-                { icon: Clock, title: 'It takes hours to improve videos', body: 'Researching, analyzing, and optimizing every video is exhausting.' },
-              ].map((p) => {
-                const Icon = p.icon;
-                return (
-                  <div key={p.title} className="flex gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-crimson-50 flex items-center justify-center shrink-0">
-                      <Icon className="w-[18px] h-[18px] text-crimson-600" />
-                    </div>
-                    <div>
-                      <div className="text-[14px] font-semibold text-ink-900">{p.title}</div>
-                      <div className="text-[13px] text-ink-500 mt-0.5 leading-relaxed">{p.body}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <h3 className="font-display text-lg font-bold text-ink-900 mb-5">The Solution</h3>
-            <div className="space-y-4">
-              {[
-                { icon: Sparkles, title: 'AI-Powered Analysis', body: 'Get deep insights on every aspect of your content in minutes.' },
-                { icon: Lightbulb, title: 'Actionable Recommendations', body: 'Know exactly what to fix and how, by the biggest impact.' },
-                { icon: TrendingUp, title: 'Save Time. Grow Faster.', body: 'Create better content, rank higher, and grow your audience consistently.' },
-              ].map((p) => {
-                const Icon = p.icon;
-                return (
-                  <div key={p.title} className="flex gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
-                      <Icon className="w-[18px] h-[18px] text-brand-600" />
-                    </div>
-                    <div>
-                      <div className="text-[14px] font-semibold text-ink-900">{p.title}</div>
-                      <div className="text-[13px] text-ink-500 mt-0.5 leading-relaxed">{p.body}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <h3 className="font-display text-lg font-bold text-ink-900 mb-5">How It Works</h3>
-            <div className="space-y-3">
-              {[
-                { n: 1, icon: Upload, title: 'Upload', body: 'Add your video, title, and details.' },
-                { n: 2, icon: Search, title: 'Analyze', body: 'Our AI analyzes 50+ points in seconds.' },
-                { n: 3, icon: Zap, title: 'Improve', body: 'Get actionable steps to make it better.' },
-                { n: 4, icon: Check, title: 'Publish', body: 'Publish with confidence and track results.' },
-              ].map((s) => {
-                const Icon = s.icon;
-                return (
-                  <div key={s.n} className="flex items-center gap-3 bg-white border border-ink-200 rounded-xl px-4 py-3">
-                    <div className="w-8 h-8 rounded-lg bg-ink-900 text-white flex items-center justify-center shrink-0">
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-[13.5px] font-semibold text-ink-900">{s.n}. {s.title}</div>
-                      <div className="text-[12.5px] text-ink-500">{s.body}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ──────────────── FEATURES ──────────────── */}
-      <section id="features" className="max-w-[1200px] mx-auto px-6 py-16">
-        <h2 className="font-display text-[34px] font-bold tracking-tight text-center text-ink-900 mb-12">
-          Everything You Need to Create Better Videos
-        </h2>
-        <div className="bg-white border border-ink-200 rounded-3xl p-8 grid md:grid-cols-3 gap-x-8 gap-y-10">
-          {[
-            { icon: Shield, title: 'Monetization Analysis', body: 'Check policy compliance, ad suitability, and monetization risk before you publish.' },
-            { icon: ImageIcon, title: 'Thumbnail Review', body: 'Get AI feedback on your thumbnail and improve your click-through rate.' },
-            { icon: Target, title: 'Hook Optimizer', body: 'Ensure your hook grabs attention in the first few seconds and keeps viewers.' },
-            { icon: Wand2, title: 'AI Humanizer', body: 'Reduce AI detection risk and make your content sound natural and authentic.' },
-            { icon: Search, title: 'SEO Assistant', body: 'Optimize titles, descriptions, tags, and keywords to rank higher.' },
-            { icon: ListChecks, title: 'Publish Checklist', body: 'Final checklist to ensure your video is ready to perform at its best.' },
-          ].map((f) => {
-            const Icon = f.icon;
-            return (
-              <div key={f.title}>
-                <div className="w-11 h-11 rounded-xl border border-ink-200 flex items-center justify-center mb-4">
-                  <Icon className="w-5 h-5 text-ink-900" />
-                </div>
-                <h3 className="text-[16px] font-semibold text-ink-900">{f.title}</h3>
-                <p className="text-[13.5px] text-ink-500 mt-2 leading-relaxed">{f.body}</p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ──────────────── INSIGHTS ──────────────── */}
-      <section className="max-w-[1200px] mx-auto px-6 py-16">
-        <div className="bg-white border border-ink-200 rounded-3xl p-8 grid lg:grid-cols-2 gap-10 items-center">
-          <div>
-            <div className="inline-flex items-center gap-2 text-[12px] font-semibold text-brand-600 bg-brand-50 rounded-full px-3 py-1 mb-5">
-              <BarChart3 className="w-3.5 h-3.5" /> Your Command Center
-            </div>
-            <h2 className="font-display text-[32px] font-bold tracking-tight text-ink-900">
-              All Your Insights In One Place
-            </h2>
-            <p className="text-[15px] text-ink-600 mt-4 leading-relaxed">
-              Track every analysis, monitor your content health, and see your growth over time.
-            </p>
-            <ul className="mt-6 space-y-3">
-              {['Detailed analysis reports', 'Performance tracking', 'Project organization', 'Export and share reports'].map((f) => (
-                <li key={f} className="flex items-center gap-2.5 text-[14px] text-ink-700">
-                  <Check className="w-4 h-4 text-brand-600 shrink-0" /> {f}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <InsightsPreview />
-        </div>
-      </section>
-
-      {/* ──────────────── BEFORE / AFTER ──────────────── */}
-      <section className="max-w-[1200px] mx-auto px-6 py-16">
-        <h2 className="font-display text-[30px] font-bold tracking-tight text-ink-900 mb-8">
-          Real Improvements. Real Results.
-        </h2>
-        <div className="grid md:grid-cols-2 gap-5">
-          <BeforeAfter
-            label="Title" before="AI Tools" after="10 AI Tools That Save You 20 Hours Every Week"
-            metric="CTR" beforeVal="2.1%" afterVal="5.6%"
-          />
-          <BeforeAfter
-            label="Hook" before='"Hey everyone, welcome back to my channel..."' after='"I tested 20 AI tools so you don’t have to."'
-            metric="Retention (30s)" beforeVal="32%" afterVal="68%"
-          />
-        </div>
-      </section>
-
-      {/* ──────────────── AI COACH ──────────────── */}
-      <section className="max-w-[1200px] mx-auto px-6 py-16">
-        <div className="grid lg:grid-cols-2 gap-10 items-center">
-          <div>
-            <div className="inline-flex items-center gap-2 text-[12px] font-semibold text-brand-600 bg-brand-50 rounded-full px-3 py-1 mb-5">
-              <Sparkles className="w-3.5 h-3.5" /> AI Content Coach
-            </div>
-            <h2 className="font-display text-[32px] font-bold tracking-tight text-ink-900">
-              Your Personal AI Coach
-            </h2>
-            <p className="text-[15px] text-ink-600 mt-4 leading-relaxed">
-              Get answers, suggestions, and content improvements from your AI coach.
-            </p>
-            <ul className="mt-6 space-y-3">
-              {['Ask anything about your content', 'Get tailored recommendations', 'Rewrite and improve instantly'].map((f) => (
-                <li key={f} className="flex items-center gap-2.5 text-[14px] text-ink-700">
-                  <Check className="w-4 h-4 text-brand-600 shrink-0" /> {f}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <CoachPreview />
-        </div>
-      </section>
-
-      {/* ──────────────── PRICING ──────────────── */}
-      <section id="pricing" className="max-w-[1200px] mx-auto px-6 py-16">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-10">
-          <h2 className="font-display text-[32px] font-bold tracking-tight text-ink-900">Simple, Fair Pricing</h2>
-          <span className="text-[13px] text-ink-500">Monthly billing · cancel anytime</span>
-        </div>
-
-        {checkoutError && (
-          <div className="max-w-md mx-auto text-center rounded-xl bg-crimson-50 border border-crimson-100 px-4 py-3 mb-6 text-sm text-crimson-700">
-            {checkoutError}
-          </div>
-        )}
-
-        <div className="grid md:grid-cols-3 gap-5">
-          {[
-            {
-              name: 'Creator', priceM: 19, planKey: 'starter',
-              blurb: 'Perfect for new and growing creators.',
-              features: ['30 analyses / month', 'Full reports', 'Thumbnail & hook analysis', 'SEO suggestions', 'Export PDF reports'],
-              popular: false,
-            },
-            {
-              name: 'Pro', priceM: 39, planKey: 'pro',
-              blurb: 'For serious creators who want to scale.',
-              features: ['100 analyses / month', 'Everything in Creator', 'AI Humanizer', 'Script analysis', 'Priority processing', 'Channel insights'],
-              popular: true,
-            },
-            {
-              name: 'Agency', priceM: 79, planKey: 'agency',
-              blurb: 'For teams and content agencies.',
-              features: ['Unlimited analyses', 'Everything in Pro', 'Team members', 'White-label reports', 'API access', 'Priority support'],
-              popular: false,
-            },
-          ].map((tier) => (
-            <PricingCard
-              key={tier.name}
-              tier={tier}
-              isLoggedIn={isLoggedIn}
-              currentPlan={plan}
-              onUpgrade={handleUpgrade}
-              isLoading={loadingId === tier.planKey}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* ──────────────── TESTIMONIALS ──────────────── */}
-      <section className="max-w-[1200px] mx-auto px-6 py-16">
-        <h2 className="font-display text-[30px] font-bold tracking-tight text-ink-900 mb-8">
-          Loved by Creators Worldwide
-        </h2>
-        <div className="grid md:grid-cols-3 gap-5">
-          {[
-            { name: 'Sarah Chen', role: 'YouTuber · 120K Subscribers', quote: 'Publish has completely changed how I create videos. My CTR improved by 32% in just a month!', hue: 'bg-brand-100 text-brand-700' },
-            { name: 'Mike Thompson', role: 'Content Creator', quote: 'The recommendations are spot on. It’s like having a content coach that’s available 24/7.', hue: 'bg-amber-100 text-amber-700' },
-            { name: 'Agency Elevate', role: 'Digital Marketing Agency', quote: 'We use Publish for all our clients. The white-label reports are a game changer for our workflow.', hue: 'bg-ink-200 text-ink-700' },
-          ].map((t) => (
-            <div key={t.name} className="bg-white border border-ink-200 rounded-2xl p-6">
-              <div className="flex items-center gap-3">
-                <div className={`w-11 h-11 rounded-full flex items-center justify-center font-semibold ${t.hue}`}>
-                  {t.name.charAt(0)}
-                </div>
-                <div>
-                  <div className="text-[14px] font-semibold text-ink-900">{t.name}</div>
-                  <div className="text-[12px] text-ink-500">{t.role}</div>
-                </div>
-              </div>
-              <p className="text-[14px] text-ink-700 mt-4 leading-relaxed">&ldquo;{t.quote}&rdquo;</p>
-              <div className="flex gap-0.5 mt-4">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className="w-4 h-4 fill-amber-500 text-amber-500" />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ──────────────── FAQ ──────────────── */}
-      <section id="faq" className="max-w-[760px] mx-auto px-6 py-16">
-        <h2 className="font-display text-[30px] font-bold tracking-tight text-ink-900 mb-8 text-center">
-          Frequently Asked Questions
-        </h2>
-        <div className="space-y-3">
-          {[
-            { q: 'Is my video stored on your servers?', a: 'Your uploads are encrypted at rest and in transit, used only to generate your analysis, and can be permanently deleted at any time. We never use your content to train models.' },
-            { q: 'How accurate are the analysis reports?', a: 'Our recommendations are based on recognized platform policies and content best practices. Scores are estimates and suggestions — platforms have final say on monetization.' },
-            { q: 'Does this guarantee monetization or more views?', a: 'No tool can guarantee that. Publish predicts risks, explains why they exist, and shows you the specific edits most likely to help. The rest is up to you and each platform.' },
-            { q: 'Can I cancel my subscription anytime?', a: 'Yes — from Settings → Billing & plan → Manage subscription. Your data remains available for 30 days in case you return.' },
-            { q: 'What platforms are supported?', a: 'YouTube, TikTok, Instagram, Facebook, and LinkedIn — each with platform-specific SEO and policy checks.' },
-          ].map((faq, i) => (
-            <div key={i} className="bg-white border border-ink-200 rounded-2xl overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                className="w-full flex items-center justify-between px-5 py-4 text-left"
+      {open && (
+        <div className="border-t border-gray-100/50 bg-white/95 backdrop-blur-xl lg:hidden">
+          <div className={`${SHELL} flex flex-col gap-1 py-4`}>
+            {NAV.map((item) => (
+              <a
+                key={item.label}
+                href={item.href}
+                onClick={() => setOpen(false)}
+                className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-gray-900 transition-colors hover:bg-gray-50"
               >
-                <span className="text-[15px] font-medium text-ink-900 pr-6">{faq.q}</span>
-                <ChevronDown className={`w-4 h-4 text-ink-400 shrink-0 transition-transform duration-300 ${openFaq === i ? 'rotate-180' : ''}`} />
-              </button>
-              {openFaq === i && (
-                <div className="px-5 pb-5 text-[14px] text-ink-600 leading-relaxed animate-enter">{faq.a}</div>
+                {item.label}
+              </a>
+            ))}
+            <Link
+              href="/help"
+              onClick={() => setOpen(false)}
+              className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-gray-900 transition-colors hover:bg-gray-50"
+            >
+              Resources
+            </Link>
+            <Link
+              href={isLoggedIn ? '/dashboard' : '/sign-in'}
+              onClick={() => setOpen(false)}
+              className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-gray-900 transition-colors hover:bg-gray-50"
+            >
+              {isLoggedIn ? 'Dashboard' : 'Log in'}
+            </Link>
+            <Link
+              href={startHref}
+              onClick={() => setOpen(false)}
+              className="mt-2 flex items-center justify-center gap-2 rounded-full bg-red-brand px-6 py-3 text-[16px] font-medium text-white"
+            >
+              {CTA_LABEL}
+              <CtaArrow className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}
+
+/* ── Hero ────────────────────────────────────────────────────────── */
+
+function BadgeShield({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+      <path
+        clipRule="evenodd"
+        fillRule="evenodd"
+        d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+      />
+    </svg>
+  );
+}
+
+function Hero({ startHref }: { startHref: string }) {
+  return (
+    /* One-viewport hero. The above-the-fold reference render puts the header and
+       the whole hero inside a single 1402x779 frame, so from lg up the section
+       claims the viewport minus the 80px header and centres its two columns in
+       it. svh (not vh) so mobile browser chrome does not push the CTA under the
+       fold. Below lg the content is taller than any phone viewport, so it flows
+       normally and scrolls. */
+    <section
+      className={`reveal-element relative flex flex-col items-center bg-white pb-16 pt-10 lg:min-h-[calc(100svh-5rem)] lg:flex-row lg:items-center lg:py-8 ${SHELL}`}
+    >
+      {/* The section is capped at the 1280 shell, so past that width its gutters
+          showed the shader's grey through. The reference render is pure white
+          edge to edge above the fold, so the hero paints its own full-bleed
+          base. */}
+      <div aria-hidden className="absolute inset-y-0 left-1/2 -z-10 w-screen -translate-x-1/2 bg-white" />
+
+      {/* left column */}
+      <div className="z-10 w-full lg:w-1/2 lg:pr-8">
+        <div className="hero-fade-up mb-5 flex flex-wrap items-center gap-2.5">
+          <span className="inline-flex cursor-default items-center gap-2 rounded-full border border-gray-200/50 bg-white/80 px-4 py-1.5 shadow-sm backdrop-blur-md transition-shadow duration-300 hover:shadow-md">
+            <BadgeShield className="h-4 w-4 text-red-brand" />
+            <span className="text-[14px] font-medium text-gray-700">Trusted by 12,000+ creators</span>
+          </span>
+          {/* Five faces as one strip. The strip's own "+2.1k more" pill is
+              cropped off the asset because the count next to it is "12K+"
+              here; the uncropped version is used lower down. */}
+          <span className="inline-flex cursor-default items-center gap-2 rounded-full border border-gray-200/50 bg-white/80 py-1.5 pl-2 pr-3.5 shadow-sm backdrop-blur-md transition-shadow duration-300 hover:shadow-md">
+            <img
+              src="/images/landing/avatar-group.webp"
+              alt=""
+              width={520}
+              height={136}
+              className="h-7 w-auto"
+            />
+            <span className="text-[12px] font-bold text-gray-900">12K+</span>
+          </span>
+        </div>
+
+        {/* Type scales with the viewport so the column still fits above the fold
+            on a short laptop: ~44px at 700px tall, the comp's 72px only once
+            there is room for it. */}
+        <h1
+          className="hero-fade-up mb-5 text-[40px] font-extrabold leading-[1.08] tracking-tight text-gray-900 sm:text-[52px] lg:text-[clamp(2.5rem,4.2vh+1vw,4.5rem)]"
+          style={{ animationDelay: '100ms' }}
+        >
+          Stop posting{' '}
+          <br className="hidden lg:inline" />
+          videos that <span className="curve-underline italic text-red-brand">die.</span>
+        </h1>
+
+        <p
+          className="hero-fade-up mb-4 max-w-lg text-[16px] leading-relaxed text-gray-600 lg:text-[18px]"
+          style={{ animationDelay: '200ms' }}
+        >
+          Run your script, voiceover and video through nine AI checks — hook, SEO, thumbnail,
+          retention, monetization and more — and get a Publish Score before you upload.
+        </p>
+
+        <p
+          className="hero-fade-up mb-6 text-[18px] font-bold leading-7 text-gray-900"
+          style={{ animationDelay: '300ms' }}
+        >
+          Not after. <span className="underline decoration-2 underline-offset-4">Before.</span>
+        </p>
+
+        {/* Six faces and the "+2.1k more" pill are one strip in the asset, so
+            there is no HTML count next to it. */}
+        <img
+          src="/images/landing/avatar-stack.webp"
+          alt="Six creators who run their videos through Publish, plus 2,100 more"
+          width={900}
+          height={176}
+          className="hero-fade-up mb-3 h-11 w-auto"
+          style={{ animationDelay: '400ms' }}
+        />
+
+        <p className="hero-fade-up mb-6 text-[14px] text-gray-500" style={{ animationDelay: '450ms' }}>
+          Trusted by creators at 47K–470K subscribers
+        </p>
+
+        <div
+          className="hero-fade-up flex flex-col items-start gap-5 sm:flex-row sm:items-center"
+          style={{ animationDelay: '500ms' }}
+        >
+          <Link
+            href={startHref}
+            className="shimmer-hover flex items-center gap-2 rounded-full bg-red-brand px-8 py-4 text-[18px] font-bold text-white shadow-lg shadow-red-500/20"
+          >
+            Check a video — free
+            <CtaArrow className="h-5 w-5" />
+          </Link>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-[14px] text-gray-600">
+              <Tick className="h-4 w-4 text-red-brand" />
+              No credit card.
+            </div>
+            <div className="flex items-center gap-2 text-[14px] text-gray-600">
+              <Tick className="h-4 w-4 text-red-brand" />
+              No trial timers.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* right column — the phone shot with the three report cards floating off
+          it. The inner box is a flex item with no width of its own, so it
+          shrink-wraps the phone image and the cards' percentage offsets track
+          the phone at every size instead of the (wider) column. Each card is
+          already tilted in its own asset, so none of them is rotated here.
+          The overhang tightens as the viewport narrows, because past the shell's
+          gutter the root's overflow-x-hidden would slice the cards instead. A
+          360px screen has no room for a phone plus two cards beside it, so under
+          sm only the score card stays — the other two would sit on top of the
+          report they are meant to be pulled out of. */}
+      <div className="mt-12 flex w-full justify-center lg:mt-0 lg:w-1/2">
+        <div
+          className="hero-fade-up relative"
+          style={{ animationDelay: '400ms' }}
+        >
+          <img
+            src="/images/landing/hero-phone-hand.webp"
+            alt="A hand holding a phone showing a Publish report: score 91 out of 100, the score breakdown and the top three fixes"
+            width={955}
+            height={1263}
+            className="float-soft block h-auto w-[min(78vw,320px)] sm:w-[360px] lg:w-auto lg:max-h-[calc(100svh-11rem)] lg:max-w-full"
+          />
+
+          <img
+            src="/images/landing/card-score.webp"
+            alt=""
+            width={700}
+            height={749}
+            className="float-a pointer-events-none absolute -left-[8%] top-[3%] w-[38%] drop-shadow-xl sm:top-[7%] sm:w-[46%] sm:-left-[18%] lg:-left-[24%]"
+          />
+          <img
+            src="/images/landing/card-hook.webp"
+            alt=""
+            width={580}
+            height={549}
+            className="float-b pointer-events-none absolute top-[4%] hidden w-[42%] drop-shadow-xl sm:block sm:-right-[18%] lg:-right-[24%]"
+          />
+          <img
+            src="/images/landing/card-ctr.webp"
+            alt=""
+            width={579}
+            height={577}
+            className="float-c pointer-events-none absolute bottom-[16%] hidden w-[42%] drop-shadow-xl sm:block sm:-right-[15%] lg:-right-[20%]"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Supported-platform strip ────────────────────────────────────
+   Was "As seen on & trusted by" over TechCrunch / Forbes / The Verge /
+   Creators.co. None of those had featured the product, which makes it a
+   false endorsement using other companies' trademarks — the single
+   riskiest line on the page. It now names the five platforms the review
+   engine actually scores (`PlatformName` in src/lib/ai/policies.ts),
+   which is a factual compatibility statement rather than a claim about
+   who has covered us. Marks come from BrandMarks.tsx.
+   ───────────────────────────────────────────────────────────────── */
+
+function AsSeenOn() {
+  return (
+    <section className="reveal-element border-y border-gray-100/50 bg-white/50 py-8 backdrop-blur-sm">
+      <div className="mx-auto w-full max-w-[1280px] px-4">
+        <p className="mb-5 text-center text-[12px] font-bold uppercase leading-4 tracking-widest text-gray-400">
+          Scores videos for
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-8 text-gray-900 opacity-50 transition-opacity duration-700 hover:opacity-80 md:gap-16">
+          <YouTubeMark />
+          <TikTokMark />
+          <InstagramMark />
+          <FacebookMark />
+          <LinkedInMark />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Trust bar ───────────────────────────────────────────────────── */
+
+const TRUST: { label: string; d: string }[] = [
+  {
+    label: 'Benchmarked against 2026 platform data',
+    d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+  },
+  { label: 'Results in under 60 seconds', d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+  {
+    label: 'Updated weekly',
+    d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+  },
+  {
+    label: 'Privacy first',
+    d: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
+  },
+];
+
+function TrustBar() {
+  return (
+    <div className="reveal-element border-y border-gray-100/50 bg-white/50 py-6 backdrop-blur-sm">
+      <div className="mx-auto flex w-full max-w-[1280px] flex-wrap justify-center gap-8 px-4 text-[14px] font-medium text-gray-500 md:gap-16">
+        {TRUST.map((item) => (
+          <div
+            key={item.label}
+            className="flex cursor-default items-center gap-2 transition-colors duration-300 hover:text-gray-900"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path d={item.d} strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} />
+            </svg>
+            {item.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── The nine checks ─────────────────────────────────────────────
+   Each card ends in a different piece of evidence — a score bar, a
+   keyword read-out, the thumbnail A/B, a duration, a revenue rating,
+   a rewritten line, a waveform, a cut timeline — so the footers are
+   written out rather than driven from data.
+
+   Cards 01-06 use the comp's own rasters with the baked-in word
+   cropped off: at the 24px the comp renders them at, that word is an
+   unreadable three-pixel smear, and the glyph alone is plainly what
+   the tile is meant to show. The comp never drew script, voice or
+   video, so 07-09 use `Mark` instead of a seventh invented raster.
+   ───────────────────────────────────────────────────────────────── */
+
+const CARD =
+  'reveal-element card-lift flex cursor-pointer flex-col rounded-2xl border border-gray-100 bg-white/80 p-8 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] backdrop-blur-md';
+
+function CheckHead({
+  n,
+  title,
+  blurb,
+  icon,
+  tile,
+  hover,
+}: {
+  n: string;
+  title: string;
+  blurb: string;
+  /**
+   * A raster path for the six icons the comp drew, or an inline mark for the
+   * three layers it never drew.
+   */
+  icon: string | React.ReactElement;
+  tile: string;
+  hover: string;
+}) {
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-4">
+        <div
+          className={`flex h-12 w-12 items-center justify-center rounded-xl transition-transform duration-500 ${tile} ${hover}`}
+        >
+          {typeof icon === 'string' ? (
+            <img src={icon} alt={title} className="h-6 w-6 object-contain" />
+          ) : (
+            icon
+          )}
+        </div>
+        <div>
+          <span className="block text-[14px] font-bold leading-none text-gray-400">{n}</span>
+          <h3 className="text-[20px] font-bold leading-none text-gray-900">{title}</h3>
+        </div>
+      </div>
+      <p className="mb-8 text-[16px] text-gray-600">{blurb}</p>
+    </div>
+  );
+}
+
+/**
+ * A tile glyph drawn in HTML.
+ *
+ * The comp only ever drew six icons, and the page now shows nine layers. Rather
+ * than crop a seventh raster out of an asset that does not exist, the three added
+ * cards carry stroked marks that inherit the tile's own `currentColor` - the same
+ * near-black the cropped rasters are drawn in, so they sit at the same weight.
+ */
+function Mark({ children }: { children: React.ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-6 w-6"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+/**
+ * One threshold table for every score on the page. A colour and a word always
+ * mean the same thing, and neither is ever chosen per card - which is what went
+ * wrong before: 41% was drawn in near-black because a `tone` prop said so, and
+ * every verdict printed green regardless of its number.
+ */
+function grade(score: number) {
+  if (score >= 70) return { word: 'Strong', bar: 'bg-green-500', text: 'text-green-600' };
+  if (score >= 40) return { word: 'Fair', bar: 'bg-amber-500', text: 'text-amber-600' };
+  return { word: 'Weak', bar: 'bg-red-brand', text: 'text-red-brand-ink' };
+}
+
+function ScoreLine({ score }: { score: number }) {
+  const g = grade(score);
+  return (
+    <div className="mb-2 flex items-end justify-between">
+      <span className={`font-bold ${g.text}`}>{g.word}</span>
+      <span className="text-[14px] font-medium">
+        <span className="text-[18px] font-bold text-gray-900">{score}</span>
+        <span className="text-gray-400">/100</span>
+      </span>
+    </div>
+  );
+}
+
+/** Track + fill. The fill's width is the datum; the growth is CSS (see .lp-bar).
+    The label carries the same reading for anyone who cannot see the colour. */
+function ScoreBar({ score }: { score: number }) {
+  const g = grade(score);
+  return (
+    <div
+      role="img"
+      aria-label={`${score} out of 100 - ${g.word}`}
+      className="h-2 w-full overflow-hidden rounded-full bg-gray-50"
+    >
+      <div className={`lp-bar h-2 rounded-full ${g.bar}`} style={{ width: `${score}%` }} />
+    </div>
+  );
+}
+
+/**
+ * Every card ends in the same three rows - caption, verdict, bar - so the nine
+ * footers share one baseline and one colour language. Card-specific evidence
+ * (the keyword table, the thumbnail A/B, the waveform) goes in `children`,
+ * *above* the metric, where it reads as supporting detail rather than as a
+ * competing metric with its own private encoding.
+ */
+function CardFooter({
+  label,
+  score,
+  children,
+}: {
+  label: string;
+  score: number;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="mt-auto">
+      {children ? <div className="mb-4">{children}</div> : null}
+      <div className="mb-1 text-[12px] text-gray-500">{label}</div>
+      <ScoreLine score={score} />
+      <ScoreBar score={score} />
+    </div>
+  );
+}
+
+const TILE_PLAIN = 'border border-gray-100 text-gray-900';
+
+/**
+ * The waveform under the voice card. Heights only - it is a picture of speech,
+ * not a plot of anything, so it is written out rather than generated.
+ */
+const VOICE_BARS = [30, 62, 44, 88, 55, 100, 40, 74, 34, 92, 50, 68, 38, 58];
+
+/**
+ * The cut timeline under the video card: one tick per sampled frame pair, filled
+ * where the sampler read a hard cut. Twelve ticks and five cuts is the shape of a
+ * normally-edited clip, which is what the card is claiming.
+ */
+const CUT_TICKS = [false, true, false, false, true, false, true, false, false, true, false, true];
+
+function Checks() {
+  return (
+    <section
+      id="checks"
+      aria-labelledby="checks-heading"
+      className="mx-auto w-full max-w-[1280px] px-4 py-24"
+    >
+      <h2 id="checks-heading" className="mb-16 text-[30px] font-bold text-gray-900">
+        Nine checks, every upload
+      </h2>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {/* 01 — Hook */}
+        <div className={`${CARD} delay-100`}>
+          <CheckHead
+            n="01"
+            title="Hook"
+            blurb="Grabs attention in the first 7 seconds."
+            icon="/images/landing/icon-hook.png"
+            tile={TILE_PLAIN}
+            hover="hover:rotate-12"
+          />
+          <CardFooter label="Hook strength" score={93} />
+        </div>
+
+        {/* 02 — SEO */}
+        <div className={`${CARD} delay-200`}>
+          <CheckHead
+            n="02"
+            title="SEO"
+            blurb="Ranks for the right searches."
+            icon="/images/landing/icon-seo.png"
+            tile={TILE_PLAIN}
+            hover="hover:-rotate-12"
+          />
+          <CardFooter label="Search visibility" score={76}>
+            <div className="rounded-xl border border-gray-50 bg-gray-50/50 p-4 transition-colors duration-300 hover:bg-gray-100/50">
+              <div className="mb-2 flex justify-between text-[14px]">
+                <span className="text-gray-500">Primary keyword</span>
+                <span className="font-bold text-gray-900">studio setup</span>
+              </div>
+              <div className="flex justify-between text-[14px]">
+                <span className="text-gray-500">Search volume</span>
+                <span className="font-bold text-gray-900">High</span>
+              </div>
+            </div>
+          </CardFooter>
+        </div>
+
+        {/* 03 — Thumbnail */}
+        <div className={`${CARD} delay-300`}>
+          <CheckHead
+            n="03"
+            title="Thumbnail"
+            blurb="Gets clicks, not ignored."
+            icon="/images/landing/icon-thumbnail.png"
+            tile={TILE_PLAIN}
+            hover="hover:scale-110"
+          />
+          <CardFooter label="Click-through potential" score={88}>
+            <div className="w-full overflow-hidden rounded-[8px] border border-gray-100 transition-transform duration-500 hover:scale-[1.02]">
+              <img
+                src="/images/landing/thumbnail-comparison.webp"
+                alt="The same thumbnail before and after, with predicted click-through for each: 2.1% before, 6.3% after"
+                width={1000}
+                height={417}
+                className="block h-auto w-full object-contain"
+              />
+            </div>
+          </CardFooter>
+        </div>
+
+        {/* 04 — Authenticity */}
+        <div className={`${CARD} delay-100`}>
+          <CheckHead
+            n="04"
+            title="Authenticity"
+            blurb="Feels real, not robotic."
+            icon="/images/landing/icon-authenticity.png"
+            tile={TILE_PLAIN}
+            hover="hover:rotate-12"
+          />
+          <CardFooter label="Authenticity" score={85} />
+        </div>
+
+        {/* 05 — Retention */}
+        <div className={`${CARD} delay-200`}>
+          <CheckHead
+            n="05"
+            title="Retention"
+            blurb="Keeps viewers watching."
+            icon="/images/landing/icon-retention.png"
+            tile={TILE_PLAIN}
+            hover="hover:-rotate-12"
+          />
+          <CardFooter label="Retention" score={41}>
+            <div className="text-[20px] font-bold text-gray-900">4:27 average view duration</div>
+          </CardFooter>
+        </div>
+
+        {/* 06 — Monetization */}
+        <div className={`${CARD} delay-300`}>
+          <CheckHead
+            n="06"
+            title="Monetization"
+            blurb="Maximizes revenue potential."
+            icon="/images/landing/icon-monetization.png"
+            tile={TILE_PLAIN}
+            hover="hover:scale-110"
+          />
+          <CardFooter label="Revenue potential" score={72} />
+        </div>
+
+        {/* 07 - Script */}
+        <div className={`${CARD} delay-100`}>
+          <CheckHead
+            n="07"
+            title="Script"
+            blurb="Reads tight, line by line."
+            icon={
+              <Mark>
+                <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" />
+                <path d="M14 3v5h5" />
+                <path d="M9 13h6" />
+                <path d="M9 17h4" />
+              </Mark>
+            }
+            tile={TILE_PLAIN}
+            hover="hover:rotate-12"
+          />
+          <CardFooter label="Script tightness" score={64}>
+            <div className="rounded-xl border border-gray-50 bg-gray-50/50 p-4 transition-colors duration-300 hover:bg-gray-100/50">
+              <div className="mb-2 text-[12px] text-gray-500">Line 3 - weak opener</div>
+              <p className="mb-1 text-[14px] leading-snug text-gray-400 line-through">
+                In today&apos;s video, I&apos;m going to show you my setup.
+              </p>
+              <p className="text-[14px] font-bold leading-snug text-gray-900">
+                Your studio is costing you views. Here&apos;s the fix.
+              </p>
+            </div>
+          </CardFooter>
+        </div>
+
+        {/* 08 - Voice */}
+        <div className={`${CARD} delay-200`}>
+          <CheckHead
+            n="08"
+            title="Voice"
+            blurb="Sounds clear, never rushed."
+            icon={
+              <Mark>
+                <path d="M4 10v4M8 6.5v11M12 4v16M16 7.5v9M20 11v2" />
+              </Mark>
+            }
+            tile={TILE_PLAIN}
+            hover="hover:-rotate-12"
+          />
+          <CardFooter label="Delivery" score={81}>
+            <div className="mb-2 text-[20px] font-bold text-gray-900">168 wpm</div>
+            <div className="group flex h-6 items-end gap-[3px]">
+              {VOICE_BARS.map((h, i) => (
+                <span
+                  key={i}
+                  className="flex-1 rounded-[2px] bg-gray-800 transition-transform duration-300 group-hover:scale-y-110"
+                  style={{ height: `${h}%` }}
+                />
+              ))}
+            </div>
+          </CardFooter>
+        </div>
+
+        {/* 09 - Video */}
+        <div className={`${CARD} delay-300`}>
+          <CheckHead
+            n="09"
+            title="Video"
+            blurb="Cut at a pace that holds."
+            icon={
+              <Mark>
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <path d="M10.5 9.5l4.5 2.5-4.5 2.5z" />
+              </Mark>
+            }
+            tile={TILE_PLAIN}
+            hover="hover:scale-110"
+          />
+          <CardFooter label="Pacing" score={69}>
+            <div className="mb-2 text-[20px] font-bold text-gray-900">1 cut every 2.4s</div>
+            <div className="group flex gap-[3px]">
+              {CUT_TICKS.map((cut, i) => (
+                <span
+                  key={i}
+                  className={`h-4 flex-1 rounded-[2px] transition-transform duration-300 group-hover:scale-y-125 ${
+                    cut ? 'bg-gray-800' : 'bg-gray-100'
+                  }`}
+                />
+              ))}
+            </div>
+          </CardFooter>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Algorithm panel ─────────────────────────────────────────────
+   Dark card; the trend graph is a dark-ground raster that the comp
+   screen-blends into the panel, so the plot glows and the panel's own
+   navy shows through the plot area.
+   ───────────────────────────────────────────────────────────────── */
+
+const ALGO_SIGNALS = ['CTR (Click-Through Rate)', 'Retention (Audience Retention)', 'Session Time (Minutes Viewed)'];
+
+function AlgorithmPanel() {
+  return (
+    <section id="algorithm" className="mx-auto w-full max-w-[1280px] px-4 pb-24">
+      <div className="reveal-element relative z-20 flex flex-col overflow-hidden rounded-3xl border border-gray-800/50 bg-[#0f172a]/90 shadow-2xl backdrop-blur-xl transition-transform duration-700 hover:scale-[1.01] lg:flex-row">
+        <div className="flex flex-col justify-center p-12 text-white lg:w-1/3">
+          <h2 className="mb-6 text-[36px] font-extrabold leading-tight">
+            What the algorithm{' '}
+            <span className="scribble-underline font-serif italic">actually</span> measures.
+          </h2>
+          <ul className="mb-8 space-y-4">
+            {ALGO_SIGNALS.map((signal) => (
+              <li
+                key={signal}
+                className="flex cursor-default items-center gap-3 transition-transform duration-300 hover:translate-x-2"
+              >
+                <svg
+                  className="h-6 w-6 shrink-0 text-red-brand"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                  />
+                </svg>
+                <span className="text-gray-300">{signal}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[14px] leading-relaxed text-gray-400">
+            We reverse engineer what matters so you can post with confidence.
+          </p>
+        </div>
+
+        {/* The supplied graph is a whole panel -- title, current-score box, both
+            axes and three annotations -- so it is contained, not cover-cropped:
+            object-cover here would slice the title and the x-axis off. Its own
+            ground is near-black, so mix-blend-screen drops it out and lets the
+            panel's navy show through the plot. */}
+        <figure className="group flex min-h-[320px] flex-col items-center justify-center overflow-hidden p-4 sm:p-6 lg:min-h-[520px] lg:w-2/3">
+          <img
+            src="/images/landing/algorithm-trend-graph.webp"
+            alt="Algorithm score plotted against position in a 10:42 video. It opens near 90% at 0:24, falls to 45 at 2:15, recovers to a 78 peak at 6:20, then declines through the final three minutes to about 26% at the end."
+            width={1250}
+            height={1000}
+            className="max-h-full w-auto max-w-full object-contain opacity-95 mix-blend-screen transition-all duration-700 group-hover:scale-[1.03] group-hover:opacity-100"
+          />
+          {/* The raster shows two different quantities - a 7-day video-level average
+              (the 82 badge) and a within-video curve (the plot). Without this line the
+              rising 82 reads as contradicting a line that ends low. */}
+          <figcaption className="mt-4 max-w-xl text-center text-[12px] leading-relaxed text-gray-400">
+            The badge is this video&rsquo;s overall score against the last seven days. The curve is
+            how that score moves moment to moment inside the video &mdash; the late decline is the
+            part worth fixing.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+  );
+}
+
+/* ── Testimonial ─────────────────────────────────────────────────── */
+
+function Testimonial() {
+  return (
+    <section className="reveal-element mx-auto w-full max-w-[1280px] border-b border-gray-100/50 px-4 py-24">
+      <div className="flex flex-col items-center justify-center gap-8 md:flex-row md:gap-16">
+        <div
+          aria-hidden
+          className="h-20 font-serif text-[96px] leading-none text-red-brand transition-transform duration-500 hover:rotate-12 hover:scale-110"
+        >
+          “
+        </div>
+
+        <div className="max-w-3xl flex-1">
+          <h3 className="group relative text-[30px] font-bold leading-tight text-gray-900 md:text-[36px]">
+            I ran the check before posting for the first time.
+            <br />
+            It said my hook was the problem.
+            <br />
+            Three videos past 10k since.
+            <span
+              aria-hidden
+              className="absolute bottom-0 left-0 -z-10 h-2 w-32 -rotate-1 translate-y-1 rounded-full bg-red-brand/20 transition-all duration-500 group-hover:w-full group-hover:bg-red-brand/10"
+            />
+            <svg
+              aria-hidden
+              className="absolute -bottom-4 left-0 h-4 w-48 text-red-brand transition-all duration-500 group-hover:w-64"
+              preserveAspectRatio="none"
+              viewBox="0 0 100 20"
+            >
+              <path
+                d="M0 15 C 20 5, 40 20, 60 5 C 80 20, 100 5, 120 15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={3}
+              />
+            </svg>
+          </h3>
+        </div>
+
+        <div className="group flex shrink-0 items-center gap-4">
+          <div className="text-right transition-transform duration-300 group-hover:-translate-x-2">
+            <div className="font-bold text-gray-900">— Maya</div>
+            <div className="text-[14px] text-gray-500">14.2k subs</div>
+            <div className="text-[14px] text-gray-500">horror niche</div>
+          </div>
+          <img
+            src="/images/landing/testimonial-avatar.webp"
+            alt="Maya"
+            width={320}
+            height={320}
+            className="h-16 w-16 shrink-0 rounded-full object-cover transition-transform duration-500 group-hover:scale-110"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── How it works ────────────────────────────────────────────────── */
+
+/* One tile style for all three steps. These were three hand-written strings that
+   had drifted apart in fill, border width and border colour. */
+const STEP_TILE = 'border border-red-200 bg-white/50 text-red-brand backdrop-blur-sm';
+
+const STEPS: { title: string; blurb: string; spin: string; d: string }[] = [
+  {
+    title: 'Paste your script or link.',
+    blurb: 'Two minutes, even on your phone.',
+    spin: 'group-hover:-rotate-6',
+    d: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  },
+  {
+    title: 'Nine checks in 60 seconds.',
+    blurb: 'Script, voice, video, hook, SEO and three more — one pass.',
+    spin: 'group-hover:rotate-6',
+    d: 'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  },
+  {
+    title: 'Fix what matters.',
+    blurb: 'Clear actions that boost reach, retention, and revenue.',
+    spin: 'group-hover:-rotate-6',
+    d: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6',
+  },
+];
+
+function HowItWorks() {
+  return (
+    <section id="how" className="reveal-element mx-auto w-full max-w-[1280px] px-4 py-24">
+      <div className="mb-16">
+        <h2 className="text-[30px] font-bold text-gray-900">
+          How it works in{' '}
+          <span className="group relative">
+            60 seconds
+            <span
+              aria-hidden
+              className="absolute -bottom-1 left-0 w-full border-b-2 border-dashed border-gray-300 transition-colors duration-300 group-hover:border-red-brand"
+            />
+          </span>
+        </h2>
+      </div>
+
+      <div className="relative grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-12">
+        {/* One dashed run and one chevron per gutter, laid out on the same grid as
+            the steps so the spacing is derived rather than guessed. top-8 is the
+            centre of the h-16 tile. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-8 z-0 hidden md:grid md:grid-cols-3 md:gap-12"
+        >
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="relative">
+              {i > 0 && (
+                <>
+                  <span className="absolute right-full top-0 w-12 border-t border-dashed border-gray-300" />
+                  <span className="absolute right-full top-0 h-3 w-3 -translate-y-1.5 rotate-45 border-r border-t border-gray-300" />
+                </>
               )}
             </div>
           ))}
         </div>
-      </section>
 
-      {/* ──────────────── FINAL CTA ──────────────── */}
-      <section className="max-w-[1200px] mx-auto px-6 py-16">
-        <div className="bg-brand-50 border border-brand-100 rounded-3xl p-10 grid lg:grid-cols-2 gap-8 items-center overflow-hidden">
-          <div>
-            <h2 className="font-display text-[36px] font-bold tracking-tight text-ink-900 text-balance">
-              Ready to Publish Smarter?
-            </h2>
-            <p className="text-[15px] text-ink-600 mt-4 max-w-md">
-              Join thousands of creators who publish with confidence and grow faster.
-            </p>
-            <div className="mt-7 flex flex-col sm:flex-row gap-3">
-              <Link href={isLoggedIn ? '/dashboard' : '/upload'}>
-                <Button size="xl" variant="dark" leftIcon={<Upload className="w-4 h-4" />}>
-                  Analyze Your First Video
-                </Button>
-              </Link>
+        {STEPS.map((step) => (
+          <div
+            key={step.title}
+            className="group relative z-10 flex flex-col items-start gap-6 bg-transparent md:flex-row"
+          >
+            <div
+              className={`relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl shadow-sm transition-transform duration-500 group-hover:scale-110 ${STEP_TILE} ${step.spin}`}
+            >
+              <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                {step.d.split(' M').map((part, i) => (
+                  <path
+                    key={part}
+                    d={i === 0 ? part : `M${part}`}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                  />
+                ))}
+              </svg>
             </div>
-            <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-ink-500">
-              <span className="inline-flex items-center gap-2"><Check className="w-4 h-4 text-brand-600" /> No credit card</span>
-              <span className="inline-flex items-center gap-2"><Check className="w-4 h-4 text-brand-600" /> First analysis free</span>
+            <div className="max-w-[28ch]">
+              <h3 className="mb-2 font-bold text-gray-900 transition-colors duration-300 group-hover:text-red-brand">
+                {step.title}
+              </h3>
+              <p className="text-[14px] leading-relaxed text-gray-600">{step.blurb}</p>
             </div>
           </div>
-          <div className="hidden lg:block">
-            <div className="bg-white border border-ink-200 rounded-2xl shadow-float p-4 rotate-1">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-2 h-2 rounded-full bg-ink-200" />
-                <div className="w-2 h-2 rounded-full bg-ink-200" />
-                <div className="w-2 h-2 rounded-full bg-ink-200" />
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="space-y-2">
-                  <div className="h-2.5 w-28 bg-ink-100 rounded-full" />
-                  <div className="h-2 w-20 bg-ink-100 rounded-full" />
-                  <div className="h-2 w-24 bg-ink-100 rounded-full" />
-                </div>
-                <ScoreGauge score={92} size="md" showLabel={false} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <Footer />
-    </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
-/* ───────────────── Sub-components ───────────────── */
+/* ── Pricing ─────────────────────────────────────────────────────
+   The comp's four cards, wired to the app's real billing: Pro and
+   Creator post to /api/billing/checkout (or bounce to the portal when
+   the visitor is already on a different paid plan), Free goes to
+   sign-up, Agency opens a mail draft.
+   ───────────────────────────────────────────────────────────────── */
 
-const HeroPreview: React.FC = () => (
-  <div className="relative">
-    <div className="bg-white border border-ink-200 rounded-2xl shadow-float overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-ink-100">
-        <div className="flex items-center gap-2">
-          <Logo size="sm" />
-        </div>
-        <span className="text-[12px] text-ink-400">Dashboard</span>
-      </div>
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <div className="text-[15px] font-semibold text-ink-900">10 AI Tools That Save You Hours</div>
-            <div className="text-[12px] text-ink-400 mt-0.5">YouTube · Ready to publish</div>
-          </div>
-          <ScoreGauge score={92} size="lg" label="Content Health" />
-        </div>
-        <div className="grid grid-cols-3 gap-2.5 mb-4">
-          {[
-            { label: 'Monetization', val: 'Low Risk', tone: 'text-brand-600' },
-            { label: 'Hook Score', val: '88', tone: 'text-ink-900' },
-            { label: 'SEO Score', val: '87', tone: 'text-ink-900' },
-          ].map((s) => (
-            <div key={s.label} className="border border-ink-200 rounded-xl p-3">
-              <div className="text-[11px] text-ink-400">{s.label}</div>
-              <div className={`text-[16px] font-bold mt-1 ${s.tone}`}>{s.val}</div>
-            </div>
-          ))}
-        </div>
-        <div className="space-y-2">
-          {[
-            { text: 'Anchor text in top-left quadrant', tag: '+1.2% CTR' },
-            { text: 'Hard-cut first frame on consonant', tag: '+30% Retention' },
-            { text: 'Add 12-frame J-cut for pacing', tag: '+15s AVD' },
-          ].map((r) => (
-            <div key={r.text} className="flex items-center justify-between bg-ink-50 rounded-xl px-3.5 py-2.5">
-              <span className="text-[13px] font-medium text-ink-800">{r.text}</span>
-              <span className="text-[11px] font-semibold text-brand-600">{r.tag}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  </div>
-);
+const OUTLINE_BTN =
+  'w-full rounded-[8px] border-2 border-gray-200 py-2.5 font-bold text-gray-900 transition-colors duration-300 hover:border-gray-900';
+const PLAIN_CARD =
+  'pricing-card-hover flex h-full cursor-pointer flex-col rounded-2xl border border-gray-100 bg-white/80 p-6 pt-8 backdrop-blur-md';
 
-const InsightsPreview: React.FC = () => (
-  <div className="bg-ink-50 border border-ink-200 rounded-2xl p-4">
-    <div className="flex items-center justify-between mb-3">
-      <span className="text-[14px] font-semibold text-ink-900">Analyses</span>
-      <span className="text-[12px] text-brand-600 font-medium">All Videos</span>
-    </div>
-    <div className="space-y-2">
-      {[
-        { title: '10 AI Tools That Save You Hours', score: 92, status: 'Ready', tone: 'text-brand-600' },
-        { title: 'How I Grew My Channel to 100K', score: 90, status: 'Ready', tone: 'text-brand-600' },
-        { title: 'Best Editing Tips for Beginners', score: 76, status: 'Improve', tone: 'text-amber-600' },
-        { title: 'AI vs Human: Can You Tell?', score: 90, status: 'Ready', tone: 'text-brand-600' },
-      ].map((r) => (
-        <div key={r.title} className="flex items-center gap-3 bg-white border border-ink-200 rounded-xl px-3 py-2.5">
-          <div className="w-10 h-7 rounded-md bg-ink-900 shrink-0" />
-          <span className="flex-1 text-[12.5px] font-medium text-ink-800 truncate">{r.title}</span>
-          <ScoreGauge score={r.score} size="sm" showLabel={false} />
-          <span className={`text-[11.5px] font-semibold ${r.tone} w-14 text-right`}>{r.status}</span>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const BeforeAfter: React.FC<{
-  label: string; before: string; after: string; metric: string; beforeVal: string; afterVal: string;
-}> = ({ label, before, after, metric, beforeVal, afterVal }) => (
-  <div className="grid grid-cols-2 gap-0 rounded-2xl overflow-hidden border border-ink-200">
-    <div className="bg-white p-5">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-400 mb-2">Before</div>
-      <div className="text-[12px] text-ink-400 mb-1">{label}</div>
-      <div className="text-[13.5px] text-ink-700 leading-snug">{before}</div>
-      <div className="mt-4 pt-4 border-t border-ink-100">
-        <div className="text-[12px] text-ink-400">{metric}</div>
-        <div className="text-[22px] font-bold text-ink-500 mt-0.5">{beforeVal}</div>
+function PlanHead({ name, price }: { name: string; price: string }) {
+  return (
+    <>
+      <h3 className="mb-4 text-center font-bold text-gray-900">{name}</h3>
+      <div className="mb-6 text-center">
+        <span className="text-[36px] font-bold text-gray-900">{price}</span>
+        <span className="text-[14px] text-gray-500">/month</span>
       </div>
-    </div>
-    <div className="bg-brand-50 p-5">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-600 mb-2">After</div>
-      <div className="text-[12px] text-ink-400 mb-1">{label}</div>
-      <div className="text-[13.5px] text-ink-900 font-medium leading-snug">{after}</div>
-      <div className="mt-4 pt-4 border-t border-brand-100">
-        <div className="text-[12px] text-ink-500">{metric}</div>
-        <div className="text-[22px] font-bold text-brand-600 mt-0.5">{afterVal}</div>
-      </div>
-    </div>
-  </div>
-);
-
-const CoachPreview: React.FC = () => (
-  <div className="bg-white border border-ink-200 rounded-2xl shadow-card p-5 space-y-4">
-    <div className="flex justify-end">
-      <div className="bg-ink-900 text-white text-[13px] rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%]">
-        Why is my hook weak?
-      </div>
-    </div>
-    <div className="flex gap-2.5">
-      <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
-        <Sparkles className="w-3.5 h-3.5 text-brand-600" />
-      </div>
-      <div className="bg-ink-50 rounded-2xl rounded-tl-sm px-4 py-3 text-[13px] text-ink-700 leading-relaxed">
-        Your hook starts too slow. The first 5 seconds don&apos;t clearly show the value. Try:
-        <div className="mt-2 bg-white border border-ink-200 rounded-xl px-3 py-2 text-ink-900 font-medium">
-          &ldquo;I tested 20 AI tools so you don&apos;t waste your time — here are the 3 best.&rdquo;
-        </div>
-      </div>
-    </div>
-    <div className="flex items-center gap-2 border border-ink-200 rounded-xl px-3 py-2">
-      <input disabled placeholder="Ask your AI coach..." className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-ink-400" />
-      <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center">
-        <Send className="w-3.5 h-3.5 text-white" />
-      </div>
-    </div>
-  </div>
-);
-
-interface PricingCardProps {
-  tier: { name: string; priceM: number; planKey: string; blurb: string; features: string[]; popular: boolean };
-  isLoggedIn: boolean;
-  currentPlan: string;
-  onUpgrade: (planKey: string) => void;
-  isLoading: boolean;
+    </>
+  );
 }
-const PricingCard: React.FC<PricingCardProps> = ({ tier, isLoggedIn, currentPlan, onUpgrade, isLoading }) => {
-  const isCurrent = currentPlan === tier.planKey;
-  const price = tier.priceM;
 
-  const handleClick = () => {
-    if (isCurrent) return;
-    if (!isLoggedIn) { window.location.href = '/sign-up'; return; }
-    onUpgrade(tier.planKey);
-  };
+function Bullet({ children, tone }: { children: React.ReactNode; tone: 'red' | 'ink' }) {
+  return (
+    <li className="flex items-center gap-2">
+      <Tick className={`h-4 w-4 shrink-0 ${tone === 'red' ? 'text-red-brand' : 'text-gray-900'}`} />
+      {children}
+    </li>
+  );
+}
+
+function Pricing({
+  startHref,
+  plan,
+  loadingId,
+  checkoutError,
+  onUpgrade,
+}: {
+  startHref: string;
+  plan: string;
+  loadingId: string | null;
+  checkoutError: string;
+  onUpgrade: (planId: string) => void;
+}) {
+  const label = (planId: string, fallback: string) =>
+    loadingId === planId ? 'Redirecting…' : plan === planId ? 'Current plan' : fallback;
 
   return (
-    <div className={`relative rounded-2xl p-6 flex flex-col bg-white ${tier.popular ? 'border-2 border-brand-600 shadow-card' : 'border border-ink-200'}`}>
-      {tier.popular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center px-3 py-1 bg-brand-600 text-white rounded-full text-[11px] font-semibold">
-          Most Popular
+    <section id="pricing" className="reveal-element mx-auto w-full max-w-[1280px] px-4 py-24">
+      <div className="flex flex-col gap-8 lg:flex-row">
+        <div className="lg:w-1/4">
+          <h2 className="mb-4 font-serif text-[36px] font-bold leading-tight text-gray-900">
+            Simple pricing.
+            <br />
+            Serious results.
+          </h2>
+          <p className="font-medium text-gray-600">No hidden fees. Cancel anytime.</p>
         </div>
-      )}
-      <div className="text-[17px] font-bold text-ink-900">{tier.name}</div>
-      <div className="text-[13px] text-ink-500 mt-1 min-h-[36px]">{tier.blurb}</div>
-      <div className="mt-4 flex items-baseline gap-1">
-        <span className="font-display text-[40px] leading-none font-bold tracking-tight text-ink-900">${price}</span>
-        <span className="text-[14px] text-ink-500">/month</span>
-      </div>
-      <ul className="mt-6 space-y-2.5 flex-1">
-        {tier.features.map((f) => (
-          <li key={f} className="flex items-start gap-2.5 text-[13.5px] text-ink-700">
-            <Check className="w-4 h-4 shrink-0 mt-0.5 text-brand-600" /> {f}
-          </li>
-        ))}
-      </ul>
-      <div className="mt-6">
-        <Button
-          variant={isCurrent ? 'secondary' : tier.popular ? 'dark' : 'secondary'}
-          size="lg" full
-          disabled={isCurrent}
-          onClick={handleClick}
-          isLoading={isLoading}
-        >
-          {isCurrent ? 'Current plan' : 'Get Started'}
-        </Button>
-      </div>
-    </div>
-  );
-};
 
-const Footer: React.FC = () => (
-  <footer className="border-t border-ink-200 bg-white">
-    <div className="max-w-[1200px] mx-auto px-6 py-14">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
-        <div className="col-span-2 max-w-sm">
-          <Logo />
-          <p className="text-[13.5px] text-ink-500 mt-4 leading-relaxed">
-            The AI content coach for creators. Analyze. Improve. Publish with confidence.
-          </p>
-          <div className="mt-5 inline-flex items-center gap-2 text-[12px] text-ink-500">
-            <span className="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse-soft" />
-            All systems operational
-          </div>
-        </div>
-        {[
-          { title: 'Product', items: [
-            { label: 'Features', href: '#features' }, { label: 'Pricing', href: '#pricing' },
-            { label: 'Dashboard', href: '/dashboard' }, { label: 'Upload', href: '/upload' },
-          ]},
-          { title: 'Resources', items: [
-            { label: 'Help Center', href: '/help' }, { label: 'FAQ', href: '#faq' },
-            { label: 'API', href: '/help' },
-          ]},
-          { title: 'Legal', items: [
-            { label: 'Terms of Service', href: '/legal/terms' }, { label: 'Privacy Policy', href: '/legal/privacy' },
-            { label: 'Refund Policy', href: '/legal/refund' }, { label: 'DMCA', href: '/legal/dmca' },
-          ]},
-        ].map((col) => (
-          <div key={col.title}>
-            <div className="text-[12px] font-semibold uppercase tracking-wide text-ink-400 mb-4">{col.title}</div>
-            <ul className="space-y-2.5">
-              {col.items.map((it) => (
-                <li key={it.label}>
-                  <Link href={it.href} className="text-[13.5px] text-ink-600 hover:text-ink-900 transition-colors">{it.label}</Link>
-                </li>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:w-3/4 lg:grid-cols-4">
+          {/* Free */}
+          <div className={PLAIN_CARD}>
+            <PlanHead name={PLANS.free.name} price={priceLabel('free')} />
+            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-gray-600">
+              {PLANS.free.features.map((f) => (
+                <Bullet key={f} tone="ink">
+                  {f}
+                </Bullet>
               ))}
             </ul>
+            <Link href={startHref} className={`${OUTLINE_BTN} block text-center`}>
+              Get started
+            </Link>
           </div>
+
+          {/* Pro */}
+          <div className="pricing-card-hover relative flex h-full cursor-pointer flex-col rounded-2xl border-2 border-red-brand bg-white/90 p-6 pt-8 shadow-xl backdrop-blur-xl">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-red-brand px-3 py-1 text-[12px] font-bold uppercase tracking-wider text-white shadow-md">
+              Most Popular
+            </div>
+            <PlanHead name={PLANS.pro.name} price={priceLabel('pro')} />
+            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-gray-600">
+              {PLANS.pro.features.map((f) => (
+                <Bullet key={f} tone="red">
+                  {f}
+                </Bullet>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => onUpgrade('pro')}
+              disabled={loadingId !== null}
+              className="shimmer-hover w-full rounded-[8px] bg-red-brand py-2.5 font-bold text-white shadow-lg shadow-red-500/20 disabled:opacity-70"
+            >
+              {label('pro', `Get ${PLANS.pro.name}`)}
+            </button>
+          </div>
+
+          {/* Creator */}
+          <div className={PLAIN_CARD}>
+            <PlanHead name={PLANS.starter.name} price={priceLabel('starter')} />
+            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-gray-600">
+              {PLANS.starter.features.map((f) => (
+                <Bullet key={f} tone="ink">
+                  {f}
+                </Bullet>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => onUpgrade('starter')}
+              disabled={loadingId !== null}
+              className={`${OUTLINE_BTN} disabled:opacity-70`}
+            >
+              {label('starter', `Get ${PLANS.starter.name}`)}
+            </button>
+          </div>
+
+          {/* Agency */}
+          <div className={PLAIN_CARD}>
+            <PlanHead name={PLANS.agency.name} price={priceLabel('agency')} />
+            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-gray-600">
+              {PLANS.agency.features.map((f) => (
+                <Bullet key={f} tone="ink">
+                  {f}
+                </Bullet>
+              ))}
+            </ul>
+            <a
+              href="mailto:support@genapps.online?subject=Publish%20Agency%20Inquiry"
+              className={`${OUTLINE_BTN} block text-center`}
+            >
+              Talk to us
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {checkoutError && (
+        <p role="alert" className="mt-6 text-center text-[14px] font-medium text-red-brand">
+          {checkoutError}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* ── FAQ ─────────────────────────────────────────────────────────
+   The comp ships the answers open with an inert chevron button. Kept
+   open — that is the state it renders in — but the button is a real
+   disclosure here, so the control does what it looks like it does.
+   ───────────────────────────────────────────────────────────────── */
+
+const FAQ: { q: string; a: string }[] = [
+  {
+    q: 'How accurate is the Publish Score?',
+    a: "The score is a rubric, not a prediction. Each of the nine layers checks your video against published platform guidance and documented retention patterns, and the number tells you how much of that checklist you are currently passing. No tool can promise a view count — what this one does is catch the fixable problems before you publish.",
+  },
+  {
+    q: 'Can I use it for YouTube Shorts?',
+    a: "Yes. Short-form is scored on its own rules, weighted towards the first three seconds (the swipe-away window) and loop potential rather than long-form watch time.",
+  },
+  {
+    q: 'Does it work with existing videos?',
+    a: 'Absolutely. You can paste a link to any live video to see why it performed the way it did and get actionable tips for your next upload.',
+  },
+  {
+    q: 'Is my data and script private?',
+    a: 'We take privacy seriously. Your scripts are encrypted and never used to train public models. Your competitive edge stays yours.',
+  },
+];
+
+function FaqItem({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="group overflow-hidden rounded-2xl border border-gray-100 bg-white/80 backdrop-blur-md transition-all duration-300 hover:border-red-brand/30">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between p-4 text-left"
+      >
+        <span className="font-bold text-gray-900">{q}</span>
+        <svg
+          className="h-5 w-5 shrink-0 text-gray-400 transition-transform duration-300 group-hover:rotate-180"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+        </svg>
+      </button>
+      {open && <div className="px-4 pb-4 text-[14px] leading-relaxed text-gray-600">{a}</div>}
+    </div>
+  );
+}
+
+function Faq() {
+  return (
+    <section id="faq" className={`reveal-element py-12 ${SHELL_NARROW}`}>
+      <h2 className="mb-10 text-center font-serif text-[30px] font-bold text-gray-900">
+        Frequently Asked Questions
+      </h2>
+      <div className="space-y-3">
+        {FAQ.map((item) => (
+          <FaqItem key={item.q} q={item.q} a={item.a} />
         ))}
       </div>
-      <div className="mt-12 pt-6 border-t border-ink-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <span className="text-[12.5px] text-ink-400">© {new Date().getFullYear()} Publish. All rights reserved.</span>
-        <span className="text-[12.5px] text-ink-400">
-          Payments by Lemon Squeezy · <a href="mailto:support@genapps.online" className="hover:text-ink-900 underline underline-offset-2">support@genapps.online</a>
-        </span>
+    </section>
+  );
+}
+
+/* ── Closing CTA ─────────────────────────────────────────────────
+   One departure: the comp pins the EST. 2026 ring at right-8, where it
+   lands on top of the button and the fine print. The panel carries
+   lg:pr-40 so the ring gets its own air, and the ring only appears once
+   there is room for it.
+   ───────────────────────────────────────────────────────────────── */
+
+function FinalCta({ startHref }: { startHref: string }) {
+  return (
+    <section className="reveal-element mx-auto w-full max-w-[1280px] px-4 pb-24">
+      <div className="group relative flex flex-col items-center justify-between overflow-hidden rounded-3xl border border-gray-800/50 bg-[#0f172a]/90 p-8 shadow-2xl backdrop-blur-xl md:flex-row md:p-12 lg:pr-40">
+        <div className="relative z-10 mb-8 flex w-full items-center justify-center gap-8 md:mb-0 md:w-auto md:justify-start">
+          <img
+            src="/images/landing/rocket.png"
+            alt=""
+            aria-hidden
+            className="float-anim h-24 w-24 -rotate-12 object-contain"
+          />
+          <h2 className="font-serif text-[30px] font-bold leading-tight text-white md:text-[52px]">
+            Your next video
+            <br />
+            could be the <span className="font-light italic">one.</span>
+          </h2>
+        </div>
+
+        <div className="relative z-10 flex flex-col items-center">
+          <Link
+            href={startHref}
+            className="shimmer-hover mb-3 flex items-center gap-2 rounded-full bg-red-brand px-8 py-4 text-[18px] font-bold text-white shadow-lg shadow-red-500/30"
+          >
+            Check a video — free
+            <CtaArrow className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" />
+          </Link>
+          <p className="text-[14px] font-medium text-gray-400">No credit card. No trial timers.</p>
+        </div>
+
+        <div
+          aria-hidden
+          className="absolute right-8 top-1/2 hidden h-24 w-24 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 border-red-brand/30 text-red-brand transition-transform duration-1000 group-hover:rotate-180 lg:flex"
+        >
+          <span className="text-[12px] font-bold tracking-widest">EST.</span>
+          <span className="text-[20px] font-bold">2026</span>
+        </div>
       </div>
-    </div>
-  </footer>
-);
+    </section>
+  );
+}
+
+/* ── Footer ────────────────────────────────────────────────
+   Same grid, labels, type scale and hover behaviour as the comp. Every
+   link in the comp points at "#", and six of them used to keep that "#"
+   here, marked `todo`: Updates, Blog, About, Careers, Press, Security.
+   A link that goes nowhere is worse than no link — it advertises a page
+   that does not exist, and the reader who clicks it stops trusting the
+   rest of the footer. They are removed until those pages land, which is
+   why some columns are shorter than the comp's. Every entry below
+   resolves to something real.
+   ───────────────────────────────────────────────────────────── */
+
+const FOOTER_COLUMNS: {
+  title: string;
+  links: { label: string; href: string }[];
+}[] = [
+  {
+    title: 'Product',
+    links: [
+      { label: 'How it works', href: '#how' },
+      { label: 'Checks', href: '#checks' },
+      { label: 'Pricing', href: '#pricing' },
+    ],
+  },
+  {
+    title: 'Resources',
+    links: [
+      { label: 'Guides', href: '/help' },
+      { label: 'YouTube Algorithm', href: '#algorithm' },
+      { label: 'Creator Tools', href: '/seo' },
+      { label: 'Community', href: '/community' },
+    ],
+  },
+  {
+    title: 'Company',
+    links: [
+      { label: 'Contact', href: 'mailto:support@genapps.online' },
+      { label: 'Restore purchase', href: '/restore' },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Terms', href: '/legal/terms' },
+      { label: 'Privacy', href: '/legal/privacy' },
+      { label: 'Cookies', href: '/legal/cookies' },
+      { label: 'Acceptable use', href: '/legal/acceptable-use' },
+    ],
+  },
+];
+
+/* The comp has a row of five social glyphs. All five pointed at the
+   platform's own homepage — youtube.com, x.com, tiktok.com,
+   instagram.com, discord.com — because no accounts exist for this
+   product yet. A glyph that lands on YouTube's front page rather than a
+   channel reads as a broken link at best and as a borrowed identity at
+   worst, so the row is gone. Restore it as `{ name, href, path }`
+   entries here, wired to a `SOCIALS.map` in the footer, once the accounts
+   are real. The `path` is a 24x24 glyph outline; the YouTube one the row
+   used is kept below so restoring the mark does not mean going back
+   through git history for it:
+
+     M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12
+     3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0
+     12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505
+     9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24
+     12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z
+
+   (Re-join the lines; it is one continuous `d` attribute.) */
+
+function SiteFooter() {
+  /* The form used to flip a boolean and claim success. It now has a real
+     request behind it (POST /api/newsletter), so it needs the three states a
+     request actually has: in flight, saved, failed. Claiming "check your inbox"
+     while the address is still in the air — or after the write failed — is the
+     original bug in a smaller form. */
+  const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  async function subscribe(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (status === 'sending') return;
+
+    const field = new FormData(e.currentTarget).get('email');
+    const email = typeof field === 'string' ? field.trim() : '';
+    if (!email) return;
+
+    setStatus('sending');
+    setError(null);
+    try {
+      const res = await fetch('/api/newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? 'Something went wrong. Please try again.');
+        setStatus('error');
+        return;
+      }
+      setStatus('done');
+    } catch {
+      // Offline or blocked. Say so rather than showing the success message.
+      setError('Could not reach the server. Please check your connection.');
+      setStatus('error');
+    }
+  }
+
+  return (
+    <footer className="border-t border-gray-100/50 bg-white/50 pb-8 pt-16 backdrop-blur-sm">
+      <div className={SHELL}>
+        <div className="mb-16 grid grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-6">
+          <div className="lg:col-span-2">
+            <div className="mb-6 flex items-center gap-2">
+              <img
+                src="/images/landing/logo-footer.png"
+                alt="Publish"
+                width={395}
+                height={112}
+                className="h-7 w-auto object-contain"
+              />
+            </div>
+            <p className="max-w-xs text-[14px] text-gray-600">
+              Helping creators make content that wins.
+            </p>
+          </div>
+
+          {FOOTER_COLUMNS.map((col) => (
+            <div key={col.title}>
+              <h3 className="mb-4 font-bold text-gray-900">{col.title}</h3>
+              <ul className="space-y-3 text-[14px] text-gray-600">
+                {col.links.map((link) => (
+                  <li key={link.label}>
+                    {link.href.startsWith('/') ? (
+                      <Link href={link.href} className="transition-colors hover:text-red-brand">
+                        {link.label}
+                      </Link>
+                    ) : (
+                      <a href={link.href} className="transition-colors hover:text-red-brand">
+                        {link.label}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+
+          <div className="lg:col-span-2">
+            <h3 className="mb-2 font-bold text-gray-900">Get the latest tips &amp; updates</h3>
+            {/* Was "Join 25,000+ creators improving their content." There is no
+                subscriber list to count yet, so the number was invented. This
+                says what the reader gets instead of how many others get it. */}
+            <p className="mb-4 text-[14px] text-gray-600">
+              Practical breakdowns of what the platforms reward. No more than one email a week.
+            </p>
+            {status === 'done' ? (
+              <p className="text-[14px] font-medium text-gray-900" role="status">
+                You&rsquo;re on the list. We&rsquo;ll email you when the next one goes out.
+              </p>
+            ) : (
+              <form className="flex gap-2" onSubmit={subscribe} noValidate>
+                <label className="sr-only" htmlFor="lp-newsletter">
+                  Email address
+                </label>
+                <input
+                  id="lp-newsletter"
+                  name="email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  disabled={status === 'sending'}
+                  placeholder="Enter your email"
+                  className="flex-1 rounded-[6px] border border-gray-300 bg-white px-4 py-2 text-[14px] text-gray-900 placeholder:text-gray-500 shadow-sm transition-all duration-300 focus:scale-[1.02] focus:border-red-brand focus:outline-none focus:ring-1 focus:ring-red-brand disabled:opacity-60"
+                />
+                <button
+                  type="submit"
+                  disabled={status === 'sending'}
+                  className="rounded-[6px] bg-gray-900 px-4 py-2 text-[14px] font-medium text-white transition-all duration-300 hover:scale-[1.02] hover:bg-black disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+                >
+                  {status === 'sending' ? 'Subscribing…' : 'Subscribe'}
+                </button>
+              </form>
+            )}
+            {status === 'error' && error ? (
+              <p className="mt-2 text-[12px] text-red-brand-ink" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end border-t border-gray-100/50 pt-8 text-[14px] text-gray-500">
+          <span className="text-right">
+            Made for creators, by creators.
+            <span className="ml-1 animate-pulse text-red-brand">❤</span>
+          </span>
+        </div>
+      </div>
+    </footer>
+  );
+}

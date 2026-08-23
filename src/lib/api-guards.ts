@@ -8,6 +8,13 @@ import { redirect } from 'next/navigation';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { ensureUser, getUserPlanState, Plan } from './session';
 import { Role } from '@prisma/client';
+import { primaryEmailOf } from './clerk-identity';
+
+// Re-exported because routes have always imported it from here. The
+// implementation lives in `clerk-identity.ts`, which has no framework imports
+// and so can be unit-tested outside a server runtime.
+export { primaryEmailOf } from './clerk-identity';
+export type { ClerkUserLike } from './clerk-identity';
 
 export type AuthedContext = {
   clerkId: string;
@@ -20,29 +27,6 @@ export type AuthedContext = {
   canAnalyze: boolean;
 };
 
-/**
- * Resolve the address Clerk considers primary, not whichever one happens to sit
- * first in the array. Order is not guaranteed, and billing receipts plus every
- * transactional mail key off this — sending a payment failure to a stale
- * secondary address is a real, silent failure. Falls back to the first entry
- * only when no primary id is set.
- */
-type ClerkUserLike = {
-  primaryEmailAddressId?: string | null;
-  emailAddresses?: { id: string; emailAddress: string }[];
-} | null;
-
-export function primaryEmailOf(user: ClerkUserLike): string | null {
-  const addresses = user?.emailAddresses ?? [];
-  if (addresses.length === 0) return null;
-  const primaryId = user?.primaryEmailAddressId;
-  if (primaryId) {
-    const match = addresses.find((a) => a.id === primaryId);
-    if (match?.emailAddress) return match.emailAddress;
-  }
-  return addresses[0]?.emailAddress ?? null;
-}
-
 export async function requireAuth(): Promise<AuthedContext | NextResponse> {
   const { userId: clerkId } = auth();
   if (!clerkId) {
@@ -50,7 +34,7 @@ export async function requireAuth(): Promise<AuthedContext | NextResponse> {
   }
   const user = await currentUser();
   const email = primaryEmailOf(user);
-  const dbUser = await ensureUser(clerkId, email ?? undefined);
+  const dbUser = await ensureUser(clerkId, email ?? undefined, user?.imageUrl || undefined);
   const state = await getUserPlanState(clerkId);
   return {
     clerkId,
@@ -96,7 +80,7 @@ export async function requirePageAuth() {
   }
   const user = await currentUser();
   const email = primaryEmailOf(user);
-  const dbUser = await ensureUser(clerkId, email ?? undefined);
+  const dbUser = await ensureUser(clerkId, email ?? undefined, user?.imageUrl || undefined);
   const state = await getUserPlanState(clerkId);
   return {
     clerkId,

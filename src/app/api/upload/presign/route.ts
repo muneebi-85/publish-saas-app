@@ -20,7 +20,7 @@ import * as v from '@/lib/validate';
 
 export const runtime = 'nodejs';
 
-const SLOTS = ['video', 'thumbnail', 'script', 'voiceover'] as const;
+const SLOTS = ['video', 'thumbnail', 'script', 'voiceover', 'logo', 'frames'] as const;
 type Slot = (typeof SLOTS)[number];
 
 /**
@@ -52,6 +52,23 @@ const RULES: Record<Slot, { types: string[]; maxBytes: number; exts: string[] }>
     types: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'],
     exts: ['mp3', 'wav', 'm4a'],
     maxBytes: 300 * 1024 * 1024, // 300 MB
+  },
+  frames: {
+    // A contact sheet of decoded video frames, built by the browser in
+    // `src/lib/video/extract-frames.ts`. JPEG only, and small: the sheet is a
+    // dozen 320x180 cells at quality 0.72, which lands well under a megabyte.
+    // The ceiling is a guard, not a target - anything approaching it is not a
+    // contact sheet, and the vision model would not read the extra pixels.
+    types: ['image/jpeg'],
+    exts: ['jpg', 'jpeg'],
+    maxBytes: 3 * 1024 * 1024, // 3 MB
+  },
+  logo: {
+    // Brand-kit logo. SVG is refused here for the same reason as everywhere
+    // else: it is a script-carrying format and the logo is rendered inline.
+    types: ['image/png', 'image/jpeg', 'image/webp'],
+    exts: ['png', 'jpg', 'jpeg', 'webp'],
+    maxBytes: 5 * 1024 * 1024, // 5 MB
   },
 };
 

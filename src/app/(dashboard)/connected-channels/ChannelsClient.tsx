@@ -6,7 +6,12 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Youtube, Lock, Plug, Trash2, RefreshCw, ExternalLink, Video } from 'lucide-react';
+import { Youtube, Lock, Plug, Trash2, RefreshCw, ExternalLink, Video, CheckCircle2 } from 'lucide-react';
+import {
+  useConnectChannel,
+  type ChannelRow,
+} from '@/components/channels/useConnectChannel';
+import ConnectedAccountsPanel from '@/components/channels/ConnectedAccountsPanel';
 
 /**
  * Connected channels — real rows only.
@@ -15,68 +20,39 @@ import { Youtube, Lock, Plug, Trash2, RefreshCw, ExternalLink, Video } from 'luc
  * for the user. Counts come from the platform API at connect/refresh time and
  * are never invented; a channel that returned no number reads "Not measured"
  * rather than a fabricated figure.
+ *
+ * Connecting a platform whose account is not yet linked to the session
+ * escalates to the platform's own OAuth sign-in (Google for YouTube, TikTok
+ * for TikTok) and finishes automatically on the way back — see
+ * useConnectChannel.
  */
 
-type Channel = {
-  id: string;
-  platform: string;
-  name: string;
-  url: string | null;
-  avatarUrl: string | null;
-  subscribers: number;
-  videosCount: number;
-  viewsCount: number;
-  updatedAt: string;
-};
+/**
+ * No `avatarUrl` here on purpose. The cards render the platform's own mark, and
+ * displaying the channel picture would mean allowlisting the YouTube and TikTok
+ * avatar CDNs in the CSP `img-src` for a decorative image. The stored value is
+ * still returned in the account data export, where it is the user's own data.
+ */
 
 const PLATFORMS = [
-  { key: 'YOUTUBE', name: 'YouTube', benefit: 'Track watch-time signals and monetization health on every upload.', icon: <Youtube className="w-6 h-6" strokeWidth={2} />, chip: 'bg-crimson-50 text-crimson-600' },
-  { key: 'TIKTOK', name: 'TikTok', benefit: 'Spot trending hooks and flag risks before your video goes live.', icon: <Video className="w-5 h-5" strokeWidth={2} />, chip: 'bg-ink-900 text-white' },
+  { key: 'YOUTUBE', name: 'YouTube', benefit: 'Track watch-time signals and monetization health on every upload.', icon: <Youtube className="w-6 h-6" strokeWidth={2} />, chip: 'bg-crimson-50 text-crimson-700' },
+  { key: 'TIKTOK', name: 'TikTok', benefit: 'Spot trending hooks and flag risks before your video goes live.', icon: <Video className="w-5 h-5" strokeWidth={2} />, chip: 'bg-white/[0.06] text-white' },
 ] as const;
 
 const fmt = (n: number) => (n > 0 ? n.toLocaleString() : null);
 
-export default function ChannelsClient({ initialChannels }: { initialChannels: Channel[] }) {
-  const [channels, setChannels] = useState<Channel[]>(initialChannels);
-  const [busy, setBusy] = useState<{ platform: string | null }>({ platform: null });
-  const [error, setError] = useState('');
+export default function ChannelsClient({ initialChannels }: { initialChannels: ChannelRow[] }) {
+  const [channels, setChannels] = useState<ChannelRow[]>(initialChannels);
+  const { pending, error, notice, connect, disconnect } = useConnectChannel(
+    '/connected-channels',
+    (channel) => setChannels((prev) => [channel, ...prev.filter((c) => c.id !== channel.id)]),
+  );
 
-  async function connect(platform: string) {
-    setBusy({ platform });
-    setError('');
-    try {
-      const res = await fetch('/api/channels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Connection failed.');
-      setChannels((prev) => [data.channel, ...prev.filter((c) => c.id !== data.channel?.id)]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection failed.');
-    } finally {
-      setBusy({ platform: null });
-    }
-  }
-
-  async function refresh(channel: Channel) {
-    // Re-running connect re-reads the platform API and updates the same row.
-    await connect(channel.platform);
-  }
-
-  async function disconnect(id: string) {
+  function onDisconnect(channel: ChannelRow) {
     if (!confirm('Disconnect this channel? Past reports are kept.')) return;
-    try {
-      const res = await fetch(`/api/channels?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to disconnect channel.');
-      }
-      setChannels((prev) => prev.filter((c) => c.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect channel.');
-    }
+    void disconnect(channel.id).then((ok) => {
+      if (ok) setChannels((prev) => prev.filter((c) => c.id !== channel.id));
+    });
   }
 
   const connected = PLATFORMS.filter((p) => channels.some((c) => c.platform === p.key)).length;
@@ -90,7 +66,7 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
       />
 
       <Card padded className="mb-6 flex items-start gap-3 bg-brand-50 border-brand-100">
-        <div className="w-9 h-9 rounded-xl bg-white border border-brand-100 flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-brand-100 flex items-center justify-center shrink-0">
           <Lock className="w-4 h-4 text-brand-600" />
         </div>
         <div>
@@ -109,7 +85,17 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
         </span>
       </div>
 
-      {error && <p className="mb-4 text-[12.5px] font-medium text-crimson-600">{error}</p>}
+      {error && (
+        <p role="alert" className="mb-4 text-[12.5px] font-medium text-crimson-700">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="mb-4 text-[12.5px] font-medium text-grass-700 inline-flex items-center gap-1.5">
+          <CheckCircle2 className="w-4 h-4" />
+          {notice}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {PLATFORMS.map((p) => {
@@ -158,37 +144,50 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
                     <div className="flex items-center gap-2">
                       <Button
                         variant="ghost" size="sm"
-                        isLoading={busy.platform === p.key}
-                        onClick={() => refresh(channel)}
+                        isLoading={pending === p.key}
+                        onClick={() => void connect(p.key)}
                         leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
                       >
                         Refresh
                       </Button>
                       <Button
                         variant="ghost" size="sm"
-                        onClick={() => disconnect(channel.id)}
-                        leftIcon={<Trash2 className="w-3.5 h-3.5 text-crimson-600" />}
+                        onClick={() => onDisconnect(channel)}
+                        leftIcon={<Trash2 className="w-3.5 h-3.5 text-crimson-700" />}
                         aria-label={`Disconnect ${p.name}`}
                       >
-                        <span className="text-crimson-600">Disconnect</span>
+                        <span className="text-crimson-700">Disconnect</span>
                       </Button>
                     </div>
                   </div>
                 ) : (
-                  <Button
-                    variant="secondary" size="sm" full
-                    isLoading={busy.platform === p.key}
-                    onClick={() => connect(p.key)}
-                    aria-label={`Connect ${p.name}`}
-                  >
-                    Connect
-                  </Button>
+                  <div className="space-y-2.5">
+                    <Button
+                      variant="secondary" size="sm" full
+                      isLoading={pending === p.key}
+                      onClick={() => void connect(p.key)}
+                      aria-label={`Connect ${p.name}`}
+                    >
+                      {pending === p.key ? 'Connecting…' : 'Connect'}
+                    </Button>
+                    <p className="text-[11.5px] text-ink-500 leading-relaxed">
+                      {pending === p.key
+                        ? 'Authorizing with the platform — you may be asked to sign in.'
+                        : `You'll be asked to authorize your ${p.key === 'YOUTUBE' ? 'Google' : 'TikTok'} account.`}
+                    </p>
+                  </div>
                 )}
               </div>
             </Card>
           );
         })}
       </div>
+
+      <ConnectedAccountsPanel
+        channels={channels}
+        disconnectChannel={disconnect}
+        onChannelRemoved={(id) => setChannels((prev) => prev.filter((c) => c.id !== id))}
+      />
 
       <div className="mt-6 flex items-center gap-2 text-[12px] text-ink-500">
         <Lock className="w-3.5 h-3.5 text-brand-600" />

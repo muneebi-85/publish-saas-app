@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import {
   Type, Zap, Image as ImageIcon, AlignLeft, ListVideo, Search,
-  Copy, Check, Plus, LayoutTemplate,
+  Copy, Check, LayoutTemplate,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -144,7 +144,7 @@ export default function TemplatesPage() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search templates and formulas"
           aria-label="Search templates"
-          className="w-full bg-white border border-ink-200 rounded-xl h-11 pl-10 pr-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+          className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 pl-10 pr-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
         />
       </div>
 
@@ -158,8 +158,8 @@ export default function TemplatesPage() {
               onClick={() => setActive(tab)}
               className={
                 isActive
-                  ? 'h-9 px-4 rounded-xl text-[13px] font-semibold bg-ink-900 text-white transition-colors'
-                  : 'h-9 px-4 rounded-xl text-[13px] font-medium bg-white text-ink-600 border border-ink-200 hover:bg-ink-50 hover:text-ink-900 transition-colors'
+                  ? 'h-9 px-4 rounded-xl text-[13px] font-semibold bg-brand-600 text-[#060606] transition-colors'
+                  : 'h-9 px-4 rounded-xl text-[13px] font-medium bg-white/[0.03] text-ink-600 border border-white/[0.08] hover:bg-white/[0.06] hover:text-white transition-colors'
               }
               aria-pressed={isActive}
             >
@@ -215,7 +215,7 @@ function TemplateCard({ template }: { template: Template }) {
         </div>
         <button
           onClick={handleCopy}
-          className="shrink-0 w-8 h-8 rounded-lg border border-ink-200 bg-white flex items-center justify-center text-ink-500 hover:bg-ink-50 hover:text-ink-900 transition-colors"
+          className="shrink-0 w-8 h-8 rounded-lg border border-white/[0.06] bg-surface-panel flex items-center justify-center text-ink-500 hover:bg-white/[0.06] hover:text-ink-900 transition-colors"
           aria-label={`Copy the ${template.name} formula`}
         >
           {copied ? <Check className="w-4 h-4 text-brand-600" /> : <Copy className="w-4 h-4" />}
@@ -241,7 +241,7 @@ function TemplateCard({ template }: { template: Template }) {
 function NoMatches({ onClear }: { onClear: () => void }) {
   return (
     <Card className="text-center py-16">
-      <div className="w-14 h-14 rounded-full bg-ink-100 flex items-center justify-center mx-auto mb-5">
+      <div className="w-14 h-14 rounded-full bg-white/[0.08] flex items-center justify-center mx-auto mb-5">
         <LayoutTemplate className="w-6 h-6 text-ink-500" />
       </div>
       <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">No templates match</h3>

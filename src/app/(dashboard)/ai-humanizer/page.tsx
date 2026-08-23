@@ -4,8 +4,9 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Wand2, Copy, Check, ArrowRight, TrendingDown, TrendingUp, Loader2,
-  AlertTriangle, Info, ShieldCheck, Gauge, Sparkles,
+  AlertTriangle, Info, ShieldCheck, Gauge, Sparkles, Palette,
 } from 'lucide-react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -16,10 +17,14 @@ import { PlanGate } from '@/components/PlanGate';
 
 type OptimizeResponse = HumanizeResult & { report: ScriptOptimizerReport };
 
-const SAMPLE_INPUT =
-  `In this video, we delve into the comprehensive landscape of artificial intelligence. Furthermore, it is important to note that generative tools have evolved exponentially. Let's explore how creators can leverage these cutting-edge capabilities without compromising authentic human connection.`;
-
 const PLATFORMS = ['YouTube', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn'] as const;
+
+/**
+ * `/api/optimize` rejects a script under 10 characters with a 400. Gating the
+ * button on the same threshold means the creator is never sent to the server to
+ * be told no — and never spends a rate-limit slot finding out.
+ */
+const MIN_SCRIPT_CHARS = 10;
 
 export default function ScriptOptimizerPage() {
   return (
@@ -38,7 +43,10 @@ export default function ScriptOptimizerPage() {
 
 function ScriptOptimizerBody() {
   const searchParams = useSearchParams();
-  const [rawText, setRawText] = useState(SAMPLE_INPUT);
+  // Starts empty. Seeding the box with a specimen script means the first
+  // "Optimize" a creator clicks grades our text, not theirs — and spends one of
+  // their rate-limited calls doing it.
+  const [rawText, setRawText] = useState('');
   const [options, setOptions] = useState<HumanizeOptions>({
     tone: 'conversational',
     formality: 40,
@@ -68,16 +76,19 @@ function ScriptOptimizerBody() {
       if (!res.ok) {
         let msg = `Error ${res.status}`;
         try {
-          const errData = await res.json();
-          if (errData.error) msg = errData.error;
-        } catch (_) {}
+          const errData = (await res.json()) as { error?: unknown };
+          if (typeof errData.error === 'string' && errData.error) msg = errData.error;
+        } catch {
+          // A non-JSON body (a proxy error page, an aborted response) leaves the
+          // status-code message as the best thing we can honestly show.
+        }
         throw new Error(msg);
       }
       const data = (await res.json()) as OptimizeResponse;
       setResult(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error('[optimize]', err);
-      setError(err.message || 'An unexpected error occurred.');
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -111,7 +122,7 @@ function ScriptOptimizerBody() {
               <select
                 value={options.tone}
                 onChange={(e) => setOptions({ ...options, tone: e.target.value as HumanizeOptions['tone'] })}
-                className="w-full bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
               >
                 <option value="conversational">Conversational</option>
                 <option value="storyteller">Storyteller</option>
@@ -124,7 +135,7 @@ function ScriptOptimizerBody() {
               <select
                 value={options.targetPlatform}
                 onChange={(e) => setOptions({ ...options, targetPlatform: e.target.value as HumanizeOptions['targetPlatform'] })}
-                className="w-full bg-white border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
               >
                 {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
               </select>
@@ -140,7 +151,14 @@ function ScriptOptimizerBody() {
               />
             </div>
             <div className="flex items-end">
-              <Button full size="lg" onClick={handleRun} isLoading={loading} leftIcon={loading ? undefined : <Wand2 className="w-4 h-4" />}>
+              <Button
+                full
+                size="lg"
+                onClick={handleRun}
+                isLoading={loading}
+                disabled={rawText.trim().length < MIN_SCRIPT_CHARS}
+                leftIcon={loading ? undefined : <Wand2 className="w-4 h-4" />}
+              >
                 {loading ? 'Analyzing…' : 'Optimize script'}
               </Button>
             </div>
@@ -159,7 +177,7 @@ function ScriptOptimizerBody() {
 
         {/* Script Score verdict */}
         {report && (
-          <div className="rounded-2xl border border-ink-200 bg-white p-6">
+          <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-6">
             <div className="flex flex-col sm:flex-row sm:items-center gap-5">
               <div className="shrink-0 sm:pr-6 sm:border-r sm:border-ink-200">
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-brand-600">
@@ -222,15 +240,27 @@ function ScriptOptimizerBody() {
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
               rows={12}
-              className="w-full bg-white border border-ink-200 rounded-xl p-4 text-[14px] text-ink-800 leading-relaxed resize-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+              maxLength={15000}
+              aria-label="Your script"
+              aria-describedby="script-input-hint"
+              placeholder="Paste your script or voiceover draft here — the full thing, not a summary. Every signal below is graded from this text."
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl p-4 text-[14px] text-ink-800 leading-relaxed resize-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
             />
+            <div id="script-input-hint" className="mt-2 flex items-center justify-between text-[12px] text-ink-500">
+              <span>
+                {rawText.trim().length < MIN_SCRIPT_CHARS
+                  ? `Add at least ${MIN_SCRIPT_CHARS} characters to grade the script.`
+                  : 'Graded on the text above. Your script is not saved to your reports.'}
+              </span>
+              <span className="tabular-nums">{rawText.length.toLocaleString()} / 15,000</span>
+            </div>
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[13px] font-semibold text-ink-700">Optimized rewrite</span>
               {result && <Badge variant="success" dot>Est. AI risk {result.metricsAfter.gptProbabilityScore}%</Badge>}
             </div>
-            <div className="bg-white border border-ink-200 rounded-xl p-4 min-h-[298px] text-[14px] text-ink-800 leading-relaxed whitespace-pre-line relative">
+            <div className="bg-white/[0.03] border border-white/[0.08] rounded-xl p-4 min-h-[298px] text-[14px] text-ink-800 leading-relaxed whitespace-pre-line relative">
               {loading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm rounded-xl z-10">
                   <Loader2 className="w-5 h-5 animate-spin text-brand-600" />
@@ -269,6 +299,66 @@ function ScriptOptimizerBody() {
         </Card>
         )}
 
+        {/* Brand kit application — only rendered when the caller actually has a
+            kit saved. `bannedRemaining` is shown rather than hidden: claiming a
+            forbidden word was removed without checking is exactly the kind of
+            unverified promise this product does not make. */}
+        {result?.brandVoice && (
+          <Card>
+            <div className="flex items-center gap-2 mb-3">
+              <Palette className="w-4 h-4 text-brand-600" />
+              <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">
+                Your brand kit
+              </h3>
+            </div>
+            <div className="space-y-2.5 text-[13px]">
+              {result.brandVoice.tonesApplied.length > 0 && (
+                <p className="text-ink-700">
+                  Rewritten toward your saved tone
+                  {result.brandVoice.tonesApplied.length > 1 ? 's' : ''}:{' '}
+                  <span className="font-medium text-ink-900">
+                    {result.brandVoice.tonesApplied.join(', ')}
+                  </span>
+                  .
+                </p>
+              )}
+              {result.brandVoice.bannedChecked > 0 &&
+                (result.brandVoice.bannedRemaining.length === 0 ? (
+                  <p className="flex items-start gap-2 text-ink-700">
+                    <Check className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
+                    <span>
+                      Checked the rewrite against all {result.brandVoice.bannedChecked} of your
+                      banned words — none appear in the draft above.
+                    </span>
+                  </p>
+                ) : (
+                  <p
+                    role="alert"
+                    className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900"
+                  >
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
+                    <span>
+                      Still contains{' '}
+                      <span className="font-medium">
+                        {result.brandVoice.bannedRemaining.map((w) => `“${w}”`).join(', ')}
+                      </span>{' '}
+                      from your banned list. Replacing {result.brandVoice.bannedRemaining.length > 1 ? 'them' : 'it'}{' '}
+                      would mean choosing wording for you, so edit the draft directly or re-run the
+                      rewrite.
+                    </span>
+                  </p>
+                ))}
+            </div>
+            <p className="text-[11.5px] text-ink-500 mt-3">
+              Edit these in{' '}
+              <Link href="/brand-kit" className="font-medium text-brand-600 hover:underline">
+                Brand Kit
+              </Link>
+              .
+            </p>
+          </Card>
+        )}
+
         <div className="flex items-start gap-2 text-[11px] text-ink-500">
           <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-ink-400" />
           <span>The Script Score is a pre-record quality check derived from your text. It is not a guarantee of views, monetization, or that a video will pass automated review.</span>
@@ -301,7 +391,7 @@ const SignalCard: React.FC<{ sig: ScriptSignal }> = ({ sig }) => {
   const tone = measured ? scoreTone(sig.score as number) : { num: 'text-ink-400', bar: 'bg-ink-300', chip: 'outline' as const };
   const chip = bandChip[sig.band];
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-4">
+    <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-4">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[13px] font-semibold text-ink-900">{sig.label}</span>
         <div className="flex items-center gap-2">
@@ -313,7 +403,7 @@ const SignalCard: React.FC<{ sig: ScriptSignal }> = ({ sig }) => {
           </span>
         </div>
       </div>
-      <div className="relative mt-2.5 h-1 w-full bg-ink-100 rounded-full">
+      <div className="relative mt-2.5 h-1 w-full bg-white/[0.08] rounded-full">
         <div className={`h-full rounded-full transition-all duration-700 ${tone.bar}`} style={{ width: `${measured ? sig.score : 0}%` }} />
       </div>
       <p className="text-[12.5px] text-ink-600 leading-relaxed mt-3">{sig.finding}</p>

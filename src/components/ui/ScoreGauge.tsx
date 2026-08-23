@@ -32,7 +32,7 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
   const offset = c - (clamped / 100) * c;
 
   const ringColor =
-    clamped >= 85 ? '#16A34A' :
+    clamped >= 85 ? '#7CFF9A' :
     clamped >= 70 ? '#F59E0B' :
     '#EF4444';
 
@@ -47,7 +47,7 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
         <svg width={box} height={box} className="-rotate-90">
           <circle
             cx={box / 2} cy={box / 2} r={r}
-            fill="none" stroke="#F0F0F0" strokeWidth={stroke}
+            fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke}
           />
           <circle
             cx={box / 2} cy={box / 2} r={r}
@@ -58,10 +58,10 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={clsx('font-display font-bold text-ink-900 tabular-nums leading-none', num)}>
+          <span className={clsx('font-display font-bold text-white tabular-nums leading-none', num)}>
             {clamped}
           </span>
-          {denom && <span className="text-[10px] text-ink-400 font-medium mt-0.5">/100</span>}
+          {denom && <span className="text-[10px] text-ink-500 font-medium mt-0.5">/100</span>}
         </div>
       </div>
       {showLabel && label && (

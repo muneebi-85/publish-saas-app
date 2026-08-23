@@ -58,18 +58,18 @@ export function CommandMenu({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-ink-950/40 backdrop-blur-sm z-50 data-[state=open]:animate-fade-in" />
+        <Dialog.Overlay className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 data-[state=open]:animate-fade-in" />
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg z-50 p-4 data-[state=open]:animate-enter-scale outline-none">
-          <div className="bg-surface-panel rounded-2xl shadow-float overflow-hidden border border-ink-200">
+          <div className="bg-surface-raised rounded-2xl shadow-float overflow-hidden border border-white/[0.1]">
             <Command className="w-full flex flex-col bg-transparent h-[400px]" label="Command Menu">
-              <div className="flex items-center border-b border-ink-100 px-3" cmdk-input-wrapper="">
+              <div className="flex items-center border-b border-white/[0.06] px-3" cmdk-input-wrapper="">
                 <Search className="w-4 h-4 text-ink-400 shrink-0" />
                 <Command.Input
                   autoFocus
                   placeholder="Type a command or search..."
-                  className="flex-1 h-12 bg-transparent outline-none px-3 text-[14px] text-ink-900 placeholder:text-ink-400"
+                  className="flex-1 h-12 bg-transparent outline-none px-3 text-[14px] text-white placeholder:text-ink-400"
                 />
-                <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border border-ink-200 bg-ink-50 px-1.5 font-mono text-[10px] font-medium text-ink-500">
+                <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border border-white/[0.1] bg-white/[0.04] px-1.5 font-mono text-[10px] font-medium text-ink-500">
                   <span className="text-xs">⌘</span>K
                 </kbd>
               </div>
@@ -86,7 +86,7 @@ export function CommandMenu({
                         key={a.href}
                         value={`${a.label} ${a.keywords ?? ''}`}
                         onSelect={() => go(a.href)}
-                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-ink-900 rounded-lg aria-selected:bg-ink-100 aria-selected:text-ink-900 cursor-pointer outline-none"
+                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-ink-700 rounded-lg aria-selected:bg-white/[0.07] aria-selected:text-white cursor-pointer outline-none"
                       >
                         <Icon className="w-4 h-4 text-ink-400" />
                         <span>{a.label}</span>
@@ -95,7 +95,7 @@ export function CommandMenu({
                   })}
                 </Command.Group>
 
-                <Command.Separator className="h-px bg-ink-100 my-2" />
+                <Command.Separator className="h-px bg-white/[0.06] my-2" />
 
                 <Command.Group heading="Account" className="px-2 py-1 text-xs font-semibold text-ink-500 [&_[cmdk-group-items]]:mt-2 [&_[cmdk-group-items]]:space-y-1">
                   {SETTINGS.map((a) => {
@@ -105,7 +105,7 @@ export function CommandMenu({
                         key={a.href}
                         value={`${a.label} ${a.keywords ?? ''}`}
                         onSelect={() => go(a.href)}
-                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-ink-900 rounded-lg aria-selected:bg-ink-100 aria-selected:text-ink-900 cursor-pointer outline-none"
+                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-ink-700 rounded-lg aria-selected:bg-white/[0.07] aria-selected:text-white cursor-pointer outline-none"
                       >
                         <Icon className="w-4 h-4 text-ink-400" />
                         <span>{a.label}</span>

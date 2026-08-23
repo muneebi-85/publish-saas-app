@@ -11,7 +11,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, ExternalLink, ShieldCheck, Calendar } from 'lucide-react';
 import { Card } from './Card';
 import { Badge } from './Badge';
-import { PLATFORM_POLICIES, PlatformName } from '@/lib/ai/platform-engine';
+import { PLATFORM_POLICIES, PlatformName } from '@/lib/ai/policies';
 
 const SCORE_WEIGHTS = [
   { label: 'Monetization policy',  weight: '30%', desc: 'Compliance with each platform\'s published advertiser-friendly content rules.' },

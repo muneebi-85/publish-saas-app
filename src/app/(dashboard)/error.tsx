@@ -3,6 +3,7 @@
 import { AlertTriangle, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useEffect } from 'react';
+import { reportClientError } from '@/lib/report-error';
 
 /**
  * Route-level error boundary — catches errors inside the dashboard tree so
@@ -11,7 +12,7 @@ import { useEffect } from 'react';
 export default function DashboardError({
   error, reset,
 }: { error: Error & { digest?: string }; reset: () => void }) {
-  useEffect(() => { console.error('[dashboard error]', error); }, [error]);
+  useEffect(() => { reportClientError(error, 'dashboard error'); }, [error]);
 
   return (
     <div className="rounded-2xl border border-amber-500/20 bg-amber-50/40 p-8 text-center animate-enter">
@@ -25,7 +26,7 @@ export default function DashboardError({
         Nothing was lost. The rest of your workspace is unaffected — try again, or open a different page.
       </p>
       {error.digest && (
-        <div className="mt-4 inline-block px-3 py-1.5 rounded-md bg-white border border-amber-500/20 text-[11px] font-mono text-ink-600">
+        <div className="mt-4 inline-block px-3 py-1.5 rounded-md bg-amber-50 border border-amber-500/20 text-[11px] font-mono text-ink-600">
           Ref: {error.digest}
         </div>
       )}

@@ -1,24 +1,27 @@
-'use client';
+import type { Metadata } from 'next';
+import { AuthShell } from '@/components/auth/AuthShell';
+import { SignInForm } from '@/components/auth/SignInForm';
+import { SsoCallback } from '@/components/auth/SsoCallback';
 
-import Link from 'next/link';
-import { SignIn } from '@clerk/nextjs';
-import { AuthShell, clerkAppearance } from '@/components/auth/AuthShell';
+export const metadata: Metadata = {
+  title: 'Log in',
+  description: 'Log in to your Publish account.',
+  robots: { index: false, follow: false },
+};
 
-export default function SignInPage() {
+/**
+ * A server component, so the shell, the logo and the heading are prerendered
+ * HTML — the browser paints the card before it has parsed any JavaScript. Only
+ * SignInForm hydrates.
+ *
+ * The route stays a catch-all because the OAuth redirect lands on a child path.
+ */
+export default function SignInPage({ params }: { params: { 'sign-in'?: string[] } }) {
+  if (params['sign-in']?.[0] === 'sso-callback') return <SsoCallback />;
+
   return (
-    <AuthShell
-      heading="Welcome back"
-      subheading="Sign in to continue analyzing your content."
-      footer={
-        <>
-          Don&apos;t have an account?{' '}
-          <Link href="/sign-up" className="font-medium text-brand-600 hover:text-brand-700">
-            Sign up free
-          </Link>
-        </>
-      }
-    >
-      <SignIn path="/sign-in" signUpUrl="/sign-up" appearance={clerkAppearance} />
+    <AuthShell altPrompt="New to Publish?" altLabel="Sign up" altHref="/sign-up">
+      <SignInForm />
     </AuthShell>
   );
 }

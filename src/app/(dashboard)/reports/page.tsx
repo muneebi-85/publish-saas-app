@@ -27,21 +27,41 @@ interface ProjectGroup {
 /** Maps a score band to the reader-facing status shown in the list. */
 function statusFor(score: number): { label: string; className: string } {
   if (score >= 85) return { label: 'Ready', className: 'text-brand-600' };
-  if (score >= 70) return { label: 'Improve', className: 'text-amber-600' };
-  return { label: 'Rework', className: 'text-crimson-600' };
+  if (score >= 70) return { label: 'Improve', className: 'text-amber-700' };
+  return { label: 'Rework', className: 'text-crimson-700' };
 }
+
+/**
+ * Ceiling on how many reviews this page pulls into memory.
+ *
+ * The list groups every review by project to draw a real trend line, which needs
+ * the rows themselves — so the query cannot be narrowed with an aggregate. The cap
+ * bounds that at a few hundred rows instead of a user's entire history.
+ *
+ * It fetches the NEWEST reviews and reverses them for the chronological grouping:
+ * taking the first N of an ascending sort would pin the page to a user's oldest
+ * work and quietly hide everything recent. When the cap is reached the page says
+ * so — see the notice below — rather than presenting a truncated list as complete.
+ */
+const REVIEW_FETCH_CAP = 400;
 
 export default async function ReportsPage() {
   const authCtx = await requirePageAuth();
 
-  const user = await prisma.user.findUnique({ where: { id: authCtx.dbUserId } });
+  const user = await prisma.user.findUnique({
+    where: { id: authCtx.dbUserId },
+    select: { id: true },
+  });
   if (!user) {
     return <EmptyState />;
   }
 
-  const rows = await prisma.analysisReport.findMany({
+  // One extra row is the truncation probe: getting CAP + 1 back means there is
+  // older history we are not showing.
+  const newestFirst = await prisma.analysisReport.findMany({
     where: { userId: user.id },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
+    take: REVIEW_FETCH_CAP + 1,
     select: {
       id: true,
       projectId: true,
@@ -53,7 +73,17 @@ export default async function ReportsPage() {
     },
   });
 
+  const truncated = newestFirst.length > REVIEW_FETCH_CAP;
+  // Back to ascending: the grouping below relies on chronological order.
+  const rows = newestFirst.slice(0, REVIEW_FETCH_CAP).reverse();
+
   if (rows.length === 0) return <EmptyState />;
+
+  // The header claims a review count, so when the fetch cap truncates the list
+  // it needs the true total rather than silently under-reporting.
+  const totalReports = await prisma.analysisReport.count({
+    where: { userId: user.id },
+  });
 
   // Group by projectId — one row per project, with chronological score series.
   const groups = new Map<string, ProjectGroup>();
@@ -107,10 +137,23 @@ export default async function ReportsPage() {
       <Card padded={false}>
         <div className="px-5 py-4 border-b border-ink-100 flex items-center justify-between">
           <span className="text-[12px] font-medium text-ink-600 tabular-nums">
-            {list.length} project{list.length === 1 ? '' : 's'} · {rows.length} review{rows.length === 1 ? '' : 's'}
+            {list.length} project{list.length === 1 ? '' : 's'} ·{' '}
+            {truncated
+              ? `${rows.length} of ${totalReports} reviews`
+              : `${rows.length} review${rows.length === 1 ? '' : 's'}`}
           </span>
           <span className="text-[11px] text-ink-400">Scored on each video&apos;s own signals · estimates</span>
         </div>
+
+        {/* Shown only when the cap actually bit. A truncated list that presents itself
+            as complete would make the per-project counts and trend lines misleading. */}
+        {truncated && (
+          <p className="px-5 py-2.5 border-b border-ink-100 bg-surface-canvas text-[12px] text-ink-600">
+            Showing your {REVIEW_FETCH_CAP} most recent reviews. Older ones are still
+            stored and open normally from their own report link — they are left out of
+            the project totals and trend lines above.
+          </p>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px]">
@@ -152,7 +195,7 @@ export default async function ReportsPage() {
                         <span className={`text-[13px] font-semibold ${status.className}`}>{status.label}</span>
                         {g.delta !== null && g.delta !== 0 && (
                           <span className={`inline-flex items-center gap-1 text-[11.5px] font-medium tabular-nums ${
-                            g.delta > 0 ? 'text-brand-600' : 'text-crimson-600'
+                            g.delta > 0 ? 'text-brand-600' : 'text-crimson-700'
                           }`}>
                             {g.delta > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                             {g.delta > 0 ? '+' : ''}{g.delta} vs prior
@@ -191,7 +234,7 @@ function EmptyState() {
         showUtility
       />
       <Card className="text-center py-16">
-        <div className="w-14 h-14 rounded-full bg-ink-100 flex items-center justify-center mx-auto mb-5">
+        <div className="w-14 h-14 rounded-full bg-white/[0.08] flex items-center justify-center mx-auto mb-5">
           <FileText className="w-6 h-6 text-ink-500" />
         </div>
         <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">No reports yet</h3>

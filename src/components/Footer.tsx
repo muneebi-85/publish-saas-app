@@ -13,7 +13,7 @@ import { LEGAL, LEGAL_LINKS } from '@/lib/legal/config';
 export const Footer: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
   if (compact) {
     return (
-      <footer className="border-t border-ink-100 bg-white">
+      <footer className="border-t border-white/[0.06] bg-surface-panel">
         <div className="max-w-7xl mx-auto px-6 h-12 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-ink-500">
           <div>© {new Date().getFullYear()} {LEGAL.legalEntity}. All rights reserved.</div>
           <nav className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -29,7 +29,7 @@ export const Footer: React.FC<{ compact?: boolean }> = ({ compact = false }) => 
   }
 
   return (
-    <footer className="border-t border-ink-100 bg-white">
+    <footer className="border-t border-white/[0.06] bg-surface-panel">
       <div className="max-w-7xl mx-auto px-6 py-12">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           <div className="col-span-2">
@@ -50,6 +50,7 @@ export const Footer: React.FC<{ compact?: boolean }> = ({ compact = false }) => 
               <li><Link href="/#features" className="text-ink-700 hover:text-ink-900">Features</Link></li>
               <li><Link href="/#pricing"  className="text-ink-700 hover:text-ink-900">Pricing</Link></li>
               <li><Link href="/#faq"      className="text-ink-700 hover:text-ink-900">FAQ</Link></li>
+              <li><Link href="/community" className="text-ink-700 hover:text-ink-900">Leaderboard</Link></li>
               <li><Link href="/help"      className="text-ink-700 hover:text-ink-900">Help center</Link></li>
               <li><Link href="/restore"   className="text-ink-700 hover:text-ink-900">Restore purchase</Link></li>
             </ul>

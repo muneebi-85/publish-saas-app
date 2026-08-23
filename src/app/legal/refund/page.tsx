@@ -2,7 +2,10 @@ import { LEGAL } from '@/lib/legal/config';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: `Refund Policy · ${LEGAL.productName}`,
+  // The root layout sets a title template of '%s · Publish', so the product
+  // name is appended for us. Repeating it here produced
+  // "Refund Policy · Publish · Publish" in the tab and in search results.
+  title: 'Refund Policy',
   description: 'When we refund, when we cannot, and how to request one.',
 };
 

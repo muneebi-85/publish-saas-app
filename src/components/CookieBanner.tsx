@@ -31,6 +31,18 @@ export const CookieBanner: React.FC = () => {
     if (!stored?.decided) setVisible(true);
   }, []);
 
+  // Flag the banner on <html> so layouts can reserve room for it. It is a fixed
+  // overlay, so on a short window it lands on top of whatever is at the bottom of
+  // the page — on the auth pages, the submit button. A class means the page only
+  // pays for that clearance while the banner is actually up: once it is dismissed
+  // the class goes and the extra scroll room with it. See .cookie-banner-open in
+  // globals.css.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('cookie-banner-open', visible);
+    return () => root.classList.remove('cookie-banner-open');
+  }, [visible]);
+
   const accept = (all: boolean) => {
     const c: Consent = { analytics: all, functional: true, decided: true };
     store(c);
@@ -45,12 +57,17 @@ export const CookieBanner: React.FC = () => {
   if (!visible) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 p-4 sm:p-6 pointer-events-none">
-      <div className="max-w-2xl mx-auto bg-white border border-ink-200 rounded-2xl shadow-elevated p-5 pointer-events-auto animate-enter">
+    <div className="fixed bottom-0 left-0 right-0 z-40 p-3 sm:p-4 pointer-events-none flex justify-end">
+      {/* Opaque surface, not a translucent white wash. The banner renders on every
+          route including the light-background auth pages, where a 4%-white panel
+          left this card's white text unreadable. surface-raised (#0F0F10) is a
+          hair lighter than the dark canvas it usually sits on, so nothing changes
+          there, and the ink-* text below stays legible everywhere. */}
+      <div className="w-full sm:w-auto sm:max-w-sm bg-surface-raised border border-white/[0.12] rounded-2xl shadow-elevated p-4 pointer-events-auto animate-enter">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <div className="text-[14px] font-semibold text-ink-900">We use cookies</div>
-            <p className="text-[12.5px] text-ink-600 mt-1 leading-relaxed">
+            <div className="text-[13.5px] font-semibold text-ink-900">We use cookies</div>
+            <p className="text-[12px] text-ink-600 mt-1 leading-relaxed">
               Strictly necessary cookies keep you signed in. Optional analytics cookies (PostHog)
               help us improve the product — no ad tracking, no data sales.
               {' '}<Link href="/legal/cookies" className="underline underline-offset-2 hover:text-ink-900">Cookie policy</Link>
@@ -66,7 +83,7 @@ export const CookieBanner: React.FC = () => {
           </div>
         )}
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-3.5 flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={() => accept(true)}>Accept all</Button>
           <Button size="sm" variant="secondary" onClick={() => accept(false)}>Necessary only</Button>
           {showDetails ? (
@@ -97,7 +114,7 @@ const Toggle: React.FC<{
       disabled={disabled}
       onClick={() => onChange?.(!on)}
       className={`w-10 h-6 rounded-full relative transition-colors shrink-0 ${
-        on ? 'bg-ink-900' : 'bg-ink-200'
+        on ? 'bg-brand-600' : 'bg-white/[0.12]'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       role="switch"
       aria-checked={on}

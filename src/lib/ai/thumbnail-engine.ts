@@ -7,7 +7,7 @@
  * misleading thumbnails, and that is a monetization risk).
  */
 
-import { analyzeImage, chatJSON } from './nvidia';
+import { analyzeImage } from './nvidia';
 import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore } from './guardrails';
 import { ThumbnailMetric } from '../types';
 

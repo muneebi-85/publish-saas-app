@@ -10,7 +10,7 @@
  * and any layer that could not be measured says so instead of showing a number.
  */
 
-import { ProjectData, RiskLevel } from '../types';
+import { ProjectData, RiskLevel, VideoMetric } from '../types';
 import { analyzeScript, heuristicScriptAnalysis } from './script-engine';
 import { analyzeHook, heuristicHook } from './hook-engine';
 import { analyzeVoice, heuristicVoice, VoiceAnalysisInput } from './voice-engine';
@@ -21,6 +21,15 @@ import { analyzeAllPlatforms, heuristicPlatform, PlatformName } from './platform
 import { riskBand, conservativeScore } from './guardrails';
 import { transcribeAudio } from './transcription';
 import { hasTranscription } from '../env';
+import { analyzeVideoFrames, unmeasuredVideo, type VideoFrameInput } from './video-engine';
+import {
+  analyzeAuthenticity,
+  heuristicAuthenticity,
+  analyzeMonetizationRisk,
+  buildScorecards,
+  detectTextSignals,
+  type AuthenticityInput,
+} from './authenticity-engine';
 
 /** Estimate stock-footage percentage from available signals. Returns null when no signals fire. */
 function estimateStockFootagePercent(opts: {
@@ -57,6 +66,13 @@ function computeKeywordDensity(title: string, description: string, scriptText: s
   return `${pct.toFixed(1)}% (${label})`;
 }
 
+/** `11:04` from a second count. Undefined in, undefined out - never `0:00`. */
+function durationDisplay(seconds?: number): string | undefined {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) return undefined;
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
 export interface ReviewInput {
   projectId: string;
   title: string;
@@ -65,6 +81,12 @@ export interface ReviewInput {
   thumbnailUrl?: string;
   /** Media (audio or video) URL to transcribe when speech-to-text is configured. */
   audioUrl?: string;
+  /**
+   * Frames the uploader's browser decoded out of the video, plus what it measured
+   * from them. Absent when no video was attached, when the browser could not decode
+   * it, or when storage is off - all of which report the layer as unmeasured.
+   */
+  videoFrames?: VideoFrameInput;
   targetPlatform?: PlatformName;
   durationSeconds?: number;
   aiGenerated?: boolean;
@@ -136,6 +158,27 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     stockFootagePercent: stockFootagePercent ?? undefined,
   };
 
+  // Authenticity input. `audioMeasured` is true only when a real transcription
+  // ran, which is what lets the engine label voice signals measured vs inferred.
+  const authenticityInput: AuthenticityInput = {
+    title: input.title,
+    description: input.description,
+    scriptText: script,
+    tags: input.tags,
+    durationSeconds: input.durationSeconds ?? transcribed?.durationSeconds,
+    aiGenerated: input.aiGenerated,
+    hasWatermark: input.hasWatermark,
+    hasThumbnail: Boolean(input.thumbnailUrl),
+    audioMeasured: Boolean(transcribed),
+    measuredVoice: transcribed
+      ? {
+          speakingPaceWpm: transcribed.speakingPaceWpm,
+          pauseRatio: transcribed.pauseRatio,
+          isMonotone: transcribed.isMonotone,
+        }
+      : undefined,
+  };
+
   // Fan out every engine concurrently — total wall clock ≈ slowest engine, not sum.
   const [
     scriptResult,
@@ -145,6 +188,8 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     copyrightResult,
     seoResult,
     platformResults,
+    authenticityResult,
+    framesResult,
   ] = await Promise.all([
     safeCall('script',    () => analyzeScript(script), () => heuristicScriptAnalysis(script)),
     safeCall('hook',      () => analyzeHook(opening, platform), () => heuristicHook(opening, platform)),
@@ -173,6 +218,19 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       heuristicPlatform('Facebook',  { durationSeconds: input.durationSeconds }),
       heuristicPlatform('LinkedIn',  {}),
     ])),
+    safeCall('authenticity',
+      () => analyzeAuthenticity(authenticityInput),
+      () => heuristicAuthenticity(authenticityInput, authenticityInput.measuredVoice),
+    ),
+    // Null, not a fabricated metric, when no frames were decoded. The unmeasured
+    // result is built after this block because it wants the thumbnail's composition
+    // score as its stand-in, and that is not known until the batch resolves.
+    safeCall<VideoMetric | null>('videoFrames',
+      () => input.videoFrames
+        ? analyzeVideoFrames(input.videoFrames, platform, input.aiGenerated === true)
+        : Promise.resolve(null),
+      () => null,
+    ),
   ]);
 
   // Compose overall scores.
@@ -187,12 +245,15 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
 
   const seo = seoResult.seoScore;
   const hook = hookResult.first10SecRetention;
-  // naturalness is null when no audio was analyzed — treat unknown as neutral (75)
-  // so we neither reward nor penalize a layer we did not measure.
-  const voiceNaturalness = voiceResult.naturalness ?? 75;
-  const authenticity = conservativeScore(
-    100 - Math.round((scriptResult.gptProbability + (voiceNaturalness < 70 ? 30 : 10)) / 2),
-  );
+  // Authenticity now comes from the dedicated authenticity engine, which reasons
+  // over named signals with locations, confidence, and false-positive caveats
+  // rather than the previous ad-hoc blend of gptProbability and voice naturalness.
+  // The script engine's independent gptProbability is still folded in at a lower
+  // weight: it is a second opinion from a different prompt, and when the two
+  // disagree we want the composite to reflect that rather than trust one blindly.
+  const authenticity = conservativeScore(Math.round(
+    (authenticityResult.humanAuthenticityScore * 0.7) + ((100 - scriptResult.gptProbability) * 0.3),
+  ));
   const copyright = conservativeScore(
     copyrightResult.musicMatchRisk === 'Low' ? 96 : copyrightResult.musicMatchRisk === 'Medium' ? 75 : 45,
   );
@@ -207,10 +268,16 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     (policyCompliance * 0.4) + ((100 - (copyrightResult.musicMatchRisk === 'High' ? 70 : copyrightResult.musicMatchRisk === 'Medium' ? 35 : 5)) * 0.3) + (authenticity * 0.3),
   ));
   const originality = conservativeScore(100 - scriptResult.gptProbability);
-  // Composition (thumbnail) doubles as our only editing signal. null when no
-  // thumbnail was analyzed — kept nullable for videoAnalysis, defaulted to 0 for
-  // the display-only scores.editing field.
-  const editing = thumbnailResult.compositionScore;
+  // The video layer, resolved. When frames decoded, this is the real thing; when
+  // they did not, it is the explicit unmeasured state that names itself as such.
+  const videoResult = framesResult
+    ?? unmeasuredVideo(platform, input.aiGenerated === true, thumbnailResult.compositionScore);
+
+  // `scores.editing` prefers the frame-derived pacing figure and falls back to
+  // thumbnail composition, which is what this field has always been. Both live in
+  // `videoResult.editingPacingScore` already, so there is one source for the number
+  // and `videoResult.basis` is what tells the reader which of the two it is.
+  const editing = videoResult.editingPacingScore;
 
   const overall = conservativeScore(Math.round(
     (monetization * 0.30) +
@@ -222,6 +289,35 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
   ));
 
   const risk: RiskLevel = riskBand(overall);
+
+  // Monetization risk consolidates the keyword rules with what the other engines
+  // already measured, so the creator gets one exposure list instead of having to
+  // reconcile six panels. Deterministic — no extra model call, no extra latency.
+  const monetizationRisk = analyzeMonetizationRisk(authenticityInput, {
+    copyright: copyrightResult,
+    thumbnail: thumbnailResult,
+    voice: voiceResult,
+    platformReports: platformResults,
+    authenticityRisk: authenticityResult.risk,
+  });
+
+  const scorecards = buildScorecards({
+    authenticity: authenticityResult,
+    monetizationRisk,
+    textSignals: detectTextSignals(script, input.aiGenerated),
+    voice: voiceResult,
+    thumbnail: thumbnailResult,
+    copyright: copyrightResult,
+    platformReports: platformResults,
+    title: input.title,
+    description: input.description,
+    tags: input.tags,
+    aiGenerated: input.aiGenerated,
+    hasWatermark: input.hasWatermark,
+    hasThumbnail: Boolean(input.thumbnailUrl),
+    audioMeasured: Boolean(transcribed),
+    scriptText: script,
+  });
 
   // ── Creator-value insights ─────────────────────────────
   // Deterministic "score potential": when a layer has at least one actionable
@@ -280,9 +376,12 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     assets: {
       thumbnailUrl: input.thumbnailUrl,
       scriptText: input.scriptText ?? transcribed?.transcript,
-      videoDuration: (input.durationSeconds ?? transcribed?.durationSeconds)
-        ? `${Math.floor((input.durationSeconds ?? transcribed?.durationSeconds ?? 0) / 60)}:${String((input.durationSeconds ?? transcribed?.durationSeconds ?? 0) % 60).padStart(2, '0')}`
-        : undefined,
+      // Frame decode outranks the transcript: it read the duration off the container
+      // itself, where the transcript infers it from the last word it heard and comes
+      // up short on any video that ends in silence.
+      videoDuration: durationDisplay(
+        input.durationSeconds ?? input.videoFrames?.durationSeconds ?? transcribed?.durationSeconds,
+      ),
       metaTitle: input.title,
       metaDescription: input.description,
       metaTags: input.tags,
@@ -304,23 +403,9 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       storytellingArc: scriptResult.storytellingArc,
     },
     voiceAnalysis:     voiceResult,
-    // Honest state: we do not do frame-level video analysis yet. Report "Not analyzed"
-    // rather than invent numbers. The only signals we truly have are the aiGenerated flag,
-    // hasWatermark, and the thumbnail composition score used above.
-    videoAnalysis: {
-      editingPacingScore: editing,
-      cameraMovementRating: 'Not analyzed — video source not connected',
-      sceneTransitionRate: 'Not analyzed — video source not connected',
-      frameRepetitionCount: 0,
-      aiVisualArtifactRisk: input.aiGenerated ? 'Medium' : 'Low',
-      resolution: 'Unknown',
-      compressionQuality: 'Unknown',
-      recommendations: [
-        input.aiGenerated
-          ? `The upload is flagged as containing AI-generated visuals, so before publishing decide whether they could be read as depicting a real person or real event — if they can (a real face, a real location, a news-style event), YouTube's synthetic-content policy expects the "Altered content" disclosure in the Details step, and for an EU audience the AI Act's transparency duty applies. If the AI visuals are clearly stylized b-roll or graphics that no viewer would mistake for real footage, disclosure isn't required; either way, self-labeling when in doubt keeps the choice on your terms rather than YouTube's, with no cost to reach.`
-          : `No video file or URL is connected, so frame-level checks — editing pace, scene-transition rate, hard-cut frequency, compression artifacts, and AI-visual tells — can't run and are reported as "not analyzed" rather than passed. Attach the exported ${platform === 'TikTok' || platform === 'Instagram' ? '9:16 ' : ''}master (the same file you'll upload) to turn these blanks into measured signals; pacing and transition density are the frame-level levers most tied to mid-video retention, so it's the check most worth connecting.`,
-      ],
-    },
+    // Real when the browser decoded frames, explicitly unmeasured when it did not.
+    // `video-engine.ts` owns both states; nothing here invents a visual number.
+    videoAnalysis: videoResult,
     thumbnailAnalysis: thumbnailResult,
     seoAnalysis: {
       titleOptimizationScore: seoResult.seoScore,
@@ -337,6 +422,9 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     copyrightAnalysis: copyrightResult,
     hookAnalysis: hookResult,
     platformReports: platformResults,
+    authenticity: authenticityResult,
+    monetizationRisk,
+    scorecards,
     insights: { scorePotential, blockingCount, highCount, totalFixes },
   };
 }

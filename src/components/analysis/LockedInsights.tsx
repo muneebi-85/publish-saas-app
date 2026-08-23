@@ -1,7 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
 import { Lock, ArrowRight, Wand2, BarChart3, TrendingUp, FileBadge } from 'lucide-react';
-import { Badge } from '@/components/ui/Badge';
 import { ProjectData } from '@/lib/types';
 
 /**
@@ -46,7 +45,7 @@ export const LockedInsights: React.FC<{ project: ProjectData }> = ({ project }) 
   ];
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
+    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
       {/* Header */}
       <div className="px-6 py-5 border-b border-ink-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
@@ -66,21 +65,21 @@ export const LockedInsights: React.FC<{ project: ProjectData }> = ({ project }) 
           const Icon = row.icon;
           return (
             <div key={row.name} className="flex items-start gap-4 px-6 py-4">
-              <div className="w-8 h-8 rounded-md bg-ink-100 text-ink-500 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-md bg-white/[0.08] text-ink-500 flex items-center justify-center shrink-0">
                 <Icon className="w-3.5 h-3.5" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[13.5px] font-semibold text-ink-900">{row.name}</span>
-                  <span className="text-[10px] font-semibold text-ink-500 bg-ink-100 px-1.5 py-0.5 rounded-md">
+                  <span className="text-[10px] font-semibold text-ink-500 bg-white/[0.08] px-1.5 py-0.5 rounded-md">
                     {row.plan}
                   </span>
                 </div>
                 <p className="text-[12.5px] text-ink-600 mt-1 leading-relaxed max-w-xl">{row.value}</p>
               </div>
               <div className="hidden sm:flex flex-col gap-1.5 shrink-0 pt-1 select-none" aria-hidden="true">
-                <div className="h-1.5 w-20 rounded-full bg-ink-100 blur-[1.5px]" />
-                <div className="h-1.5 w-14 rounded-full bg-ink-100 blur-[1.5px]" />
+                <div className="h-1.5 w-20 rounded-full bg-white/[0.08] blur-[1.5px]" />
+                <div className="h-1.5 w-14 rounded-full bg-white/[0.08] blur-[1.5px]" />
               </div>
               <Lock className="w-3.5 h-3.5 text-ink-300 shrink-0 mt-1.5" />
             </div>

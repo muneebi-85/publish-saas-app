@@ -3,14 +3,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@clerk/nextjs';
 
-export type Plan = 'free' | 'starter' | 'pro' | 'agency';
+/**
+ * Re-exported from the plan catalogue rather than restated. This hook used to
+ * carry its own copy of the limits (Creator 25, Pro 100) which disagreed with
+ * both the server's enforcement and billing, so the quota bar showed numbers no
+ * user could actually hit.
+ */
+export type { Plan } from '@/lib/plans';
+export { PLAN_LIMITS } from '@/lib/plans';
 
-export const PLAN_LIMITS: Record<Plan, number> = {
-  free: 1,
-  starter: 25,
-  pro: 100,
-  agency: 500,
-};
+import type { Plan } from '@/lib/plans';
+import { PLAN_LIMITS } from '@/lib/plans';
 
 export interface QuotaState {
   plan: Plan;

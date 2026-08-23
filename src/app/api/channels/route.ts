@@ -6,6 +6,10 @@
  * connected, or the platform refuses the token, the route says so and returns
  * nothing. Showing invented subscriber counts would make every downstream
  * benchmark a lie.
+ *
+ * The platform parsing/coercion rules live in src/lib/channels.ts (pure, unit
+ * tested); this file is the I/O shell: auth, rate limiting, ownership, and the
+ * database upsert.
  */
 import { NextResponse } from 'next/server';
 import { clerkClient } from '@clerk/nextjs/server';
@@ -13,55 +17,17 @@ import { requireAuth } from '@/lib/api-guards';
 import { prisma } from '@/lib/db';
 import { rateLimit, userKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 import { enumOf, id as validId, jsonBody } from '@/lib/validate';
+import {
+  CHANNEL_PLATFORMS,
+  CHANNEL_PROVIDER,
+  CHANNEL_CONNECT_LABEL,
+  fetchChannelSnapshot,
+  type ChannelPlatform,
+  type ChannelSnapshot,
+} from '@/lib/channels';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const PLATFORMS = ['YOUTUBE', 'TIKTOK'] as const;
-type Platform = (typeof PLATFORMS)[number];
-
-const PROVIDER: Record<Platform, string> = {
-  YOUTUBE: 'oauth_google',
-  TIKTOK: 'oauth_tiktok',
-};
-
-const CONNECT_LABEL: Record<Platform, string> = {
-  YOUTUBE: 'YouTube (Google)',
-  TIKTOK: 'TikTok',
-};
-
-type ChannelSnapshot = {
-  channelId: string;
-  name: string;
-  url: string | null;
-  avatarUrl: string | null;
-  subscribers: number;
-  videosCount: number;
-  viewsCount: number;
-};
-
-/** Coerces platform counters, which arrive as strings, into safe integers. */
-function count(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
-}
-
-/** Fetch with a hard timeout so a hanging platform API cannot pin a function. */
-async function fetchJson(url: string, token: string, timeoutMs = 10_000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      signal: controller.signal,
-      cache: 'no-store',
-    });
-    const body = await res.json().catch(() => null);
-    return { ok: res.ok, status: res.status, body } as const;
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 async function getOauthToken(clerkId: string, provider: string): Promise<string | null> {
   try {
@@ -76,68 +42,45 @@ async function getOauthToken(clerkId: string, provider: string): Promise<string 
   }
 }
 
-async function fetchYouTube(token: string): Promise<ChannelSnapshot | { error: string }> {
-  const res = await fetchJson(
-    'https://youtube.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true',
-    token,
-  );
-  if (!res.ok) {
-    return { error: 'YouTube rejected the request. Reconnect your Google account and try again.' };
-  }
-  const item = (res.body as any)?.items?.[0];
-  if (!item) {
-    return { error: 'No YouTube channel is attached to that Google account.' };
-  }
-  const snippet = item.snippet ?? {};
-  const stats = item.statistics ?? {};
-  const handle: string | undefined = snippet.customUrl;
-  return {
-    channelId: String(item.id),
-    name: String(snippet.title ?? 'YouTube channel'),
-    url: handle
-      ? `https://www.youtube.com/${handle.startsWith('@') ? handle : `@${handle}`}`
-      : `https://www.youtube.com/channel/${item.id}`,
-    avatarUrl:
-      snippet.thumbnails?.high?.url ??
-      snippet.thumbnails?.medium?.url ??
-      snippet.thumbnails?.default?.url ??
-      null,
-    subscribers: count(stats.subscriberCount),
-    videosCount: count(stats.videoCount),
-    viewsCount: count(stats.viewCount),
-  };
-}
-
-async function fetchTikTok(token: string): Promise<ChannelSnapshot | { error: string }> {
-  const res = await fetchJson(
-    'https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url,follower_count,video_count,likes_count,profile_deep_link',
-    token,
-  );
-  const user = (res.body as any)?.data?.user;
-  if (!res.ok || !user) {
-    return { error: 'TikTok rejected the request. Reconnect your TikTok account and try again.' };
-  }
-  return {
-    channelId: String(user.open_id),
-    name: String(user.display_name ?? 'TikTok account'),
-    url: user.profile_deep_link ?? null,
-    avatarUrl: user.avatar_url ?? null,
-    subscribers: count(user.follower_count),
-    videosCount: count(user.video_count),
-    // TikTok's public scope exposes likes, not lifetime views. Recording likes
-    // as "views" would silently corrupt every RPM/engagement benchmark, so we
-    // leave it at 0 (rendered as "Not measured") rather than substitute it.
-    viewsCount: 0,
-  };
-}
-
+// No request parameter: the limiter is keyed to the authenticated account, and
+// the query reads nothing off the URL.
 export async function GET() {
   const authCtx = await requireAuth();
   if (authCtx instanceof NextResponse) return authCtx;
 
+  // Every other read route carries the cheap authenticated-read budget; this one
+  // is no different, and an unthrottled authenticated DB read is a free
+  // amplification primitive for anyone with an account.
+  const limit = await rateLimit(
+    userKey(authCtx.clerkId, 'channels-read'),
+    LIMITS.READ.limit,
+    LIMITS.READ.windowMs,
+  );
+  if (!limit.success) {
+    const r = tooManyRequests(limit);
+    return NextResponse.json(r.body, r.init);
+  }
+
   const channels = await prisma.channel.findMany({
     where: { userId: authCtx.dbUserId },
+    // Explicit field list rather than the whole row: a column added to Channel
+    // later must be published deliberately, not leak the moment it exists.
+    select: {
+      id: true,
+      platform: true,
+      channelId: true,
+      name: true,
+      url: true,
+      subscribers: true,
+      videosCount: true,
+      viewsCount: true,
+      createdAt: true,
+      updatedAt: true,
+    },
     orderBy: { createdAt: 'desc' },
+    // A creator connects a handful of channels, not thousands. The cap keeps the
+    // response bounded regardless.
+    take: 100,
   });
 
   return NextResponse.json({ channels }, { headers: { 'Cache-Control': 'no-store' } });
@@ -160,16 +103,17 @@ export async function POST(req: Request) {
   const body = await jsonBody(req, { maxBytes: 4_000 });
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
 
-  const platform = enumOf(body.value.platform, PLATFORMS, 'platform');
+  const platform = enumOf(body.value.platform, CHANNEL_PLATFORMS, 'platform');
   if (!platform.ok) return NextResponse.json({ error: platform.error }, { status: 400 });
+  const platformName = platform.value as ChannelPlatform;
 
-  const provider = PROVIDER[platform.value];
+  const provider = CHANNEL_PROVIDER[platformName];
   const token = await getOauthToken(authCtx.clerkId, provider);
 
   if (!token) {
     return NextResponse.json(
       {
-        error: `Connect your ${CONNECT_LABEL[platform.value]} account first — we only ever show numbers pulled from the platform itself.`,
+        error: `Connect your ${CHANNEL_CONNECT_LABEL[platformName]} account first — we only ever show numbers pulled from the platform itself.`,
         connectRequired: true,
         provider,
       },
@@ -179,8 +123,7 @@ export async function POST(req: Request) {
 
   let snapshot: ChannelSnapshot | { error: string };
   try {
-    snapshot =
-      platform.value === 'YOUTUBE' ? await fetchYouTube(token) : await fetchTikTok(token);
+    snapshot = await fetchChannelSnapshot(platformName, token);
   } catch (err) {
     console.error('[POST /api/channels] platform fetch failed', err);
     return NextResponse.json(
@@ -193,11 +136,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: snapshot.error }, { status: 502 });
   }
 
-  // A platform channel belongs to exactly one account here. Without this check
-  // a second user could re-link the same channel and the unique constraint
-  // would surface as an opaque 500.
-  const existing = await prisma.channel.findUnique({
-    where: { platform_channelId: { platform: platform.value, channelId: snapshot.channelId } },
+  // A platform channel belongs to exactly one account. That rule is enforced HERE,
+  // deliberately, and not by a database constraint: the unique index is scoped to
+  // (userId, platform, channelId), so the DB alone would happily let two accounts
+  // link the same channel. A global unique index instead of this check is what the
+  // schema used to have, and it surfaced the conflict as an opaque P2002 500 while
+  // making this ownership branch unreachable.
+  //
+  // findFirst, not findUnique: the lookup intentionally spans owners, which is no
+  // longer a unique key. The (platform, channelId) index still backs it.
+  const existing = await prisma.channel.findFirst({
+    where: { platform: platformName, channelId: snapshot.channelId },
     select: { id: true, userId: true },
   });
 
@@ -211,7 +160,7 @@ export async function POST(req: Request) {
   const channel = existing
     ? await prisma.channel.update({ where: { id: existing.id }, data: snapshot })
     : await prisma.channel.create({
-        data: { userId: authCtx.dbUserId, platform: platform.value, ...snapshot },
+        data: { userId: authCtx.dbUserId, platform: platformName, ...snapshot },
       });
 
   return NextResponse.json({ success: true, channel }, { status: existing ? 200 : 201 });

@@ -1,0 +1,78 @@
+# Continuous integration.
+#
+# This is what makes "lint passes / tests pass / it builds" a fact rather than a
+# claim. Every gate here is one a broken push should not get past:
+#
+#   typecheck → the type contract still holds
+#   lint      → zero warnings (`--max-warnings=0`), no suppressions
+#   test      → the honesty invariants: no AI-origin assertions, no guaranteed
+#               monetization, no silent plan downgrades on an unmapped variant
+#   build     → the app actually compiles for production
+#   prisma    → the schema is valid and the migration list is coherent
+#
+# No database, no API keys, and no network calls to any vendor are needed: the
+# suite covers pure logic only, and `env.ts` degrades instead of throwing when
+# NODE_ENV is not production.
+
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+# A newer push to the same branch makes an in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # `next build` runs the production env guard. NEXT_PHASE tells env.ts this
+      # is a build rather than a serving process, so absent secrets degrade
+      # loudly instead of hard-failing a CI run that has no vault access.
+      NEXT_PHASE: phase-production-build
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the local toolchain and the Vercel runtime.
+          node-version: 22
+          cache: npm
+
+      # `npm ci` honours the lockfile exactly, so CI cannot pass on a dependency
+      # tree that a fresh clone would not reproduce.
+      - name: Install dependencies
+        run: npm ci
+
+      # postinstall already runs this, but it is cheap and makes the dependency
+      # explicit for the steps below rather than implicit in install order.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npx next build

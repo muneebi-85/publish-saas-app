@@ -20,6 +20,7 @@ import { sendReportReady } from '../email';
 import { env } from '../env';
 import type { PlatformName } from '../ai/platform-engine';
 import type { ScriptIssue } from '../types';
+import type { VideoFrameInput } from '../ai/video-engine';
 
 /** Shape persisted in AnalysisJob.input by the enqueue route. */
 export interface ReviewJobInput {
@@ -28,6 +29,14 @@ export interface ReviewJobInput {
   scriptText?: string;
   thumbnailUrl?: string;
   audioUrl?: string;
+  /**
+   * Frames the browser decoded, already validated by the enqueue route.
+   *
+   * Persisted in the job row like every other input, so a QStash retry an hour
+   * later analyses the same sheets. The sheet URLs outlive the browser tab that
+   * made them; the numbers alongside them cannot be recomputed server-side.
+   */
+  videoFrames?: VideoFrameInput;
   targetPlatform: PlatformName;
   durationSeconds?: number;
   aiGenerated?: boolean;
@@ -89,6 +98,7 @@ export async function runReviewJob(jobId: string): Promise<RunReviewOutcome> {
       scriptText: input.scriptText,
       thumbnailUrl: input.thumbnailUrl,
       audioUrl: input.audioUrl,
+      videoFrames: input.videoFrames,
       targetPlatform: (input.targetPlatform ?? job.targetPlatform) as PlatformName,
       durationSeconds: input.durationSeconds,
       aiGenerated: input.aiGenerated,

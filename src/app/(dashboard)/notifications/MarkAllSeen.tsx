@@ -37,7 +37,7 @@ export const MarkAllSeen: React.FC<{ unread: number }> = ({ unread }) => {
 
   return (
     <div className="flex items-center gap-3">
-      {error && <span className="text-[12.5px] text-crimson-600">{error}</span>}
+      {error && <span className="text-[12.5px] text-crimson-700">{error}</span>}
       <Button variant="ghost" onClick={run} isLoading={saving || pending} disabled={unread === 0}>
         Mark all as read
       </Button>

@@ -19,7 +19,7 @@ const formatDate = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? iso
-    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 };
 
 export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
@@ -132,7 +132,7 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
               as a portable JSON file. Limit: 5 exports per hour.
             </p>
             {exportError && (
-              <p className="text-[12.5px] text-crimson-600 font-medium mt-2">{exportError}</p>
+              <p className="text-[12.5px] text-crimson-700 font-medium mt-2">{exportError}</p>
             )}
           </div>
           <Button
@@ -172,7 +172,9 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
               customer portal. Cancelling stops future charges; you keep access until the period ends.
             </p>
           </div>
-          <Link href="/api/billing/portal">
+          {/* prefetch={false}: an API route that calls Lemon Squeezy on GET and
+              spends a rate-limit slot. A prefetch on scroll would burn it. */}
+          <Link href="/api/billing/portal" prefetch={false}>
             <Button variant="secondary" leftIcon={<ExternalLink className="w-3.5 h-3.5" />}>
               Open portal
             </Button>
@@ -208,8 +210,8 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
 
         {showDeleteConfirm && !scheduledFor && (
           <div className="mt-5 pt-5 border-t border-crimson-500/15 space-y-3">
-            <div className="flex items-start gap-2.5 rounded-xl bg-white border border-crimson-500/20 p-3">
-              <AlertTriangle className="w-4 h-4 text-crimson-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2.5 rounded-xl bg-crimson-50 border border-crimson-500/20 p-3">
+              <AlertTriangle className="w-4 h-4 text-crimson-700 shrink-0 mt-0.5" />
               <div className="text-[12.5px] text-ink-700 leading-relaxed">
                 <strong className="text-ink-900">This is not immediate.</strong> Deletion is scheduled
                 30 days out. Your subscription is cancelled straight away, so you will not be charged
@@ -224,11 +226,11 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
                 rows={3}
                 maxLength={500}
                 placeholder="What could we have done better?"
-                className="mt-1.5 w-full bg-white border border-ink-200 rounded-xl px-3 py-2 text-[13px] focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5 resize-none"
+                className="mt-1.5 w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-[13px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 resize-none"
               />
             </label>
             {deleteError && (
-              <p className="text-[12.5px] text-crimson-600 font-medium">{deleteError}</p>
+              <p className="text-[12.5px] text-crimson-700 font-medium">{deleteError}</p>
             )}
             <div className="flex items-center gap-2">
               <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Never mind</Button>
@@ -241,7 +243,7 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
 
         {scheduledFor && (
           <div className="mt-5 pt-5 border-t border-crimson-500/15">
-            <div className="rounded-xl bg-white border border-ink-200 border-l-4 border-l-amber-500 p-4">
+            <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] border-l-4 border-l-amber-500 p-4">
               <div className="text-[13px] font-semibold text-ink-900">
                 Deletion scheduled for {formatDate(scheduledFor)}
               </div>
@@ -250,7 +252,7 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
                 recovered. Until then nothing is lost — press the button below to keep your account.
               </p>
               {deleteError && (
-                <p className="text-[12.5px] text-crimson-600 font-medium mt-2">{deleteError}</p>
+                <p className="text-[12.5px] text-crimson-700 font-medium mt-2">{deleteError}</p>
               )}
               <div className="mt-3">
                 <Button onClick={handleCancelDelete} isLoading={cancelling}>

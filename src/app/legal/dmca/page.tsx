@@ -2,7 +2,10 @@ import { LEGAL } from '@/lib/legal/config';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: `DMCA / Copyright Policy · ${LEGAL.productName}`,
+  // The root layout sets a title template of '%s · Publish', so the product
+  // name is appended for us. Repeating it here produced
+  // "DMCA / Copyright Policy · Publish · Publish" in the tab and in search results.
+  title: 'DMCA / Copyright Policy',
   description: 'How to report copyright infringement on Publish.',
 };
 

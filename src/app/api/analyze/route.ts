@@ -23,6 +23,7 @@ import { incrementAuditsInTx, refundAudit, QuotaExceededError } from '@/lib/sess
 import { prisma } from '@/lib/db';
 import { env, hasJobQueue } from '@/lib/env';
 import { runReviewJob } from '@/lib/jobs/run-review';
+import type { VideoFrameInput } from '@/lib/ai/video-engine';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -32,6 +33,84 @@ const MUSIC_SOURCES = ['none', 'original', 'licensed', 'stock', 'popular', 'unkn
 
 /** Hard ceiling on the request body — a script plus metadata, nothing more. */
 const MAX_BODY_BYTES = 200_000;
+
+/**
+ * Parse the frame-analysis block off an untrusted body.
+ *
+ * Returns undefined on anything malformed, and undefined means the review reports
+ * the video layer as unmeasured. Partial acceptance is the failure to avoid: a
+ * report carrying `measured: true` over a cut count that never arrived is exactly
+ * the fabrication this layer was built to stop being.
+ *
+ * The numbers here are computed in the caller's own browser and are therefore
+ * caller-controlled. They land only in that caller's own report, so the exposure is
+ * cosmetic rather than a privilege boundary - but every one is still bounded, because
+ * an unbounded `cuts` renders as "1 cut every 0.0s" and an unbounded `sizeBytes`
+ * renders as a petabit bitrate.
+ */
+function readVideoFrames(body: Record<string, unknown>): VideoFrameInput | undefined {
+  const raw = body.videoFrames;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const f = raw as Record<string, unknown>;
+
+  // Both sheets are fetched server-side by the vision model, so they clear the same
+  // SSRF guard as the thumbnail: https only, no private or loopback hosts.
+  const sheet = v.url(f.sheetUrl, { field: 'videoFrames.sheetUrl' });
+  if (!sheet.ok) return undefined;
+
+  let hookSheetUrl: string | undefined;
+  if (typeof f.hookSheetUrl === 'string' && f.hookSheetUrl.trim()) {
+    const hook = v.url(f.hookSheetUrl, { field: 'videoFrames.hookSheetUrl' });
+    // A bad hook URL costs the hook reading, not the whole layer - the runtime
+    // sheet and every measured number are independent of it.
+    if (hook.ok) hookSheetUrl = hook.value;
+  }
+
+  const int = (value: unknown, min: number, max: number): number | null => {
+    const r = v.integer(value, { min, max, field: 'videoFrames' });
+    return r.ok ? r.value : null;
+  };
+
+  // 16384 covers 8K and then some; 12h matches the ceiling on `durationSeconds`
+  // below; 8 TB is past the 4 GB upload cap by a wide margin and still finite.
+  const width = int(f.width, 1, 16_384);
+  const height = int(f.height, 1, 16_384);
+  const durationSeconds = int(f.durationSeconds, 1, 43_200);
+  const sizeBytes = int(f.sizeBytes, 1, 8_796_093_022_208);
+  const sheetFrames = int(f.sheetFrames, 1, 64);
+  const comparisons = int(f.comparisons, 0, 512);
+  const cuts = int(f.cuts, 0, 512);
+  const staticPairs = int(f.staticPairs, 0, 512);
+  const meanDeltaPermille = int(f.meanDeltaPermille, 0, 1_000);
+  const probedSeconds = int(f.probedSeconds, 0, 3_600);
+
+  if (
+    width === null || height === null || durationSeconds === null || sizeBytes === null ||
+    sheetFrames === null || comparisons === null || cuts === null || staticPairs === null ||
+    meanDeltaPermille === null || probedSeconds === null
+  ) {
+    return undefined;
+  }
+
+  // Neither count can exceed the pairs they were counted from. A body claiming 40
+  // cuts in 12 comparisons is not a rounding difference, it is not our data.
+  if (cuts > comparisons || staticPairs > comparisons) return undefined;
+
+  return {
+    sheetUrl: sheet.value,
+    hookSheetUrl,
+    width,
+    height,
+    durationSeconds,
+    sizeBytes,
+    sheetFrames,
+    comparisons,
+    cuts,
+    staticPairs,
+    meanDeltaPermille,
+    probedSeconds,
+  };
+}
 
 export async function POST(req: Request) {
   const authCtx = await requireAuth();
@@ -98,6 +177,12 @@ export async function POST(req: Request) {
     audioUrl = a.value;
   }
 
+  // Frames the browser decoded, plus what it measured from them. Every field is
+  // validated and the whole object is dropped on any failure rather than partially
+  // accepted: a half-populated signal set would produce a report that says
+  // "measured" over numbers that were never measured.
+  const videoFrames = readVideoFrames(body);
+
   let durationSeconds: number | undefined;
   if (body.durationSeconds !== undefined && body.durationSeconds !== null) {
     // 12h ceiling: beyond that it is not a video upload, it is a typo.
@@ -124,6 +209,7 @@ export async function POST(req: Request) {
     audioUrl,
     targetPlatform: platform.value,
     durationSeconds,
+    videoFrames,
     aiGenerated: body.aiGenerated === true,
     hasWatermark: body.hasWatermark === true,
     isVertical: body.isVertical === true,

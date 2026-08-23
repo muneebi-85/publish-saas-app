@@ -13,6 +13,7 @@ import { currentUser } from '@clerk/nextjs/server';
 import { createCheckoutUrl, PLANS, PlanId } from '@/lib/billing/lemonsqueezy';
 import { rateLimit, userKey, tooManyRequests } from '@/lib/ratelimit';
 import { requireAuth } from '@/lib/api-guards';
+import { primaryEmailOf } from '@/lib/clerk-identity';
 import { hasBilling } from '@/lib/env';
 import * as v from '@/lib/validate';
 
@@ -50,18 +51,22 @@ export async function POST(req: Request) {
   const plan = v.enumOf<PlanId>(parsed.value.planId, PLAN_IDS, 'planId');
   if (!plan.ok) return NextResponse.json({ error: plan.error }, { status: 400 });
 
+  // Billing interval is optional and defaults to monthly. The variant selected
+  // for checkout changes, but the plan and the entitlement are identical.
+  const interval =
+    parsed.value.interval === 'yearly' ? ('yearly' as const) : ('monthly' as const);
+
   // Prefer the verified primary address so the LS customer record matches the
-  // account the webhook will credit.
+  // account the webhook will credit. primaryEmailOf() also drops blank entries,
+  // which an inline `?.[0]?.emailAddress` would happily pass to the provider as
+  // the customer's receipt address.
   const clerkUser = await currentUser();
-  const email =
-    clerkUser?.emailAddresses?.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-    clerkUser?.emailAddresses?.[0]?.emailAddress ??
-    authCtx.email ??
-    undefined;
+  const email = primaryEmailOf(clerkUser) ?? authCtx.email ?? undefined;
 
   try {
     const checkout = await createCheckoutUrl({
       planId: plan.value,
+      interval,
       userEmail: email,
       userId: authCtx.clerkId, // server-trusted identity, never from the body
     });

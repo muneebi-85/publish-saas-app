@@ -18,6 +18,34 @@
  * injection surface we don't have to accept.
  */
 
+/**
+ * OUTBOUND CONNECT BUDGET
+ * ──────────────────────
+ * Node 20+ dials with Happy Eyeballs: it races every address DNS returned and
+ * gives each attempt `autoSelectFamilyAttemptTimeout` — 250ms by default — to
+ * finish its TCP handshake. On a link where the round trip to Cloudflare is
+ * slower than that (or where AAAA records resolve but there is no IPv6 route, so
+ * half the candidates burn attempts on ENETUNREACH), every attempt expires and
+ * `fetch` rejects with a bare `TypeError: fetch failed / AggregateError`.
+ *
+ * That failure is invisible but expensive here, because Clerk's middleware
+ * verifies its handshake token against the instance JWKS over `fetch`. When the
+ * fetch dies the handshake cannot resolve, so the request is bounced back to
+ * Clerk to handshake again — three cloud round trips per navigation — before
+ * auth gives up with "infinite redirect loop". Pages still render, so it reads
+ * as "the site takes forever to open" rather than as a broken network call.
+ *
+ * This file is required by plain Node before the server boots (in dev and under
+ * `next start` alike), so the default set here applies process-wide, including
+ * to middleware running in the dev Edge sandbox. 3s is generous for TCP+TLS and
+ * only bounds how long ONE address is tried before the next — healthy
+ * connections are unaffected. The guard keeps it a no-op on Node < 20.13.
+ */
+const net = require('net');
+if (typeof net.setDefaultAutoSelectFamilyAttemptTimeout === 'function') {
+  net.setDefaultAutoSelectFamilyAttemptTimeout(3000);
+}
+
 const isProd = process.env.NODE_ENV === 'production';
 
 /** Turn a URL into a bare `https://host` origin, or null if it isn't usable. */
@@ -62,6 +90,31 @@ const clerk = [
 
 const lemon = ['https://app.lemonsqueezy.com', 'https://*.lemonsqueezy.com'];
 
+/**
+ * PostHog, and only when this deployment has a key.
+ *
+ * `src/lib/analytics.ts` posts to `NEXT_PUBLIC_POSTHOG_HOST` (defaulting to the
+ * US cloud), and that origin was missing from the CSP entirely — so on a
+ * configured deploy the browser blocked every capture while the code reported
+ * success, which is the worst shape a failure can take: analytics that look wired
+ * and record nothing. Derived from the same env var the client reads so the two
+ * cannot drift, and empty when no key is set, because an origin we do not talk to
+ * has no business in the allowlist.
+ *
+ * The second entry is PostHog's asset host: posthog-js fetches its optional
+ * extensions (surveys, toolbar, recorder) as separate scripts from `<region>-
+ * assets.i.posthog.com`. Only derived for PostHog's own cloud hosts — behind a
+ * reverse proxy the API host serves assets too, so there is nothing to add.
+ */
+const posthogOrigins = (() => {
+  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return [];
+  const api = toOrigin(process.env.NEXT_PUBLIC_POSTHOG_HOST) || 'https://us.i.posthog.com';
+  const assets = /^https:\/\/[a-z0-9-]+\.i\.posthog\.com$/i.test(api)
+    ? api.replace(/^https:\/\/([a-z0-9-]+)\./i, 'https://$1-assets.')
+    : null;
+  return Array.from(new Set([api, assets].filter(Boolean)));
+})();
+
 const CSP = [
   "default-src 'self'",
   // Next.js inlines its hydration bootstrap, so 'unsafe-inline' is unavoidable
@@ -72,6 +125,7 @@ const CSP = [
     isProd ? '' : "'unsafe-eval'",
     ...lemon,
     ...clerk,
+    ...posthogOrigins,
     'https://challenges.cloudflare.com',
   ]
     .filter(Boolean)
@@ -86,6 +140,7 @@ const CSP = [
     "connect-src 'self'",
     'https://api.lemonsqueezy.com',
     ...clerk,
+    ...posthogOrigins,
     ...storageOrigins,
   ].join(' '),
   ["frame-src 'self'", ...lemon, 'https://challenges.cloudflare.com'].join(' '),

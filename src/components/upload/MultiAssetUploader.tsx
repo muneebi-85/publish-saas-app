@@ -9,6 +9,8 @@ import { clsx } from 'clsx';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { track } from '@/lib/analytics';
+import type { VideoFrameInput } from '@/lib/ai/video-engine';
 
 type SlotKey = 'video' | 'thumbnail' | 'script' | 'voiceover';
 
@@ -36,6 +38,17 @@ const SLOTS = [
   { key: 'voiceover', label: 'Voiceover', accept: 'audio/mpeg,audio/wav,audio/mp4,.mp3,.wav,.m4a',            icon: FileAudio, desc: 'MP3, WAV or M4A up to 300 MB', required: false },
 ] as const;
 
+/**
+ * Where the browser-side frame pass has got to.
+ *
+ * `unavailable` is a first-class outcome, not an error: a codec this browser
+ * cannot decode, or a deployment with no public read origin for the vision model
+ * to fetch the sheets from. The review still runs — it reports the video layer as
+ * unmeasured, which is what it did before this pass existed. Showing the creator
+ * a red failure for a review that is about to succeed would be wrong.
+ */
+type FramePhase = 'idle' | 'decoding' | 'uploading' | 'ready' | 'unavailable';
+
 const PLATFORMS = ['YouTube', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn'] as const;
 
 const MUSIC_SOURCES = [
@@ -56,7 +69,9 @@ const formatSize = (bytes: number) => {
 /** PUT to the presigned URL, reporting true byte progress. */
 function putWithProgress(
   url: string,
-  file: File,
+  // Blob, not File: the contact sheets are canvas output with no name and no
+  // path. `File extends Blob`, so every existing caller is unaffected.
+  file: Blob,
   headers: Record<string, string>,
   onProgress: (pct: number) => void,
   signal: AbortSignal,
@@ -96,14 +111,31 @@ export const MultiAssetUploader: React.FC = () => {
   const [aiGenerated, setAiGenerated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [storageOff, setStorageOff] = useState(false);
+  const [framePhase, setFramePhase] = useState<FramePhase>('idle');
+  const [frameProgress, setFrameProgress] = useState(0);
+  const [videoFrames, setVideoFrames] = useState<VideoFrameInput | null>(null);
 
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const aborters = useRef<Record<string, AbortController>>({});
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
+  /** Set when this review is a challenge accept — carried to the analysis page. */
+  const challengeRef = useRef<string | null>(null);
+  /**
+   * Which frame pass is current. Incremented per run so a decode still finishing
+   * for a video the creator has since removed or replaced discards its own result
+   * instead of attaching another file's measurements to this review.
+   */
+  const frameRun = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
+
+    // Captured for the cleanup below. `aborters.current` is the same object for
+    // the component's whole life — only its keys are mutated — so holding the
+    // reference is safe and satisfies the exhaustive-deps ref-cleanup rule,
+    // which cannot prove that on its own.
+    const inFlight = aborters.current;
 
     // Re-run handoff from a report ("Re-run review"): preload title, script,
     // and platform so the follow-up review starts from the same inputs.
@@ -121,10 +153,38 @@ export const MultiAssetUploader: React.FC = () => {
       // Reading the URL is cosmetic; never let it break the uploader.
     }
 
+    // Challenge accept ("I can beat this score"): prefill the SAME script,
+    // title, and platform from the shared report so the follow-up review is a
+    // genuine head-to-head, and remember the target for the analysis page.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const challenge = params.get('challenge');
+      if (challenge && /^[a-z0-9_-]{8,64}$/i.test(challenge)) {
+        challengeRef.current = challenge;
+        void fetch(`/api/share/${challenge}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (!mounted.current || !data) return;
+            if (data.title) setTitle(String(data.title).slice(0, 200));
+            if (typeof data.scriptText === 'string' && data.scriptText) {
+              setScriptText(data.scriptText.slice(0, 20_000));
+            }
+            if (data.targetPlatform && (PLATFORMS as readonly string[]).includes(data.targetPlatform)) {
+              setPlatform(data.targetPlatform as typeof PLATFORMS[number]);
+            }
+          })
+          .catch(() => {
+            // The challenge fetch is prefill-only; never block the review on it.
+          });
+      }
+    } catch {
+      // Same rule as above — URL cosmetics must not break the uploader.
+    }
+
     return () => {
       mounted.current = false;
       if (pollTimer.current) clearTimeout(pollTimer.current);
-      Object.values(aborters.current).forEach((a) => a.abort());
+      Object.values(inFlight).forEach((a) => a.abort());
     };
   }, []);
 
@@ -136,6 +196,113 @@ export const MultiAssetUploader: React.FC = () => {
       return { ...prev, [key]: { ...current, ...patch } };
     });
   }, []);
+
+  /** PUT one contact sheet and return the URL the vision model can fetch it from. */
+  const uploadSheet = useCallback(
+    async (blob: Blob, filename: string, signal: AbortSignal): Promise<string | null> => {
+      const res = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slot: 'frames',
+          filename,
+          contentType: 'image/jpeg',
+          size: blob.size,
+        }),
+        signal,
+      });
+      const presign = await res.json().catch(() => ({}));
+      // No public read origin means the sheet exists in the bucket and the model
+      // cannot see it. Better to report the layer unmeasured than to send a URL
+      // that will 403 and have the vision call fail mid-review.
+      if (!res.ok || !presign?.signedUrl || !presign?.publicUrl) return null;
+      await putWithProgress(
+        presign.signedUrl,
+        blob,
+        presign.requiredHeaders ?? { 'Content-Type': 'image/jpeg' },
+        () => {},
+        signal,
+      );
+      return presign.publicUrl as string;
+    },
+    [],
+  );
+
+  /**
+   * Decode the video here, in this browser, and upload what it measured.
+   *
+   * Runs alongside the video's own upload rather than after it: the decode is
+   * local CPU work and the PUT is network, so serialising them would double the
+   * wait for no benefit. The extractor is imported dynamically so a creator who
+   * only pastes a script never downloads it.
+   */
+  const analyzeFrames = useCallback(async (f: File) => {
+    const run = ++frameRun.current;
+    aborters.current.frames?.abort();
+    const controller = new AbortController();
+    aborters.current.frames = controller;
+
+    const current = () => frameRun.current === run && mounted.current;
+
+    setVideoFrames(null);
+    setFrameProgress(0);
+    setFramePhase('decoding');
+
+    try {
+      const { extractFrameSignals } = await import('@/lib/video/extract-frames');
+      const signals = await extractFrameSignals(f, (fraction) => {
+        if (current()) setFrameProgress(Math.min(99, Math.round(fraction * 100)));
+      });
+      if (!current()) return;
+
+      if (!signals) {
+        setFramePhase('unavailable');
+        return;
+      }
+
+      setFramePhase('uploading');
+      const stamp = `${Date.now()}`;
+      const sheetUrl = await uploadSheet(signals.sheet, `sheet-${stamp}.jpg`, controller.signal);
+      if (!current()) return;
+      if (!sheetUrl) {
+        setFramePhase('unavailable');
+        return;
+      }
+
+      // The hook sheet is optional — losing it costs the opening-three-seconds
+      // reading and nothing else, so a failure here does not sink the pass.
+      let hookSheetUrl: string | undefined;
+      if (signals.hookSheet) {
+        hookSheetUrl =
+          (await uploadSheet(signals.hookSheet, `hook-${stamp}.jpg`, controller.signal)) ?? undefined;
+        if (!current()) return;
+      }
+
+      setVideoFrames({
+        sheetUrl,
+        hookSheetUrl,
+        width: signals.width,
+        height: signals.height,
+        durationSeconds: signals.durationSeconds,
+        sizeBytes: signals.sizeBytes,
+        sheetFrames: signals.sheetFrames,
+        comparisons: signals.comparisons,
+        cuts: signals.cuts,
+        staticPairs: signals.staticPairs,
+        meanDeltaPermille: signals.meanDeltaPermille,
+        probedSeconds: signals.probedSeconds,
+      });
+      setFrameProgress(100);
+      setFramePhase('ready');
+      void track('video_frames_measured', {
+        cuts: signals.cuts,
+        comparisons: signals.comparisons,
+        durationSeconds: signals.durationSeconds,
+      });
+    } catch {
+      if (current()) setFramePhase('unavailable');
+    }
+  }, [uploadSheet]);
 
   const upload = useCallback(async (key: SlotKey, f: File) => {
     aborters.current[key]?.abort();
@@ -210,11 +377,20 @@ export const MultiAssetUploader: React.FC = () => {
     if (!list || !list[0]) return;
     setError(null);
     void upload(key, list[0]);
+    if (key === 'video') void analyzeFrames(list[0]);
   };
 
   const removeFile = (key: SlotKey) => {
     aborters.current[key]?.abort();
     if (key === 'script') setScriptText('');
+    if (key === 'video') {
+      // Retires the in-flight decode by moving the run token past it.
+      frameRun.current++;
+      aborters.current.frames?.abort();
+      setVideoFrames(null);
+      setFrameProgress(0);
+      setFramePhase('idle');
+    }
     setFiles((prev) => ({ ...prev, [key]: null }));
   };
 
@@ -227,7 +403,12 @@ export const MultiAssetUploader: React.FC = () => {
   // uploaded asset. We do not let the user spend an audit on an empty request.
   const effectiveTitle = title.trim();
   const hasSubstance = scriptText.trim().length > 0 || !!files.video?.ready || !!files.thumbnail?.ready;
-  const canRun = effectiveTitle.length >= 3 && hasSubstance && !anyUploading && !analyzing;
+  // The frame pass gates the run for the fifteen-odd seconds it takes. Starting
+  // the review early would not fail — it would quietly produce a report with the
+  // video layer blank, for a video the browser was seconds from having measured.
+  const framePending = framePhase === 'decoding' || framePhase === 'uploading';
+  const canRun =
+    effectiveTitle.length >= 3 && hasSubstance && !anyUploading && !framePending && !analyzing;
 
   /** Poll the job until it resolves, then navigate to the real report. */
   const pollJob = useCallback((jobId: string, attempt = 0) => {
@@ -248,7 +429,9 @@ export const MultiAssetUploader: React.FC = () => {
 
         if (job.status === 'completed' && job.reportId) {
           setStatusLine('Report ready — opening…');
-          window.location.href = `/analysis/${job.reportId}`;
+          window.location.href = challengeRef.current
+            ? `/analysis/${job.reportId}?challenge=${challengeRef.current}`
+            : `/analysis/${job.reportId}`;
           return;
         }
         if (job.status === 'failed') {
@@ -271,6 +454,12 @@ export const MultiAssetUploader: React.FC = () => {
     setAnalyzing(true);
     setError(null);
     setStatusLine('Starting review…');
+    void track('analyze_started', {
+      platform,
+      challenge: Boolean(challengeRef.current),
+      scriptWords: scriptText.trim() ? scriptText.trim().split(/\s+/).length : 0,
+      framesMeasured: Boolean(videoFrames),
+    });
 
     try {
       const res = await fetch('/api/analyze', {
@@ -286,6 +475,9 @@ export const MultiAssetUploader: React.FC = () => {
           // Prefer the voiceover track; fall back to the video when it is the
           // only media (Deepgram extracts the audio from either).
           audioUrl: files.voiceover?.publicUrl ?? files.video?.publicUrl ?? undefined,
+          // Present only when this browser actually decoded the video. Absent, the
+          // review reports the video layer as unmeasured rather than guessing it.
+          videoFrames: videoFrames ?? undefined,
           musicSource,
           aiGenerated,
           folder: 'General',
@@ -296,16 +488,20 @@ export const MultiAssetUploader: React.FC = () => {
 
       if (!res.ok) {
         if (data?.upgradeRequired) {
+          void track('quota_wall_seen', { plan: data?.plan ?? 'unknown', source: 'analyze' });
           window.location.href = '/pricing';
           return;
         }
         throw new Error(data?.error ?? `Could not start the review (${res.status}).`);
       }
+      void track('analyze_accepted', { platform, challenge: Boolean(challengeRef.current) });
 
       // The inline path returns the report immediately; the queued path gives us
       // a job to poll. Either way we only ever navigate to a real report id.
       if (data.reportId) {
-        window.location.href = `/analysis/${data.reportId}`;
+        window.location.href = challengeRef.current
+          ? `/analysis/${data.reportId}?challenge=${challengeRef.current}`
+          : `/analysis/${data.reportId}`;
         return;
       }
       setStatusLine('Queued…');
@@ -338,8 +534,8 @@ export const MultiAssetUploader: React.FC = () => {
                 className={clsx(
                   'px-2.5 h-8 rounded-md text-[12.5px] font-medium transition-colors',
                   platform === p
-                    ? 'bg-ink-900 text-white'
-                    : 'text-ink-700 hover:text-ink-900 hover:bg-ink-100',
+                    ? 'bg-brand-600 text-[#060606]'
+                    : 'text-ink-700 hover:text-white hover:bg-white/[0.06]',
                 )}
               >
                 {p}
@@ -396,10 +592,10 @@ export const MultiAssetUploader: React.FC = () => {
                   file?.error
                     ? 'border-crimson-200 bg-crimson-50/40'
                     : file
-                      ? 'border-ink-200 bg-white'
+                      ? 'border-white/[0.08] bg-white/[0.02]'
                       : isDragOver
-                        ? 'border-ink-900 bg-ink-100/60'
-                        : 'border-ink-200 bg-white hover:border-ink-400 hover:bg-ink-50/40',
+                        ? 'border-brand-600 bg-brand-50'
+                        : 'border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.04]',
                 )}
               >
                 <input
@@ -416,10 +612,10 @@ export const MultiAssetUploader: React.FC = () => {
                       <div className={clsx(
                         'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border transition-colors',
                         file.error
-                          ? 'bg-crimson-50 border-crimson-200 text-crimson-600'
+                          ? 'bg-crimson-50 border-crimson-200 text-crimson-700'
                           : file.ready
                             ? 'bg-grass-50 border-grass-100 text-grass-700'
-                            : 'bg-white border-ink-200 text-ink-700',
+                            : 'bg-white/[0.04] border-white/[0.08] text-ink-700',
                       )}>
                         {file.error
                           ? <AlertTriangle className="w-4 h-4" />
@@ -437,7 +633,7 @@ export const MultiAssetUploader: React.FC = () => {
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); removeFile(slot.key); }}
-                        className="text-ink-400 hover:text-ink-900 transition-colors shrink-0"
+                        className="text-ink-400 hover:text-white transition-colors shrink-0"
                         aria-label={`Remove ${slot.label}`}
                       >
                         <X className="w-4 h-4" />
@@ -460,7 +656,7 @@ export const MultiAssetUploader: React.FC = () => {
                     {!file.ready && !file.error && (
                       <div className="mt-3">
                         <div
-                          className="h-1 w-full bg-ink-100 rounded-full overflow-hidden"
+                          className="h-1 w-full bg-white/[0.08] rounded-full overflow-hidden"
                           role="progressbar"
                           aria-valuenow={file.progress}
                           aria-valuemin={0}
@@ -468,7 +664,7 @@ export const MultiAssetUploader: React.FC = () => {
                           aria-label={`${slot.label} upload progress`}
                         >
                           <div
-                            className="h-full bg-ink-900 rounded-full transition-all duration-200"
+                            className="h-full bg-brand-600 rounded-full transition-all duration-200"
                             style={{ width: `${file.progress}%` }}
                           />
                         </div>
@@ -480,12 +676,49 @@ export const MultiAssetUploader: React.FC = () => {
                         </div>
                       </div>
                     )}
+                    {/* The frame pass, reported apart from the upload because the
+                        two have separate outcomes: a video can store perfectly and
+                        still be undecodable in this browser. */}
+                    {slot.key === 'video' && framePhase !== 'idle' && (
+                      <div className="mt-3 flex items-start gap-1.5 text-[11px] text-ink-500">
+                        {(framePhase === 'decoding' || framePhase === 'uploading') && (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin shrink-0 mt-0.5" />
+                            <span>
+                              {framePhase === 'decoding'
+                                ? `Reading frames · ${frameProgress}%`
+                                : 'Sending frames for analysis…'}
+                            </span>
+                          </>
+                        )}
+                        {framePhase === 'ready' && videoFrames && (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 text-grass-700 shrink-0 mt-0.5" />
+                            <span>
+                              {videoFrames.sheetFrames} frames read at {videoFrames.width}×
+                              {videoFrames.height}
+                              {videoFrames.comparisons > 0 &&
+                                `, ${videoFrames.cuts} cut${videoFrames.cuts === 1 ? '' : 's'} across ${videoFrames.probedSeconds}s sampled`}
+                            </span>
+                          </>
+                        )}
+                        {framePhase === 'unavailable' && (
+                          <>
+                            <Info className="w-3 h-3 text-ink-400 shrink-0 mt-0.5" />
+                            <span>
+                              This browser could not decode the video. Every other layer still
+                              runs, and the visual one will say it was not measured.
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-2">
                     <div className={clsx(
                       'w-9 h-9 rounded-lg mx-auto mb-3 flex items-center justify-center',
-                      isDragOver ? 'bg-ink-900 text-white' : 'bg-ink-100 text-ink-500',
+                      isDragOver ? 'bg-brand-600 text-[#060606]' : 'bg-white/[0.08] text-ink-500',
                     )}>
                       <Icon className="w-4 h-4" />
                     </div>
@@ -526,7 +759,7 @@ export const MultiAssetUploader: React.FC = () => {
               maxLength={200}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="The exact title you plan to publish"
-              className="w-full bg-white border border-ink-200 rounded-lg px-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
             />
           </Field>
 
@@ -538,7 +771,7 @@ export const MultiAssetUploader: React.FC = () => {
               rows={8}
               onChange={(e) => setScriptText(e.target.value)}
               placeholder="Paste your full script, or upload a .txt above and it lands here automatically."
-              className="w-full bg-white border border-ink-200 rounded-lg px-3 py-2 text-[13px] leading-relaxed placeholder:text-ink-400 focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5 resize-y"
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-[13px] leading-relaxed placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 resize-y"
             />
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11px] text-ink-400">
@@ -555,7 +788,7 @@ export const MultiAssetUploader: React.FC = () => {
               maxLength={5000}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="The description that will appear under the video"
-              className="w-full bg-white border border-ink-200 rounded-lg px-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
             />
           </Field>
 
@@ -564,7 +797,7 @@ export const MultiAssetUploader: React.FC = () => {
               id="up-music"
               value={musicSource}
               onChange={(e) => setMusicSource(e.target.value)}
-              className="w-full bg-white border border-ink-200 rounded-lg px-3 h-9 text-[13px] focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5"
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 h-9 text-[13px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
             >
               {MUSIC_SOURCES.map((m) => (
                 <option key={m.value} value={m.value}>{m.label}</option>
@@ -578,7 +811,7 @@ export const MultiAssetUploader: React.FC = () => {
                 type="checkbox"
                 checked={aiGenerated}
                 onChange={(e) => setAiGenerated(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-ink-300 text-ink-900 focus:ring-ink-900/20"
+                className="mt-0.5 w-4 h-4 rounded border-white/[0.20] bg-white/[0.03] text-brand-600 focus:ring-1 focus:ring-brand-600"
               />
               <span className="text-[12.5px] text-ink-700">
                 This upload contains AI-generated voice or visuals.
@@ -600,20 +833,20 @@ export const MultiAssetUploader: React.FC = () => {
             <button
               type="button"
               onClick={() => setError(null)}
-              className="text-crimson-600 hover:text-crimson-900 shrink-0"
+              className="text-crimson-700 hover:text-crimson-900 shrink-0"
               aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
-        <div className="rounded-2xl border border-ink-200 bg-white/90 backdrop-blur-md p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-float">
+        <div className="rounded-2xl border border-white/[0.06] bg-surface-panel/90 backdrop-blur-md p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-float">
           <div className="flex items-center gap-3">
             <div className={clsx(
               'w-9 h-9 rounded-lg flex items-center justify-center shrink-0',
               canRun || analyzing
                 ? 'bg-grass-50 text-grass-700 border border-grass-100'
-                : 'bg-ink-100 text-ink-500',
+                : 'bg-white/[0.08] text-ink-500',
             )}>
               {analyzing
                 ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -627,7 +860,9 @@ export const MultiAssetUploader: React.FC = () => {
                     ? 'Ready to review'
                     : effectiveTitle.length < 3
                       ? 'Add a title to continue'
-                      : 'Add a script or an asset to continue'}
+                      : framePending
+                        ? 'Measuring your video…'
+                        : 'Add a script or an asset to continue'}
               </div>
               <div className="text-[11.5px] text-ink-500">
                 {platform} policy set · {analyzing ? 'this stays live while it runs' : 'runs every layer your assets support'}

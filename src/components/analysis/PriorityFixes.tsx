@@ -160,7 +160,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
   }
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
+    <div className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
       {/* Header */}
       <div className="p-6 border-b border-ink-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-start gap-3">
@@ -186,7 +186,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
       </div>
 
       {/* Progress */}
-      <div className="h-1 bg-ink-100">
+      <div className="h-1 bg-white/[0.08]">
         <div
           className="h-full bg-brand-600 transition-all duration-500"
           style={{ width: `${(done.length / fixes.length) * 100}%` }}
@@ -205,7 +205,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
               key={fix.id}
               className={clsx(
                 'p-5 sm:p-6 transition-colors',
-                isDone ? 'bg-ink-50/60' : 'hover:bg-ink-50/40',
+                isDone ? 'bg-white/[0.03]' : 'hover:bg-white/[0.06]/40',
               )}
             >
               <div className="flex items-start gap-4">
@@ -216,8 +216,8 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
                   className={clsx(
                     'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition-all',
                     isDone
-                      ? 'bg-brand-600 border-brand-600 text-white'
-                      : 'border-ink-300 hover:border-brand-600 bg-white',
+                      ? 'bg-brand-600 border-brand-600 text-[#060606]'
+                      : 'border-white/[0.16] hover:border-brand-600 bg-white/[0.04]',
                   )}
                 >
                   {isDone && <Check className="w-3 h-3" strokeWidth={3.5} />}
@@ -226,7 +226,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
                 <div className={clsx('flex-1 min-w-0', isDone && 'opacity-55')}>
                   {/* Meta row */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="w-5 h-5 rounded-md bg-ink-900 text-white flex items-center justify-center text-[11px] font-bold shrink-0">
+                    <span className="w-5 h-5 rounded-md bg-white/[0.06] text-white flex items-center justify-center text-[11px] font-bold shrink-0">
                       {i + 1}
                     </span>
                     <Badge variant={style.badge}>{style.label}</Badge>
@@ -275,12 +275,12 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
         <div className="text-[12.5px] text-ink-600 flex items-center gap-2">
           {remaining === 0 ? (
             <>
-              <Check className="w-3.5 h-3.5 text-grass-600" />
+              <Check className="w-3.5 h-3.5 text-grass-700" />
               All fixes handled — re-run the review to confirm the new scores.
             </>
           ) : (
             <>
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
               Applying all {remaining} would raise your overall score to roughly{' '}
               <span className="font-semibold text-ink-900 tabular-nums">
                 {project.insights?.scorePotential ?? Math.min(99, project.scores.overall + remaining * 3)}

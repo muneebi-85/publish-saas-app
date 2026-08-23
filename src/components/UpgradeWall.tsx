@@ -6,6 +6,7 @@ import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { useQuota } from '@/hooks/useQuota';
 import { PlanId } from '@/lib/billing/lemonsqueezy';
+import { track } from '@/lib/analytics';
 
 interface Props {
   feature: string;
@@ -23,6 +24,7 @@ export const UpgradeWall: React.FC<Props> = ({ feature, requiredPlan, descriptio
   const handleUpgrade = async () => {
     setLoading(true);
     setError('');
+    void track('upgrade_clicked', { plan: requiredPlan, source: 'upgrade_wall' });
 
     // A subscriber switching tiers already has a Lemon Squeezy subscription —
     // a second checkout would double-bill. Plan changes go through the portal.
@@ -49,14 +51,14 @@ export const UpgradeWall: React.FC<Props> = ({ feature, requiredPlan, descriptio
 
   return (
     <Card className="max-w-md mx-auto text-center">
-      <div className="w-12 h-12 rounded-2xl bg-ink-100 text-ink-600 flex items-center justify-center mx-auto">
+      <div className="w-12 h-12 rounded-2xl bg-white/[0.08] text-ink-600 flex items-center justify-center mx-auto">
         <Lock className="w-5 h-5" />
       </div>
       <h3 className="font-display text-lg font-semibold text-ink-950 mt-4">{feature}</h3>
       <p className="text-[13px] text-ink-500 mt-2 leading-relaxed">
         {description ?? `This feature is available on the ${planLabel} plan and above.`}
       </p>
-      {error && <p className="text-[12px] text-crimson-600 mt-3">{error}</p>}
+      {error && <p className="text-[12px] text-crimson-700 mt-3">{error}</p>}
       <Button
         className="mt-5"
         onClick={handleUpgrade}

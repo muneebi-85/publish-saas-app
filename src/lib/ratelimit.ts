@@ -109,7 +109,18 @@ export const LIMITS = {
   CHANNELS:  { limit: 20, windowMs: 60 * 60 * 1000 },  // channel connect/refresh
   UPLOAD:    { limit: 60, windowMs: 60 * 60 * 1000 },  // presigned URL issuance
   ACCOUNT:   { limit: 5,  windowMs: 60 * 60 * 1000 },  // export / delete
+  // Per-item writes (rename/delete one report). Deliberately far looser than
+  // ACCOUNT: clearing out a dozen old reports is normal use, not abuse.
+  PROJECT_WRITE: { limit: 60, windowMs: 60 * 60 * 1000 },
   READ:      { limit: 240, windowMs: 60 * 1000 },      // cheap authenticated reads
+  // Client crash beacons. Unauthenticated and IP-keyed, so this is the ceiling on
+  // a render loop: enough to capture a genuine burst of distinct errors, low
+  // enough that a re-mounting error boundary cannot flood the log.
+  TELEMETRY: { limit: 30, windowMs: 60 * 1000 },
+  // Landing-page newsletter signup. Unauthenticated and IP-keyed. Low on purpose:
+  // one person subscribes once, so anything above a handful per hour from a single
+  // address is a script filling the form, not a reader changing their mind.
+  NEWSLETTER: { limit: 5, windowMs: 60 * 60 * 1000 },
 } as const;
 
 export function clientKey(req: Request, prefix: string): string {

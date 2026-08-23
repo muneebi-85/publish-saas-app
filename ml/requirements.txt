@@ -1,0 +1,19 @@
+# Pinned to what this pipeline was developed and verified against.
+#
+# Everything here works on CPU. There is deliberately no torch, no
+# transformers, and no CUDA: see the header of publishml/thumbs.py for why the
+# thumbnail features are geometric rather than learned.
+
+requests==2.32.3      # the collector's only network dependency
+numpy==2.1.3          # feature maths
+Pillow==11.0.0        # thumbnail decode + the geometric feature pass
+scikit-learn==1.5.2   # HistGradientBoostingRegressor, the fallback trainer
+scipy==1.14.1         # pulled in by scikit-learn; listed so the pin is visible
+
+# Optional, and worth installing:
+#   lightgbm==4.7.0        faster and better-tuned than the sklearn fallback.
+#                          The pipeline detects it and uses it automatically.
+#   opencv-python==4.10.0  real Haar face detection. Without it, thumb_face_area
+#                          stays 0 and only the skin-tone proxy is available -
+#                          which is a genuinely weaker signal, not a cosmetic one.
+lightgbm==4.7.0

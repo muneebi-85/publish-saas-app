@@ -26,6 +26,28 @@ interface ProjectItem {
   createdAt: string;
 }
 
+/**
+ * Thumbnail slot.
+ *
+ * Reviews are frequently script-only, so a missing thumbnail is the normal case,
+ * not an error. It renders as a neutral tile with the project's initial rather
+ * than a stock photo: a borrowed image implies this is what the creator uploaded,
+ * and `next/image` only loads hosts named in `remotePatterns` anyway, so an
+ * off-allowlist stand-in would surface as a broken image.
+ */
+function Thumb({ url, title, className }: { url?: string; title: string; className?: string }) {
+  if (url) {
+    return <Image src={url} alt="" fill className={className ?? 'object-cover'} />;
+  }
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-white/[0.08]">
+      <span aria-hidden="true" className="font-display font-bold text-ink-400 text-[1.25em]">
+        {title.trim().charAt(0).toUpperCase() || '•'}
+      </span>
+    </div>
+  );
+}
+
 export default function ProjectsClient({ initialProjects }: { initialProjects: ProjectItem[] }) {
   const [projects, setProjects] = useState<ProjectItem[]>(initialProjects);
   const [activeFolder, setActiveFolder] = useState('All');
@@ -95,15 +117,15 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
 
       {/* Toolbar */}
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
-        <div className="flex flex-wrap items-center gap-1 rounded-xl bg-white border border-ink-200 p-1">
+        <div className="flex flex-wrap items-center gap-1 rounded-xl bg-white/[0.03] border border-white/[0.08] p-1">
           {folders.map((f) => (
             <button
               key={f}
               onClick={() => setActiveFolder(f)}
               className={`px-2.5 h-8 rounded-lg text-[12.5px] font-medium transition-colors ${
                 activeFolder === f
-                  ? 'bg-ink-900 text-white'
-                  : 'text-ink-600 hover:text-ink-900 hover:bg-ink-100'
+                  ? 'bg-brand-600 text-[#060606]'
+                  : 'text-ink-600 hover:text-white hover:bg-white/[0.06]'
               }`}
             >
               {f}
@@ -119,15 +141,15 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
               placeholder="Search title, tag, folder…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full bg-white border border-ink-200 rounded-lg pl-9 pr-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-ink-400 focus:ring-2 focus:ring-ink-900/5 transition-colors"
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg pl-9 pr-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
             />
           </div>
-          <div className="flex items-center border border-ink-200 rounded-lg p-0.5 bg-white">
+          <div className="flex items-center border border-white/[0.08] rounded-lg p-0.5 bg-white/[0.03]">
             <Tooltip content="Grid view">
               <button
                 onClick={() => setView('grid')}
                 className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors focus-ring outline-none ${
-                  view === 'grid' ? 'bg-ink-900 text-white' : 'text-ink-500 hover:text-ink-900 hover:bg-ink-100'
+                  view === 'grid' ? 'bg-brand-600 text-[#060606]' : 'text-ink-500 hover:text-white hover:bg-white/[0.06]'
                 }`}
                 aria-label="Grid view"
               >
@@ -138,7 +160,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
               <button
                 onClick={() => setView('list')}
                 className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors focus-ring outline-none ${
-                  view === 'list' ? 'bg-ink-900 text-white' : 'text-ink-500 hover:text-ink-900 hover:bg-ink-100'
+                  view === 'list' ? 'bg-brand-600 text-[#060606]' : 'text-ink-500 hover:text-white hover:bg-white/[0.06]'
                 }`}
                 aria-label="List view"
               >
@@ -155,7 +177,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
             className="hidden lg:flex"
           >
             Filter
-            <kbd className="ml-2 inline-flex h-5 items-center gap-1 rounded bg-ink-100 px-1.5 font-mono text-[10px] font-medium text-ink-500">
+            <kbd className="ml-2 inline-flex h-5 items-center gap-1 rounded bg-white/[0.08] px-1.5 font-mono text-[10px] font-medium text-ink-500">
               <span className="text-xs">⌘</span>K
             </kbd>
           </Button>
@@ -203,8 +225,8 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
           {filtered.map((project) => (
             <Card key={project.id} hover className="group h-full flex flex-col">
               <Link href={`/analysis/${project.id}`} prefetch={true} className="flex-1 flex flex-col min-w-0">
-                <div className="relative aspect-video rounded-xl overflow-hidden bg-ink-100 ring-1 ring-ink-200 mb-4">
-                  <Image src={project.assets?.thumbnailUrl || 'https://images.unsplash.com/photo-1616469829581-73993eb86b02?w=800&q=80'} alt="" fill className="object-cover" />
+                <div className="relative aspect-video rounded-xl overflow-hidden bg-white/[0.08] ring-1 ring-ink-200 mb-4">
+                  <Thumb url={project.assets?.thumbnailUrl} title={project.title} />
                   <div className="absolute top-2.5 left-2.5">
                     <Badge
                       variant={project.riskLevel === 'LOW' ? 'success' : project.riskLevel === 'MEDIUM' ? 'warning' : 'danger'}
@@ -213,9 +235,13 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                       {project.riskLevel === 'LOW' ? 'Safe to publish' : `${project.riskLevel.toLowerCase()} risk`}
                     </Badge>
                   </div>
-                  <div className="absolute top-2.5 right-2.5 px-1.5 py-0.5 rounded-md bg-black/60 text-[10.5px] font-mono text-white/95 tabular-nums">
-                    {project.assets?.videoDuration || '0:00'}
-                  </div>
+                  {/* Only rendered when the review actually recorded a duration —
+                      a hardcoded 0:00 reads as a real measurement of an empty video. */}
+                  {project.assets?.videoDuration && (
+                    <div className="absolute top-2.5 right-2.5 px-1.5 py-0.5 rounded-md bg-black/60 text-[10.5px] font-mono text-white/95 tabular-nums">
+                      {project.assets.videoDuration}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -234,7 +260,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                   </div>
                   <div className="flex items-center gap-2">
                     <ScoreGauge score={project.scores?.overall || 0} size="sm" showLabel={false} />
-                    <ArrowUpRight className="w-3.5 h-3.5 text-ink-400 group-hover:text-ink-900 transition-colors" />
+                    <ArrowUpRight className="w-3.5 h-3.5 text-ink-400 group-hover:text-white transition-colors" />
                   </div>
                 </div>
               </Link>
@@ -245,7 +271,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                   <button
                     type="button"
                     onClick={() => handleRename(project)}
-                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11.5px] font-medium text-ink-600 hover:text-ink-900 hover:bg-ink-100 transition-colors"
+                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11.5px] font-medium text-ink-600 hover:text-white hover:bg-white/[0.06] transition-colors"
                     aria-label={`Rename ${project.title}`}
                   >
                     <Pencil className="w-3 h-3" /> Rename
@@ -253,7 +279,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                   <button
                     type="button"
                     onClick={() => handleDelete(project)}
-                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11.5px] font-medium text-crimson-600 hover:text-crimson-700 hover:bg-crimson-50 transition-colors"
+                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11.5px] font-medium text-crimson-700 hover:text-crimson-700 hover:bg-crimson-50 transition-colors"
                     aria-label={`Delete ${project.title}`}
                   >
                     <Trash2 className="w-3 h-3" /> Delete
@@ -269,15 +295,15 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
             {filtered.map((project) => (
               <div
                 key={project.id}
-                className="flex items-center gap-4 p-4 hover:bg-ink-100/60 transition-colors"
+                className="flex items-center gap-4 p-4 hover:bg-white/[0.04] transition-colors"
               >
                 <Link
                   href={`/analysis/${project.id}`}
                   prefetch={true}
                   className="flex-1 flex items-center gap-4 min-w-0"
                 >
-                  <div className="relative w-20 h-14 rounded-lg overflow-hidden bg-ink-100 shrink-0 ring-1 ring-ink-200">
-                    <Image src={project.assets?.thumbnailUrl || 'https://images.unsplash.com/photo-1616469829581-73993eb86b02?w=800&q=80'} alt="" fill className="object-cover" />
+                  <div className="relative w-20 h-14 rounded-lg overflow-hidden bg-white/[0.08] shrink-0 ring-1 ring-ink-200">
+                    <Thumb url={project.assets?.thumbnailUrl} title={project.title} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-ink-900 truncate">{project.title}</div>
@@ -295,7 +321,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                   <button
                     type="button"
                     onClick={() => handleRename(project)}
-                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-ink-500 hover:text-ink-900 hover:bg-ink-100 transition-colors"
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-ink-500 hover:text-white hover:bg-white/[0.06] transition-colors"
                     aria-label={`Rename ${project.title}`}
                   >
                     <Pencil className="w-3.5 h-3.5" />

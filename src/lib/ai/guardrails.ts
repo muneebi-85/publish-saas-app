@@ -59,11 +59,46 @@ const SAFE_REPLACEMENTS: [RegExp, string][] = [
 ];
 
 /**
+ * Coerce an unknown LLM output value into displayable text.
+ *
+ * Models occasionally violate a `string[]` schema and return objects (e.g.
+ * `{ why, hook, expectedImpact }` where a paste-ready hook string was asked
+ * for). Rendering that object straight into JSX crashes React with "Objects
+ * are not valid as a React child", so every LLM array that is typed as strings
+ * must pass through here before it can reach the UI. Prefers the most
+ * string-like field, falls back to a joined description.
+ */
+export function toDisplayString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    // Common shapes models pick: { hook, why, expectedImpact }, { title, why },
+    // { tag }, { value }… prefer the payload field over the prose fields.
+    for (const key of ['hook', 'title', 'text', 'value', 'tag', 'hashtag']) {
+      const v = obj[key];
+      if (typeof v === 'string' && v.trim()) return v;
+    }
+    // Otherwise join the string values so nothing is lost.
+    const parts = Object.values(obj)
+      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+    if (parts.length) return parts.join(' — ');
+    return JSON.stringify(obj);
+  }
+  return String(value);
+}
+
+/**
  * Scrub any absolute claims from user-facing text.
  * Returns { clean, replaced } so callers can log when guardrails fire.
+ *
+ * Accepts unknown input and coerces it via `toDisplayString` first — the LLM
+ * occasionally returns objects in fields typed as `string[]`, and the scrub
+ * pass is the single choke point every engine sends output through.
  */
-export function scrubForbidden(text: string): { clean: string; replaced: boolean } {
-  let clean = text;
+export function scrubForbidden(text: unknown): { clean: string; replaced: boolean } {
+  let clean = toDisplayString(text);
   let replaced = false;
 
   for (const [pattern, replacement] of SAFE_REPLACEMENTS) {

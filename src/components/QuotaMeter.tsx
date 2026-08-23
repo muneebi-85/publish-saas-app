@@ -23,7 +23,7 @@ export const QuotaMeter: React.FC<{ className?: string }> = ({ className }) => {
 
   if (loading) {
     return (
-      <div className={clsx('rounded-lg border border-ink-200 bg-white p-3.5 flex items-center justify-center h-[72px]', className)}>
+      <div className={clsx('rounded-lg border border-white/[0.06] bg-surface-panel p-3.5 flex items-center justify-center h-[72px]', className)}>
         <Loader2 className="w-4 h-4 animate-spin text-ink-300" />
       </div>
     );
@@ -31,8 +31,8 @@ export const QuotaMeter: React.FC<{ className?: string }> = ({ className }) => {
 
   return (
     <div className={clsx(
-      'rounded-lg border bg-white p-3.5 transition-colors',
-      atLimit ? 'border-crimson-500/30' : nearLimit ? 'border-amber-500/30' : 'border-ink-200',
+      'rounded-lg border bg-surface-panel p-3.5 transition-colors',
+      atLimit ? 'border-crimson-500/30' : nearLimit ? 'border-amber-500/30' : 'border-white/[0.06]',
       className,
     )}>
       <div className="flex items-baseline justify-between">
@@ -44,7 +44,7 @@ export const QuotaMeter: React.FC<{ className?: string }> = ({ className }) => {
         </span>
       </div>
       <div className="mt-1 text-[10.5px] text-ink-400">reviews this cycle</div>
-      <div className="mt-2 h-1 w-full rounded-full bg-ink-100 overflow-hidden">
+      <div className="mt-2 h-1 w-full rounded-full bg-white/[0.08] overflow-hidden">
         <div
           className={clsx('h-full rounded-full transition-all duration-500', barColor)}
           style={{ width: `${Math.min(100, percentUsed)}%` }}

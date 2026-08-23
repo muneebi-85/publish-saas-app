@@ -43,7 +43,7 @@ export const Sparkline: React.FC<SparklineProps> = ({
   const last = points[points.length - 1];
 
   const trend = data.length < 2 ? 0 : data[data.length - 1] - data[0];
-  const stroke = trend > 0 ? '#059669' : trend < 0 ? '#dc2626' : '#111827';
+  const stroke = trend > 0 ? '#7CFF9A' : trend < 0 ? '#EF4444' : '#71717A';
 
   return (
     <svg

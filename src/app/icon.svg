@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+  <!-- Publish mark — emerald ribbon chevron with dark folded tab (matches Logo.tsx) -->
+  <path d="M9 22.5L20.5 16v12.5a2 2 0 0 1-1.02 1.74l-8.2 4.6A1.4 1.4 0 0 1 9 33.6V22.5Z" fill="#111111" />
+  <path d="M9 6.4A1.4 1.4 0 0 1 11.1 5.2l18.4 10.3a2 2 0 0 1 0 3.5L11.1 29.3A1.4 1.4 0 0 1 9 28.1V6.4Z" fill="#16A34A" />
+  <path d="M9 6.4A1.4 1.4 0 0 1 11.1 5.2l9.4 5.3v11.9l-9.4 5.3A1.4 1.4 0 0 1 9 26.5V6.4Z" fill="#15803D" fill-opacity="0.55" />
+</svg>

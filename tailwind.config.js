@@ -28,45 +28,64 @@ module.exports = {
         surface: {
           canvas:  'var(--canvas)',
           panel:   'var(--panel)',
+          raised:  'var(--surface)',
           sunken:  'var(--sunken)',
           muted:   'var(--muted)',
         },
-        // Emerald — the single brand accent. Primary actions, active nav,
-        // links, scores. brand-600 = #16A34A (the button green in mockups).
+        // Semantic scales, split by ROLE for a dark canvas:
+        //   50/100 → translucent tint + hairline for inline callout panels
+        //   500/600 → saturated solid fills (dots, bars, danger buttons)
+        //   700/800/900 → light text that clears AA on #0D0D0D
+        // Pairing a -600 fill with -700 text is the intended combination.
         brand: {
-          50:  '#ECFDF3',
-          100: '#D1FADF',
-          200: '#A6F4C5',
-          300: '#6CE9A6',
-          400: '#32D583',
-          500: '#12B76A',
-          600: '#16A34A',
-          700: '#15803D',
-          800: '#166534',
-          900: '#14532D',
+          50:  'rgba(124,255,154,0.08)',
+          100: 'rgba(124,255,154,0.18)',
+          200: '#BBF7D0',
+          300: '#9CFFB0',
+          400: '#9CFFB0',
+          500: '#7CFF9A',
+          600: '#7CFF9A',
+          700: '#5FE07D',
+          800: '#9CFFB0',
+          900: '#BBF7D0',
         },
-        // Success semantics — aligned to the emerald brand.
         grass: {
-          50:  '#ECFDF3',
-          100: '#D1FADF',
-          500: '#16A34A',
+          50:  'rgba(124,255,154,0.08)',
+          100: 'rgba(124,255,154,0.18)',
+          500: '#7CFF9A',
           600: '#15803D',
-          700: '#166534',
-          900: '#14532D',
+          700: '#7CFF9A',
+          800: '#BBF7D0',
+          900: '#DCFCE7',
         },
         amber: {
-          50:  '#FFFAEB',
-          100: '#FEF0C7',
+          50:  'rgba(245,158,11,0.10)',
+          100: 'rgba(245,158,11,0.20)',
           500: '#F59E0B',
           600: '#D97706',
-          700: '#B45309',
+          700: '#FCD34D',
+          800: '#FDE68A',
+          900: '#FEF3C7',
         },
         crimson: {
-          50:  '#FEF3F2',
-          100: '#FEE4E2',
+          50:  'rgba(239,68,68,0.10)',
+          100: 'rgba(239,68,68,0.22)',
           500: '#EF4444',
           600: '#DC2626',
-          700: '#B91C1C',
+          700: '#FCA5A5',
+          800: '#FECACA',
+          900: '#FEE2E2',
+        },
+        // Landing-page brand red — the YouTube mark's pure #FF0000, taken
+        // verbatim from the Stitch comp. Registered here (not as hand-written
+        // CSS) so variants like hover:text-red-brand and bg-red-brand/20
+        // actually generate.
+        'red-brand': {
+          DEFAULT: '#FF0000',
+          ink:  '#E60000',
+          50:   '#FFF1F1',
+          100:  '#FFE0E0',
+          200:  '#FFC7C7',
         },
       },
       fontFamily: {

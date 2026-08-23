@@ -32,7 +32,7 @@ export const PlatformTabs: React.FC<{
   const Icon = PLATFORM_ICONS[report.platform] || Youtube;
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
+    <div className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
       {/* Header */}
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div>
@@ -57,8 +57,8 @@ export const PlatformTabs: React.FC<{
               className={clsx(
                 'inline-flex items-center gap-2 px-3.5 h-9 rounded-t-lg -mb-px text-[13px] font-medium transition-colors border-b-2',
                 selected
-                  ? 'bg-white border-ink-900 text-ink-900'
-                  : 'border-transparent text-ink-600 hover:text-ink-900 hover:bg-white/60',
+                  ? 'bg-white/[0.06] border-white text-white'
+                  : 'border-transparent text-ink-600 hover:text-white hover:bg-white/[0.04]',
               )}
             >
               <PIcon className="w-3.5 h-3.5" strokeWidth={1.75} />
@@ -76,7 +76,7 @@ export const PlatformTabs: React.FC<{
         {/* Overview column */}
         <div className="lg:col-span-2 space-y-4">
           <div className="rounded-xl border border-ink-200 p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-ink-900 text-white flex items-center justify-center">
+            <div className="w-10 h-10 rounded-lg bg-white/[0.06] text-white flex items-center justify-center">
               <Icon className="w-4 h-4" strokeWidth={1.75} />
             </div>
             <div>
@@ -94,7 +94,7 @@ export const PlatformTabs: React.FC<{
               Advertiser suitability
             </div>
             <div className="rounded-xl border border-grass-100 bg-grass-50 p-3.5 flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-grass-600 shrink-0 mt-0.5" />
+              <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
               <span className="text-[13px] text-grass-800 leading-relaxed">{report.adSuitability}</span>
             </div>
           </div>
@@ -112,7 +112,7 @@ export const PlatformTabs: React.FC<{
               </span>
               <span className="text-sm text-ink-500">/ 100</span>
             </div>
-            <div className="mt-2 h-1.5 w-full bg-ink-100 rounded-full overflow-hidden">
+            <div className="mt-2 h-1.5 w-full bg-white/[0.08] rounded-full overflow-hidden">
               <div
                 className={clsx(
                   'h-full rounded-full transition-all duration-700',
@@ -131,7 +131,7 @@ export const PlatformTabs: React.FC<{
           </div>
           {report.specificRecommendations.map((rec, i) => (
             <div key={i} className="flex items-start gap-3 p-3.5 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
-              <ShieldCheck className="w-4 h-4 text-grass-600 shrink-0 mt-0.5" />
+              <ShieldCheck className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
               {rec}
             </div>
           ))}

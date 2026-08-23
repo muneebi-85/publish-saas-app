@@ -21,7 +21,6 @@ export default async function ConnectedChannelsPage() {
       platform: true,
       name: true,
       url: true,
-      avatarUrl: true,
       subscribers: true,
       videosCount: true,
       viewsCount: true,

@@ -23,7 +23,7 @@ export default function UploadPage() {
           against every platform&apos;s monetization policy and return a full report in about a minute.
         </p>
 
-        <div className="mt-5 flex items-start gap-2.5 p-3.5 rounded-xl border border-ink-200 bg-white text-[12.5px] text-ink-600 max-w-2xl">
+        <div className="mt-5 flex items-start gap-2.5 p-3.5 rounded-xl border border-white/[0.06] bg-surface-panel text-[12.5px] text-ink-600 max-w-2xl">
           <Info className="w-4 h-4 text-ink-500 shrink-0 mt-0.5" />
           <p>
             Your files stay private. They&apos;re encrypted at rest and in transit, deleted on request,

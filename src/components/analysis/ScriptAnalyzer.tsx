@@ -35,10 +35,10 @@ export const ScriptAnalyzer: React.FC<{
       : '/ai-humanizer';
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
+    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-ink-900 text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
             <FileText className="w-4 h-4" />
           </div>
           <div>
@@ -75,8 +75,8 @@ export const ScriptAnalyzer: React.FC<{
               key={issue.id}
               className={`rounded-xl border transition-colors ${
                 isFixed
-                  ? 'bg-grass-50/40 border-grass-100'
-                  : 'bg-white border-ink-200 hover:border-ink-300'
+                  ? 'bg-grass-50 border-grass-100'
+                  : 'bg-surface-panel border-white/[0.06] hover:border-white/[0.14]'
               }`}
             >
               <div className="p-4">
@@ -91,8 +91,8 @@ export const ScriptAnalyzer: React.FC<{
                     onClick={() => toggleFix(issue.id)}
                     className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11.5px] font-medium transition-colors ${
                       isFixed
-                        ? 'bg-grass-600 text-white hover:bg-grass-700'
-                        : 'bg-ink-900 text-white hover:bg-ink-800'
+                        ? 'bg-grass-100 text-grass-800 hover:bg-grass-50'
+                        : 'bg-brand-600 text-[#060606] hover:bg-brand-400'
                     }`}
                   >
                     {isFixed ? (
@@ -124,7 +124,7 @@ export const ScriptAnalyzer: React.FC<{
                   </div>
                 </div>
                 {(issue.reasoning || issue.estimatedMetricImpact) && (
-                  <div className="mt-2.5 flex flex-col sm:flex-row gap-3 text-[12px] bg-ink-50/50 border border-ink-100 rounded-lg p-3">
+                  <div className="mt-2.5 flex flex-col sm:flex-row gap-3 text-[12px] bg-white/[0.03] border border-white/[0.06] rounded-lg p-3">
                     {issue.reasoning && (
                       <div className="flex-1">
                         <span className="font-semibold text-ink-700 mr-1.5">Why:</span>
@@ -132,9 +132,9 @@ export const ScriptAnalyzer: React.FC<{
                       </div>
                     )}
                     {issue.estimatedMetricImpact && (
-                      <div className="flex shrink-0 items-center gap-1.5 text-grass-700 font-medium whitespace-nowrap">
-                        <TrendingUp className="w-3.5 h-3.5" />
-                        {issue.estimatedMetricImpact}
+                      <div className="flex sm:shrink-0 items-center gap-1.5 text-grass-700 font-medium whitespace-normal sm:whitespace-nowrap">
+                        <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+                        <span>{issue.estimatedMetricImpact}</span>
                       </div>
                     )}
                   </div>

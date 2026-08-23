@@ -7,10 +7,10 @@ import { CopyrightMetric } from '@/lib/types';
 
 export const CopyrightAuditor: React.FC<{ copyright: CopyrightMetric }> = ({ copyright }) => {
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden">
+    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-ink-900 text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
             <Copyright className="w-4 h-4" />
           </div>
           <div>
@@ -46,7 +46,7 @@ export const CopyrightAuditor: React.FC<{ copyright: CopyrightMetric }> = ({ cop
         <h4 className="text-[12px] font-semibold text-brand-600">Findings</h4>
         {copyright.recommendations.map((rec, i) => (
           <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
-            <CheckCircle2 className="w-4 h-4 text-grass-600 shrink-0 mt-0.5" />
+            <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
             {rec}
           </div>
         ))}

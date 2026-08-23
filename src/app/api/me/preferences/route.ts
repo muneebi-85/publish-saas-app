@@ -1,9 +1,12 @@
 /**
- * POST /api/me/preferences — update the caller's notification preferences.
+ * POST /api/me/preferences — update the caller's preferences.
  *
- * Only productEmails is settable. Transactional mail (receipts, payment
- * failures, deletion notices) is not opt-out: those are contractual, and the
- * subscription terms promise they keep arriving.
+ * Settable fields:
+ *  - productEmails: notification mail. Transactional mail (receipts, payment
+ *    failures, deletion notices) is not opt-out: those are contractual.
+ *  - leaderboardOptIn: whether the caller's reports may appear on the public
+ *    /community leaderboard. Off by default; flipping it on is the only way
+ *    a score can become public.
  */
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/api-guards';
@@ -31,19 +34,31 @@ export async function POST(req: Request) {
   const body = await v.jsonBody(req, { maxBytes: 2_000 });
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
 
-  const productEmails = v.boolean(body.value.productEmails, 'productEmails');
-  if (!productEmails.ok) {
-    return NextResponse.json({ error: productEmails.error }, { status: 400 });
+  const data: { productEmails?: boolean; leaderboardOptIn?: boolean } = {};
+
+  if ('productEmails' in body.value) {
+    const productEmails = v.boolean(body.value.productEmails, 'productEmails');
+    if (!productEmails.ok) return NextResponse.json({ error: productEmails.error }, { status: 400 });
+    data.productEmails = productEmails.value;
+  }
+  if ('leaderboardOptIn' in body.value) {
+    const leaderboardOptIn = v.boolean(body.value.leaderboardOptIn, 'leaderboardOptIn');
+    if (!leaderboardOptIn.ok) return NextResponse.json({ error: leaderboardOptIn.error }, { status: 400 });
+    data.leaderboardOptIn = leaderboardOptIn.value;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 });
   }
 
   const updated = await prisma.user.update({
     where: { id: authCtx.dbUserId },
-    data: { productEmails: productEmails.value },
-    select: { productEmails: true },
+    data,
+    select: { productEmails: true, leaderboardOptIn: true },
   });
 
   return NextResponse.json(
-    { success: true, productEmails: updated.productEmails },
+    { success: true, productEmails: updated.productEmails, leaderboardOptIn: updated.leaderboardOptIn },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }

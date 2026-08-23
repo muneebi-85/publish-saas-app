@@ -18,15 +18,15 @@ const ICON_MAP: Record<ActivityKind, { icon: React.ReactNode; chip: string }> = 
   },
   review_failed: {
     icon: <AlertTriangle className="w-[18px] h-[18px]" />,
-    chip: 'bg-crimson-50 text-crimson-600',
+    chip: 'bg-crimson-50 text-crimson-700',
   },
   review_running: {
     icon: <Loader2 className="w-[18px] h-[18px]" />,
-    chip: 'bg-ink-100 text-ink-600',
+    chip: 'bg-white/[0.08] text-ink-600',
   },
   billing: {
     icon: <CreditCard className="w-[18px] h-[18px]" />,
-    chip: 'bg-amber-50 text-amber-600',
+    chip: 'bg-amber-50 text-amber-700',
   },
 };
 
@@ -81,7 +81,7 @@ export default async function NotificationsPage() {
       {items.length === 0 ? (
         <Card className="py-16">
           <div className="flex flex-col items-center text-center">
-            <div className="w-14 h-14 rounded-full bg-ink-100 flex items-center justify-center text-ink-500 mb-4">
+            <div className="w-14 h-14 rounded-full bg-white/[0.08] flex items-center justify-center text-ink-500 mb-4">
               <BellOff className="w-6 h-6" />
             </div>
             <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
@@ -134,7 +134,7 @@ export default async function NotificationsPage() {
                   );
 
                   const rowClass = `w-full text-left flex items-start gap-3.5 px-5 py-4 transition-colors ${
-                    item.unread ? 'bg-brand-50/40 hover:bg-brand-50/70' : 'bg-white hover:bg-ink-50'
+                    item.unread ? 'bg-brand-50 hover:bg-brand-100' : 'bg-transparent hover:bg-white/[0.03]'
                   }`;
 
                   return item.href ? (

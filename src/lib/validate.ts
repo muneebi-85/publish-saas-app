@@ -138,3 +138,34 @@ export async function jsonBody(
     return { ok: false, error: 'Request body must be valid JSON' };
   }
 }
+
+/**
+ * A deliberately permissive email check, normalised for storage.
+ *
+ * The only address format that can be verified is one that accepts mail, so this
+ * rejects what is definitely not an address — no `@`, nothing on either side of
+ * it, whitespace, a dot-less or trailing-dot domain — and lets everything else
+ * through. Confirmation is what establishes deliverability; a stricter regex here
+ * would only turn valid but unusual addresses into a form that refuses to submit.
+ *
+ * The returned value is trimmed and lower-cased so `A@B.com ` and `a@b.com`
+ * resolve to one row behind a unique index.
+ */
+export function email(input: unknown, field = 'email'): ValidateResult<string> {
+  const str = string(input, { min: 3, max: 254, field });
+  if (!str.ok) return str;
+
+  const value = str.value.toLowerCase();
+  const at = value.lastIndexOf('@');
+  if (at < 1 || at === value.length - 1) {
+    return { ok: false, error: `${field} must look like name@example.com` };
+  }
+  if (/\s/.test(value)) {
+    return { ok: false, error: `${field} cannot contain spaces` };
+  }
+  const domain = value.slice(at + 1);
+  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.')) {
+    return { ok: false, error: `${field} must look like name@example.com` };
+  }
+  return { ok: true, value };
+}

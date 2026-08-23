@@ -34,12 +34,49 @@ Rules:
 - Use plain language a working creator can act on in five minutes.
 - Keep answers under 180 words. Use at most one short bulleted list.`;
 
+/**
+ * Grounds the coach in a creator's actual report (scores + top fixes) instead
+ * of generic advice. Deliberately a compact summary — the full report would
+ * bloat the prompt and the coach is meant to advise, not re-analyze.
+ */
+function reportContextBlock(ctx: {
+  title: string;
+  platform: string;
+  overall: number;
+  scores: Record<string, number>;
+  topFixes: string[];
+}): string {
+  const scores = Object.entries(ctx.scores)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(', ');
+  const fixes = ctx.topFixes.length
+    ? ctx.topFixes.slice(0, 4).map((f) => `- ${f}`).join('\n')
+    : '- (no fixes listed on this report)'; // cannot happen in practice; defensive
+  return `\nThe creator is asking about a REAL report they just received:\n` +
+    `Title: "${ctx.title.slice(0, 120)}" (${ctx.platform})\n` +
+    `Overall: ${ctx.overall}/100. Layer scores: ${scores}.\n` +
+    `Their top fixes:\n${fixes}\n` +
+    `When your advice touches one of these layers, reference the report's actual number or fix ` +
+    `explicitly ("Your Retention at 54 is dragged by…") rather than speaking in generalities. ` +
+    `If they ask something unrelated to the report, answer normally.`;
+}
+
 export async function getCoachReply(
   message: string,
   history: CoachMessage[],
+  reportContext?: {
+    title: string;
+    platform: string;
+    overall: number;
+    scores: Record<string, number>;
+    topFixes: string[];
+  } | null,
 ): Promise<string | null> {
+  const system = reportContext
+    ? `${COACH_PERSONA}${reportContextBlock(reportContext)}`
+    : COACH_PERSONA;
   const messages = [
-    { role: 'system' as const, content: COACH_PERSONA },
+    { role: 'system' as const, content: system },
     ...history.slice(-8).map((m) => ({ role: m.role, content: m.content })),
     { role: 'user' as const, content: message },
   ];

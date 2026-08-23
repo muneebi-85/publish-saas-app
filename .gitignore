@@ -57,3 +57,20 @@ next-env.d.ts
 uploads/
 tmp/
 .gstack/
+
+# ─── Design measurement scratch (local machine paths) ───
+.design-ref/
+# Stitch comp + reference renders used to build the landing page. Local only:
+# the spec lives in the design tool, and the PNGs are multi-MB screenshots.
+.stitch/
+.next-dev.log
+.next-prod.log
+.next-build.log
+
+# Training data and model artefacts. Hundreds of MB of thumbnails and JSONL;
+# regenerate with `python -m publishml.collect` rather than committing it.
+ml/data/
+ml/data-smoke/
+ml/**/__pycache__/
+.tmp-*.json
+.fs-probe.txt

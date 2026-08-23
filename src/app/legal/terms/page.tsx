@@ -2,7 +2,10 @@ import { LEGAL } from '@/lib/legal/config';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: `Terms of Service · ${LEGAL.productName}`,
+  // The root layout sets a title template of '%s · Publish', so the product
+  // name is appended for us. Repeating it here produced
+  // "Terms of Service · Publish · Publish" in the tab and in search results.
+  title: 'Terms of Service',
   description: 'The rules that govern use of Publish.',
 };
 

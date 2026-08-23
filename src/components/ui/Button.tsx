@@ -18,26 +18,27 @@ export const Button: React.FC<ButtonProps> = ({
   const base = clsx(
     'inline-flex items-center justify-center font-medium select-none whitespace-nowrap',
     'transition-all duration-200 ease-out',
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brand-600',
-    'disabled:opacity-50 disabled:pointer-events-none active:scale-[0.96] active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.1)]',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas focus-visible:ring-brand-600',
+    'disabled:opacity-50 disabled:pointer-events-none active:scale-[0.96]',
     'rounded-xl cursor-pointer',
   );
 
+  // The accent is a light lime, so anything sitting on it takes near-black text.
   const variants: Record<string, string> = {
     primary:
-      'bg-brand-600 text-white shadow-subtle hover:bg-brand-700 active:bg-brand-800',
+      'bg-brand-600 text-[#060606] hover:bg-brand-400 active:bg-brand-700',
     dark:
-      'bg-ink-900 text-white shadow-subtle hover:bg-ink-800 active:bg-black',
+      'bg-brand-600 text-[#060606] hover:bg-brand-400 active:bg-brand-700',
     secondary:
-      'bg-white text-ink-800 border border-ink-200 shadow-xs hover:bg-ink-50 hover:border-ink-300',
+      'bg-white/[0.04] text-white border border-white/[0.12] hover:bg-white/[0.08] hover:border-white/[0.2]',
     outline:
-      'bg-transparent text-ink-800 border border-ink-200 hover:border-ink-300 hover:bg-ink-50',
+      'bg-transparent text-white border border-white/[0.12] hover:border-white/[0.2] hover:bg-white/[0.04]',
     ghost:
-      'bg-transparent text-ink-600 hover:bg-ink-100 hover:text-ink-900',
+      'bg-transparent text-ink-600 hover:bg-white/[0.06] hover:text-white',
     danger:
-      'bg-crimson-600 text-white hover:bg-crimson-700 shadow-subtle',
+      'bg-crimson-600 text-white hover:bg-crimson-500',
     accent:
-      'bg-brand-600 text-white hover:bg-brand-700 shadow-subtle',
+      'bg-brand-600 text-[#060606] hover:bg-brand-400',
   };
 
   const sizes: Record<string, string> = {

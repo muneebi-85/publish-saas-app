@@ -3,69 +3,52 @@
 @import 'tailwindcss/utilities';
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/font.css');
 
 /* ─────────────────────────────
-   Design tokens — clean neutral SaaS
+   Design tokens — premium dark editorial
    ───────────────────────────── */
 :root {
-  --canvas:      #FAFAFA;
-  --panel:       #FFFFFF;
-  --sunken:      #F5F5F5;
-  --muted:       #F0F0F0;
-
-  --ink-950: #0A0A0A;
-  --ink-900: #111111;
-  --ink-800: #1F1F1F;
-  --ink-700: #3D3D3D;
-  --ink-600: #666666;
-  --ink-500: #8A8A8A;
-  --ink-400: #A3A3A3;
-  --ink-300: #D4D4D4;
-  --ink-200: #ECECEC;
-  --ink-150: #F0F0F0;
-  --ink-100: #F5F5F5;
-  --ink-50:  #FAFAFA;
-
-  --brand-600: #16A34A;
-  --brand-700: #15803D;
-  --grass-500: #16A34A;
-  --grass-600: #15803D;
-  --amber-500: #F59E0B;
-  --crimson-500: #EF4444;
-
-  --ring: rgba(17,17,17,0.10);
-  --ring-strong: rgba(17,17,17,0.28);
-}
-
-.dark {
-  --canvas:      #0A0A0A;
-  --panel:       #111111;
+  /* Premium dark palette */
+  --canvas:      #060606;
+  --panel:       #0D0D0D;
+  --surface:     #0F0F10;
   --sunken:      #000000;
-  --muted:       #1F1F1F;
+  --muted:       #1B1B1B;
 
-  --ink-950: #FAFAFA;
-  --ink-900: #F5F5F5;
-  --ink-800: #ECECEC;
-  --ink-700: #D4D4D4;
-  --ink-600: #A3A3A3;
-  --ink-500: #8A8A8A;
-  --ink-400: #666666;
+  /* Light theme (for dashboard) */
+  --canvas-light: #FAFAFA;
+  --panel-light:  #FFFFFF;
+
+  /* Text colors for dark */
+  --ink-950: #FFFFFF;
+  --ink-900: #FFFFFF;
+  --ink-800: #F5F5F5;
+  --ink-700: #ECECEC;
+  --ink-600: #A1A1AA;
+  --ink-500: #71717A;
+  --ink-400: #52525B;
   --ink-300: #3D3D3D;
-  --ink-200: #1F1F1F;
-  --ink-150: #1A1A1A;
-  --ink-100: #111111;
-  --ink-50:  #0A0A0A;
+  --ink-200: #1B1B1B;
+  --ink-150: #141414;
+  --ink-100: #0D0D0D;
+  --ink-50:  #060606;
 
-  --brand-600: #16A34A;
-  --brand-700: #15803D;
-  --grass-500: #16A34A;
-  --grass-600: #15803D;
+  /* Accent - Premium lime green */
+  --brand-600: #7CFF9A;
+  --brand-700: #5FE07D;
+  --brand-500: #7CFF9A;
+  --brand-400: #9CFFB0;
+
+  /* Semantic colors */
+  --grass-500: #7CFF9A;
+  --grass-600: #5FE07D;
   --amber-500: #F59E0B;
   --crimson-500: #EF4444;
 
-  --ring: rgba(255,255,255,0.10);
-  --ring-strong: rgba(255,255,255,0.28);
+  --ring: rgba(255,255,255,0.08);
+  --ring-strong: rgba(255,255,255,0.14);
 }
 
 * { -webkit-tap-highlight-color: transparent; }
@@ -95,12 +78,12 @@ body {
 /* ─── Scrollbar ─── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #D4D4D4; border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background: #A3A3A3; background-clip: padding-box; border: 2px solid transparent; }
-* { scrollbar-width: thin; scrollbar-color: #D4D4D4 transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.24); background-clip: padding-box; border: 2px solid transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
 
 /* ─── Selection ─── */
-::selection { background: #16A34A; color: #FFFFFF; }
+::selection { background: var(--brand-600); color: #060606; }
 
 /* ─── Forms ─── */
 input, textarea, select { font-family: inherit; color: var(--ink-900); }
@@ -120,7 +103,7 @@ input[type='range']::-webkit-slider-thumb {
   width: 16px; height: 16px;
   border-radius: 50%;
   background: var(--brand-600);
-  border: 2.5px solid #fff;
+  border: 2.5px solid #060606;
   box-shadow: 0 1px 3px rgba(0,0,0,0.18);
   cursor: pointer;
   transition: transform 0.15s cubic-bezier(0.22,1,0.36,1);
@@ -128,7 +111,7 @@ input[type='range']::-webkit-slider-thumb {
 input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.14); }
 input[type='range']::-moz-range-thumb {
   width: 16px; height: 16px; border-radius: 50%;
-  background: var(--brand-600); border: 2.5px solid #fff;
+  background: var(--brand-600); border: 2.5px solid #060606;
   box-shadow: 0 1px 3px rgba(0,0,0,0.18);
 }
 
@@ -137,6 +120,21 @@ input[type='range']::-moz-range-thumb {
 @keyframes enter-scale { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+/* Landing page: AI inspection motion — quiet, purposeful */
+@keyframes scan { 0%, 100% { transform: translateX(-100%); } 50% { transform: translateX(300%); } }
+@keyframes sweep { 0%, 100% { left: -12%; } 50% { left: 92%; } }
+@keyframes wave { 0%, 100% { transform: scaleY(0.45); } 50% { transform: scaleY(1); } }
+
+/* Non-essential motion is opt-out. Scores, layout, and content never move. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 .animate-enter { animation: enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-enter-scale { animation: enter-scale 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
@@ -191,4 +189,647 @@ input[type='range']::-moz-range-thumb {
   .bg-grid {
     background-image: none !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LANDING PAGE — light marketing theme.
+   Scoped to `.lp` so none of it reaches the dark product UI, which
+   owns the :root tokens above. Values are sampled from the approved
+   design comp: white canvas, violet accent, green score system.
+   ═══════════════════════════════════════════════════════════════ */
+.lp {
+  /* Neutrals — pure white canvas, faint gray wash for inset rows */
+  --lp-page:      #FFFFFF;
+  --lp-card:      #FFFFFF;
+  --lp-wash:      #FAFAFA;   /* inset rows */
+  --lp-wash-2:    #F3F4F6;   /* secondary button fill */
+
+  /* Ink */
+  --lp-ink:       #0F1115;   /* headings — near-black */
+  --lp-ink-2:     #4B5563;   /* body copy */
+  --lp-ink-3:     #6B7280;   /* meta */
+  --lp-ink-4:     #9CA3AF;   /* axis ticks / faintest labels */
+
+  /* Brand violet — "publish.", links, active nav, chart lines */
+  --lp-purple:    #4F46E5;
+  --lp-purple-d:  #4338CA;
+  --lp-purple-l:  #EEF2FF;   /* active sidebar row / icon tiles */
+  --lp-purple-xl: #F6F5FF;   /* CTA band fill */
+  --lp-violet:    #7C5CFB;   /* headline accent */
+
+  /* Score greens */
+  --lp-green:     #16A34A;
+  --lp-green-d:   #15803D;
+  --lp-green-l:   #4ADE80;
+  --lp-green-xl:  #DCFCE7;
+  --lp-green-tr:  #E9F8EE;   /* gauge track */
+
+  /* Signal colours */
+  --lp-orange:    #EA580C;
+  --lp-orange-l:  #FFEDD5;
+  --lp-red:       #DC2626;
+  --lp-red-l:     #FEE2E2;
+  --lp-amber:     #F59E0B;
+
+  /* Lines */
+  --lp-line:      #EDEEF0;   /* card hairline */
+  --lp-line-2:    #E5E7EB;   /* button / input border */
+
+  --lp-dark:      #0F1115;   /* primary button + footer base */
+
+  font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-variant-numeric: normal;
+  background: var(--lp-page);
+  color: var(--lp-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Manrope ships tabular figures via body{}; marketing wants proportional. */
+.lp * { font-variant-numeric: normal; }
+
+/* Page gutter. The comp runs a ~1240px content column inside a 1440 frame. */
+.lp-wrap {
+  width: 100%;
+  max-width: 1288px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+@media (min-width: 1024px) { .lp-wrap { padding-inline: 32px; } }
+
+/* Headline rhythm — the comp runs very tight tracking on display sizes. */
+.lp-display {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+  color: var(--lp-ink);
+}
+.lp-h2 {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.14;
+  color: var(--lp-ink);
+}
+
+/* Eyebrow pill — white with a hairline and an amber star. */
+.lp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--lp-line-2);
+  background: var(--lp-card);
+  color: var(--lp-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(15, 17, 21, 0.04);
+}
+
+/* Card hairline, no lift — the comp's inner analysis cards. */
+.lp-card {
+  background: var(--lp-card);
+  border: 1px solid var(--lp-line);
+  border-radius: 14px;
+}
+
+/* The hero score card and the big dashboard window float higher. */
+.lp-float {
+  background: var(--lp-card);
+  border: 1px solid var(--lp-line);
+  border-radius: 18px;
+  box-shadow:
+    0 1px 2px rgba(15, 17, 21, 0.04),
+    0 12px 28px -14px rgba(15, 17, 21, 0.10),
+    0 40px 80px -40px rgba(15, 17, 21, 0.16);
+}
+.lp-window {
+  background: var(--lp-card);
+  border: 1px solid var(--lp-line);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 2px rgba(15, 17, 21, 0.03),
+    0 14px 34px -18px rgba(15, 17, 21, 0.09),
+    0 50px 96px -52px rgba(15, 17, 21, 0.16);
+}
+
+.lp-interactive {
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), border-color 200ms ease, box-shadow 200ms ease;
+}
+.lp-interactive:hover {
+  transform: translateY(-2px);
+  border-color: #DAD7FB;
+  box-shadow: 0 14px 30px -24px rgba(79, 70, 229, 0.30);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.lp .btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 10px;
+  background: var(--lp-dark);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+.lp .btn-dark:hover { background: #23262E; }
+
+/* Hero-scale primary — same skin, taller and roomier. */
+.lp .btn-dark-lg {
+  height: 52px;
+  padding: 0 26px;
+  border-radius: 12px;
+  font-size: 15.5px;
+  gap: 11px;
+  box-shadow: 0 1px 2px rgba(15, 17, 21, 0.12), 0 10px 24px -14px rgba(15, 17, 21, 0.45);
+}
+.lp .btn-dark-lg:hover { transform: translateY(-1px); }
+
+.lp .btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 24px;
+  border-radius: 12px;
+  border: 1px solid var(--lp-line-2);
+  background: var(--lp-card);
+  color: var(--lp-ink);
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(15, 17, 21, 0.04);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.lp .btn-ghost:hover { background: var(--lp-wash); border-color: #D8DAE0; }
+
+/* Quiet in-card action ("Improve hook", "Improve"). */
+.lp .btn-soft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  background: var(--lp-wash-2);
+  color: var(--lp-ink);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transition: background 0.16s ease;
+}
+.lp .btn-soft:hover { background: #E7E9ED; }
+
+.lp-menu-button {
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.lp-menu-button:hover { background: var(--lp-wash); border-color: #D8DAE0; }
+.lp-menu-button:active { transform: scale(0.96); }
+
+.lp .btn-dark:focus-visible,
+.lp .btn-ghost:focus-visible,
+.lp .btn-soft:focus-visible,
+.lp-menu-button:focus-visible,
+.lp a:focus-visible,
+.lp button:focus-visible,
+.lp input:focus-visible {
+  outline: 3px solid rgba(79, 70, 229, 0.32);
+  outline-offset: 2px;
+}
+
+/* Sticky header — frosted white, hairline appears once the page scrolls. */
+.lp-header {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.lp-header[data-scrolled='true'] {
+  border-bottom-color: var(--lp-line);
+  box-shadow: 0 1px 2px rgba(15, 17, 21, 0.03);
+}
+
+/* Tab strip inside the features panel. */
+.lp-tab {
+  position: relative;
+  padding: 0 2px 13px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--lp-ink-2);
+  white-space: nowrap;
+  transition: color 160ms ease;
+}
+.lp-tab:hover { color: var(--lp-ink); }
+.lp-tab[aria-selected='true'] { color: var(--lp-ink); font-weight: 700; }
+.lp-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--lp-purple);
+}
+
+/* Horizontal scrollers (tab strip, logo row) hide their bar. */
+.lp-scroll-x {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.lp-scroll-x::-webkit-scrollbar { display: none; }
+
+/* Video still stand-in. The comp shows a warm studio frame; this paints the
+   same value structure in CSS so the card never depends on a binary asset,
+   and any <img> layered on top simply covers it when present. */
+.lp-still {
+  background-color: #1B1512;
+  background-image:
+    radial-gradient(38% 52% at 26% 44%, rgba(255, 214, 170, 0.30) 0%, transparent 68%),
+    radial-gradient(24% 30% at 74% 30%, rgba(255, 170, 90, 0.34) 0%, transparent 70%),
+    radial-gradient(70% 90% at 50% 118%, rgba(0, 0, 0, 0.62) 0%, transparent 72%),
+    linear-gradient(150deg, #3A2C22 0%, #221A16 46%, #120E0C 100%);
+}
+
+/* ── Dark band (footer) ─────────────────────────────────────────
+   The footer is the page's single dark block. `.lp-onDark` re-points
+   the shared tokens so `.lp-card` and every `--lp-ink-*` text colour
+   invert themselves with no per-element overrides. */
+.lp-onDark {
+  --lp-card:      rgba(255, 255, 255, 0.05);
+  --lp-line:      rgba(255, 255, 255, 0.10);
+  --lp-line-2:    rgba(255, 255, 255, 0.16);
+  --lp-ink:       #FFFFFF;
+  --lp-ink-2:     #9CA3AF;
+  --lp-ink-3:     #8B929C;
+  --lp-ink-4:     #6B7280;
+  --lp-purple:    #A5B4FC;
+  --lp-green:     #4ADE80;
+  background: #0E0E10;
+  color: var(--lp-ink);
+}
+.lp-onDark .lp-card { box-shadow: none; }
+
+/* ── Motion ──────────────────────────────────────────────────────
+   `lp-anim` is added by JS after mount (see components/landing/
+   Reveal.tsx), which is what makes the hidden state safe: without
+   scripting — or under prefers-reduced-motion — the class never
+   lands and the content paints normally.
+
+   A section carries `lp-anim`, then `lp-in` once it scrolls into
+   view; its `.lp-rv` children stagger via `--i`. */
+.lp-anim .lp-rv {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.62s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.62s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-delay: calc(var(--i, 0) * 65ms);
+}
+.lp-anim.lp-in .lp-rv {
+  opacity: 1;
+  transform: none;
+}
+
+/* Line/ring draw-in. Each user sets its own `--len` to the path
+   length so one class covers the area chart and the score arcs. */
+@keyframes lp-draw { to { stroke-dashoffset: 0; } }
+.lp-draw {
+  stroke-dashoffset: var(--len, 1200);
+  animation: lp-draw 1.6s cubic-bezier(0.33, 1, 0.68, 1) 0.3s forwards;
+}
+
+/* Late-arriving chart furniture (dots, callout) that should not
+   appear before the line reaches it. */
+@keyframes lp-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.lp-late {
+  opacity: 0;
+  animation: lp-fade-up 0.5s ease-out forwards;
+  animation-delay: calc(1.05s + var(--i, 0) * 55ms);
+}
+
+/* Both of the above start at load, which is right for the hero — it
+   is above the fold. Inside a revealing section it is not: the chart
+   would finish drawing long before the visitor scrolls to it. Holding
+   the animation (delay included) until the section is `lp-in` makes
+   it play on arrival instead. */
+.lp-anim:not(.lp-in) .lp-draw,
+.lp-anim:not(.lp-in) .lp-late {
+  animation-play-state: paused;
+}
+
+/* Mega-menu panel */
+@keyframes lp-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+.lp-pop {
+  animation: lp-pop 0.16s ease-out;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-anim .lp-rv {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .lp-draw { stroke-dashoffset: 0; animation: none; }
+  .lp-late { opacity: 1; animation: none; }
+  .lp-pop { animation: none; }
+  .lp-interactive { transition: none; }
+  .lp-interactive:hover { transform: none; }
+}
+
+@media (max-width: 640px) {
+  .lp-interactive:hover { transform: none; }
+}
+
+/* Printing never scrolls, so the reveal observer never fires and
+   every section below the first page would come out blank. Same
+   reason the hidden state is JS-applied in the first place: it must
+   never be the thing standing between a reader and the content. */
+@media print {
+  .lp-anim .lp-rv {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .lp-draw { stroke-dashoffset: 0 !important; animation: none !important; }
+  .lp-late { opacity: 1 !important; animation: none !important; }
+}
+
+/* ═════════════════════════════════════════════════════════════════
+   Landing page.
+
+   Ported 1:1 from the Google Stitch comp ("Publish — Final SaaS
+   Enhancements"). Everything below mirrors that file's <style> block;
+   the only additions are the reduced-motion and print guards at the
+   bottom, and the .lp-anim gate that keeps the reveal animation from
+   ever being the reason a reader sees a blank section.
+
+   The comp is Inter-only for UI and body, with Tailwind's stock serif
+   used as a display voice, and one red — the YouTube #FF0000 — on
+   every action. The red lives in tailwind.config.js as `red-brand`
+   so variants like hover:text-red-brand and bg-red-brand/20 generate.
+   ═════════════════════════════════════════════════════════════════ */
+/* ─────────────────────────────────────────────────────────────────
+   AUTH SCREENS (/sign-in, /sign-up)
+   The comp for these is white, and they are the first click off the
+   landing page — so they inherit the landing page's neutral ramp and
+   Inter voice rather than the product's near-black :root tokens,
+   which would render the card white-on-black. Painted directly (not
+   via a transparent root + shader) because there is no shader here.
+   ───────────────────────────────────────────────────────────────── */
+/* Clearance for the fixed cookie banner while it is up (the class is set by
+   CookieBanner.tsx). Without it, a browser window shorter than the card leaves
+   the submit button under the banner with no way to scroll it clear. Dropping
+   the class removes the extra height again, so a dismissed banner costs nothing. */
+.cookie-banner-open .auth-page-root {
+  padding-bottom: 200px;
+}
+
+.auth-page-root {
+  background-color: #FCFCFD;
+  color: #111827;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.landing-page-root {
+  --lp-red: #FF0000;
+  --lp-red-ink: #E60000;
+
+  /* Tailwind's stock neutral ramp, which is what the comp reaches for:
+     gray-900 body ink, gray-600 supporting copy, gray-100 hairlines. */
+  --lp-ink: #111827;
+  --lp-ink-2: #374151;
+  --lp-ink-3: #4B5563;
+  --lp-ink-4: #9CA3AF;
+  --lp-line: #F3F4F6;
+  --lp-line-2: #E5E7EB;
+  --lp-wash: #F9FAFB;
+
+  /* Shared components (the Resources dropdown) name their accent
+     "purple" from the product theme. Here that role is the red. */
+  --lp-purple: #FF0000;
+  --lp-tint: #FFF1F1;
+  --lp-mint-soft: #F0FDF4;
+
+  /* The comp's shader canvas shows through, so the root is transparent
+     and only the sections that ask for white paint it. */
+  background-color: transparent;
+  color: var(--lp-ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The comp is drawn on a white page: its own <body> is transparent and the
+   Stitch preview sits on a white viewport. This app's body is the product's
+   near-black canvas, which turned the shader's near-white output into a flat
+   grey. So the landing page paints its own white base underneath the canvas —
+   both are negative-z children of the root stacking context, so -2 sits below
+   the canvas's -1 and every section still paints above them. */
+.landing-page-root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background: #fff;
+  pointer-events: none;
+}
+
+/* The animated gradient canvas behind the whole page. */
+#shader-bg {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Establishes an inline-size container so the hero composite — photo,
+   phone screen, floating cards — can be sized in `cqw` and scale as a
+   single unit instead of drifting apart across breakpoints. */
+.lp-cq { container-type: inline-size; }
+
+/* ── Hand-drawn underlines ──────────────────────────────────────
+   Two marker passes the comp draws under display words: a shallow
+   arc under "die.", a longer scribble under "actually" and the
+   testimonial. Both are ::after so they never add line height. */
+.curve-underline { position: relative; display: inline-block; }
+.curve-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 100%;
+  height: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 20'%3E%3Cpath d='M0 10 Q 50 20 100 10' stroke='%23FF0000' stroke-width='4' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.scribble-underline { position: relative; display: inline-block; }
+.scribble-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  width: 100%;
+  height: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 20'%3E%3Cpath d='M0 15 C 20 5, 40 20, 60 5 C 80 20, 100 5, 120 15' stroke='%23FF0000' stroke-width='3' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/* ── Scroll reveal ──────────────────────────────────────────────
+   The hidden state is gated behind .lp-anim, which the page adds
+   from an effect. Without JS (or before hydration) nothing is
+   hidden, so the whole page still reads. */
+.reveal-element {
+  transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1), transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lp-anim .reveal-element:not(.revealed) { opacity: 0; transform: translateY(40px) scale(0.98); }
+.reveal-element.revealed { opacity: 1; transform: none; }
+
+.delay-100 { transition-delay: 100ms; }
+.delay-200 { transition-delay: 200ms; }
+.delay-300 { transition-delay: 300ms; }
+.delay-400 { transition-delay: 400ms; }
+
+/* ── Hero entrance ─────────────────────────────────────────────── */
+.hero-fade-up { animation: premiumFadeUp 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+@keyframes premiumFadeUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Motion ─────────────────────────────────────────────────────
+   `float-anim` carries the rotation the comp gives the rocket, so
+   the hero's floating cards get their own untilted variants. */
+.float-anim { animation: floating 6s ease-in-out infinite; }
+@keyframes floating {
+  0%   { transform: translateY(0) rotate(-12deg); }
+  50%  { transform: translateY(-15px) rotate(-10deg); }
+  100% { transform: translateY(0) rotate(-12deg); }
+}
+
+.float-anim-img { animation: floatingImg 8s ease-in-out infinite; }
+@keyframes floatingImg {
+  0%   { transform: translateY(0) scale(1.1); }
+  50%  { transform: translateY(-20px) scale(1.1); }
+  100% { transform: translateY(0) scale(1.1); }
+}
+
+.float-soft { animation: lpFloatSoft 7s ease-in-out infinite; }
+@keyframes lpFloatSoft {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+
+/* Each floating hero card drifts on its own clock so the cluster
+   never pulses in unison. */
+.float-a { animation: lpFloatSoft 7s ease-in-out infinite; }
+.float-b { animation: lpFloatSoft 8.5s ease-in-out -2s infinite; }
+.float-c { animation: lpFloatSoft 9.5s ease-in-out -4s infinite; }
+
+/* ── Interaction ────────────────────────────────────────────────
+   The sheen that crosses every red button on hover. */
+.shimmer-hover {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.shimmer-hover::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -100%;
+  width: 50%;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.7s ease;
+}
+.shimmer-hover:hover { transform: scale(1.05) translateY(-2px); box-shadow: 0 15px 30px -10px rgba(255, 0, 0, 0.4); }
+.shimmer-hover:hover::after { left: 150%; }
+
+.card-lift { transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.5s ease; }
+.card-lift:hover {
+  transform: translateY(-12px) scale(1.02);
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.1), 0 20px 20px -10px rgba(0, 0, 0, 0.05);
+}
+
+.pricing-card-hover { transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.5s ease; }
+.pricing-card-hover:hover {
+  transform: translateY(-12px) scale(1.02);
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.1), 0 20px 20px -10px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+}
+
+/* Bars in the check cards grow to their real value once revealed. */
+/* Score bars. The real width is set inline from the data, so with JS off the
+   bar is simply correct; when animations are live the fill starts collapsed and
+   grows out of its left edge once the card reveals. */
+.lp-anim .lp-bar { transform: scaleX(0); transform-origin: left center; }
+.lp-anim .revealed .lp-bar { transform: scaleX(1); }
+.lp-bar { transition: transform 1.5s cubic-bezier(0.16, 1, 0.3, 1) 0.3s; }
+
+/* ── Reduced motion ────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .reveal-element,
+  .hero-fade-up,
+  .float-anim,
+  .float-anim-img,
+  .float-soft,
+  .float-a,
+  .float-b,
+  .float-c,
+  .shimmer-hover,
+  .card-lift,
+  .pricing-card-hover,
+  .lp-bar {
+    animation: none !important;
+    transition: none !important;
+  }
+  .hero-fade-up { opacity: 1; }
+  .lp-anim .reveal-element:not(.revealed) { opacity: 1; transform: none; }
+  .float-anim-img { transform: scale(1.1); }
+  .shimmer-hover:hover,
+  .card-lift:hover,
+  .pricing-card-hover:hover { transform: none; }
+  #shader-bg { display: none; }
+}
+
+/* Printing follows the same rule as the reveal above: never let an
+   animation state be why a section comes out blank on paper. */
+@media print {
+  .lp-anim .reveal-element:not(.revealed) { opacity: 1 !important; transform: none !important; }
+  .float-anim, .float-anim-img, .float-soft,
+  .float-a, .float-b, .float-c { animation: none !important; }
+  .hero-fade-up { animation: none !important; opacity: 1 !important; }
+  #shader-bg { display: none !important; }
 }

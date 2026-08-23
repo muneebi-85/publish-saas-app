@@ -89,6 +89,12 @@ export const env = {
   LS_VARIANT_STARTER: recommended('LEMONSQUEEZY_VARIANT_STARTER'),
   LS_VARIANT_PRO: recommended('LEMONSQUEEZY_VARIANT_PRO'),
   LS_VARIANT_AGENCY: recommended('LEMONSQUEEZY_VARIANT_AGENCY'),
+  // Annual-billing variants (same plan, different interval). Absent → the
+  // annual toggle on the pricing page is still shown but checkout falls back to
+  // a helpful error instead of charging the wrong price.
+  LS_VARIANT_STARTER_YEARLY: recommended('LEMONSQUEEZY_VARIANT_STARTER_YEARLY'),
+  LS_VARIANT_PRO_YEARLY: recommended('LEMONSQUEEZY_VARIANT_PRO_YEARLY'),
+  LS_VARIANT_AGENCY_YEARLY: recommended('LEMONSQUEEZY_VARIANT_AGENCY_YEARLY'),
 
   // ---- Background jobs (Upstash QStash) ----
   // Absent → the analyze route runs the review inline instead of enqueueing.

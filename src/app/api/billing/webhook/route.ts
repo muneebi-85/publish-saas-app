@@ -18,6 +18,7 @@
 
 import { NextResponse } from 'next/server';
 import { verifyWebhookSignature, LemonEvent } from '@/lib/billing/lemonsqueezy';
+import { resolvePlan, asPlan, parseDate } from '@/lib/billing/plan-resolution';
 import { prisma } from '@/lib/db';
 import { setUserPlan, resetQuota, PLAN_LIMITS, Plan } from '@/lib/session';
 import { sendPaymentFailed, sendPlanActivated } from '@/lib/email';
@@ -32,40 +33,15 @@ const PLAN_RANK: Record<Plan, number> = { free: 0, starter: 1, pro: 2, agency: 3
 /** Dedup rows are only useful for as long as Lemon Squeezy might retry. */
 const DEDUP_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
-function asPlan(value?: string | null): Plan | null {
-  const v = (value ?? '').trim().toLowerCase();
-  if (v === 'starter' || v === 'pro' || v === 'agency' || v === 'free') return v;
-  return null;
-}
-
-/**
- * Resolve the plan from the purchased variant id — the authoritative record of
- * what was actually paid for. Falls back to the signed custom_data plan (set by
- * our own checkout route), then the variant name.
- *
- * Returns null when nothing matches. Callers MUST treat null as "unknown", not
- * as "free": an unmapped LS_VARIANT_* env var is an operator mistake, and the
- * customer should not pay for it.
- */
-function resolvePlan(
-  variantId?: string | number | null,
-  customPlan?: string | null,
-  variantName?: string | null,
-): Plan | null {
-  const vid = String(variantId ?? '').trim();
-  if (vid) {
-    if (vid === env.LS_VARIANT_AGENCY) return 'agency';
-    if (vid === env.LS_VARIANT_PRO) return 'pro';
-    if (vid === env.LS_VARIANT_STARTER) return 'starter';
-  }
-  // custom_data.plan is signed inside the webhook body and originally came from
-  // our own authenticated checkout route, so it is trustworthy here.
-  const byCustom = asPlan(customPlan);
-  if (byCustom && byCustom !== 'free') return byCustom;
-  const byName = asPlan(variantName);
-  if (byName && byName !== 'free') return byName;
-  return null;
-}
+/** The variant ids the webhook resolves against, from env. */
+const VARIANT_MAP = {
+  starter: env.LS_VARIANT_STARTER,
+  pro: env.LS_VARIANT_PRO,
+  agency: env.LS_VARIANT_AGENCY,
+  starterYearly: env.LS_VARIANT_STARTER_YEARLY,
+  proYearly: env.LS_VARIANT_PRO_YEARLY,
+  agencyYearly: env.LS_VARIANT_AGENCY_YEARLY,
+};
 
 interface LSAttributes {
   status?: string;
@@ -89,13 +65,6 @@ interface LSPayload {
     id?: string;
     attributes?: LSAttributes;
   };
-}
-
-/** Parse an LS timestamp defensively — a malformed date must not poison periodEnd. */
-function parseDate(value?: string | null): Date | null {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 async function findOrCreateUser(clerkId: string | undefined, email: string | undefined) {
@@ -155,6 +124,7 @@ export async function POST(req: Request) {
     attrs.variant_id,
     payload.meta?.custom_data?.plan,
     attrs.variant_name,
+    VARIANT_MAP,
   );
 
   if (!event) {

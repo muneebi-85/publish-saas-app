@@ -17,45 +17,58 @@ export const Button: React.FC<ButtonProps> = ({
 }) => {
   const base = clsx(
     'inline-flex items-center justify-center font-medium select-none whitespace-nowrap',
-    'transition-all duration-200 ease-out',
+    'transition-colors duration-150 ease-out rounded-lg cursor-pointer',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas focus-visible:ring-brand-600',
-    'disabled:opacity-50 disabled:pointer-events-none active:scale-[0.96]',
-    'rounded-xl cursor-pointer',
+    'disabled:opacity-45 disabled:pointer-events-none',
   );
 
-  // The accent is a light lime, so anything sitting on it takes near-black text.
+  // Primary is the neutral ink fill, not the brand red: this product's red
+  // is reserved for risk and failure (crimson), so a red CTA would read as
+  // a warning. `text-surface-canvas` flips with the theme, which literal
+  // `text-white` never did — the old dark variant was white-on-white in
+  // dark mode.
   const variants: Record<string, string> = {
     primary:
-      'bg-brand-600 text-[#060606] hover:bg-brand-400 active:bg-brand-700',
+      'bg-ink-900 text-surface-canvas shadow-xs hover:bg-ink-800 active:bg-ink-950',
+    // Legacy alias: call sites said "dark" for the same ink button.
     dark:
-      'bg-brand-600 text-[#060606] hover:bg-brand-400 active:bg-brand-700',
-    secondary:
-      'bg-white/[0.04] text-white border border-white/[0.12] hover:bg-white/[0.08] hover:border-white/[0.2]',
-    outline:
-      'bg-transparent text-white border border-white/[0.12] hover:border-white/[0.2] hover:bg-white/[0.04]',
-    ghost:
-      'bg-transparent text-ink-600 hover:bg-white/[0.06] hover:text-white',
-    danger:
-      'bg-crimson-600 text-white hover:bg-crimson-500',
+      'bg-ink-900 text-surface-canvas shadow-xs hover:bg-ink-800 active:bg-ink-950',
+    // Kept for landing-page links that pair with the red mark; never the
+    // default action in the product.
     accent:
-      'bg-brand-600 text-[#060606] hover:bg-brand-400',
+      'bg-brand-600 text-on-brand shadow-xs hover:bg-brand-700 active:bg-brand-700',
+    secondary:
+      'bg-surface-panel text-ink-900 border border-ink-200 shadow-xs hover:bg-ink-50 hover:border-ink-300',
+    outline:
+      'bg-transparent text-ink-800 border border-ink-300 hover:bg-ink-50 hover:text-ink-900',
+    ghost:
+      'bg-transparent text-ink-600 hover:bg-ink-100 hover:text-ink-900',
+    // `text-crimson-50` is near-white in the light theme (legible on the
+    // dark crimson-600 fill) and near-black in the dark theme, where
+    // crimson-600 remaps to a light pink that white text could not clear.
+    danger:
+      'bg-crimson-600 text-crimson-50 shadow-xs hover:bg-crimson-700',
   };
 
   const sizes: Record<string, string> = {
-    sm: 'h-8 px-3 text-[13px] gap-1.5',
-    md: 'h-9 px-4 text-[13.5px] gap-2',
-    lg: 'h-11 px-5 text-[14.5px] gap-2',
-    xl: 'h-12 px-6 text-[15px] gap-2',
+    sm: 'h-8  px-2.5 text-[12px] gap-1.5',
+    md: 'h-9  px-3.5 text-[13px] gap-1.5',
+    lg: 'h-10 px-4   text-[14px] gap-2',
+    xl: 'h-11 px-5   text-[14px] gap-2',
   };
 
   return (
     <button
+      // Inside a <form> an untyped button submits it. Every submit in the app
+      // asks for it explicitly, so the safe default is the inert one; a
+      // `type` passed by the caller still wins through the spread below.
+      type="button"
       className={clsx(base, variants[variant], sizes[size], full && 'w-full', className)}
       disabled={disabled || isLoading}
       {...props}
     >
-      {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : leftIcon}
-      {children != null && <span>{children}</span>}
+      {isLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : leftIcon}
+      {children != null && <span className="truncate">{children}</span>}
       {!isLoading && rightIcon}
     </button>
   );

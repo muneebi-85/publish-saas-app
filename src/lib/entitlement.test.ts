@@ -13,7 +13,10 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  decideDebit,
+  canStartReview,
   decideEntitlement,
+  isFreeWindowElapsed,
   isPaidPeriodOverdue,
   normalizePlan,
   PLAN_LIMITS,
@@ -21,7 +24,7 @@ import {
   QuotaExceededError,
   type SubscriptionFacts,
 } from './entitlement';
-import { PLANS as PLAN_CATALOGUE } from './plans';
+import { PLANS as PLAN_CATALOGUE, isUpgrade, planDisplayName } from './plans';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -235,5 +238,106 @@ describe('QuotaExceededError', () => {
   it('is distinguishable from a generic failure, so a quota stop is not a 500', () => {
     const err: unknown = new QuotaExceededError('free', 1, 1);
     expect(err instanceof QuotaExceededError).toBe(true);
+  });
+});
+
+describe('decideDebit / canStartReview', () => {
+  // The read-side gate (canAnalyze on the plan state) and the write-side debit
+  // must answer "can this review start, and from which pool?" identically —
+  // these tests pin the shared decision both call.
+  it('debits the allowance while the monthly counter has room', () => {
+    expect(decideDebit(0, 50, 0)).toEqual({ source: 'allowance', ok: true });
+    expect(decideDebit(49, 50, 0)).toEqual({ source: 'allowance', ok: true });
+    expect(canStartReview(49, 50, 0)).toBe(true);
+  });
+
+  it('falls back to a referral credit when the allowance is spent', () => {
+    // The documented promise: credits are consumed before a full allowance
+    // blocks the review — they extend the wall rather than sitting idle.
+    expect(decideDebit(50, 50, 3)).toEqual({ source: 'referral_credit', ok: true });
+    expect(canStartReview(50, 50, 1)).toBe(true);
+  });
+
+  it('is exhausted only when both pools are empty', () => {
+    expect(decideDebit(50, 50, 0)).toEqual({ source: 'exhausted', ok: false });
+    expect(canStartReview(1, 1, 0)).toBe(false);
+  });
+
+  it('prefers the allowance over the credit — credits are the reserve', () => {
+    expect(decideDebit(10, 50, 5).source).toBe('allowance');
+  });
+
+  it('treats negative or corrupt inputs as zero, never as capacity', () => {
+    // The columns come from the database, but defense here is cheap.
+    expect(canStartReview(-5, 50, 0)).toBe(true);
+    expect(canStartReview(50, 50, -2)).toBe(false);
+    expect(canStartReview(50, 50, 0.4)).toBe(false);
+    expect(decideDebit(49.6, 50.5, 0.9).source).toBe('allowance');
+  });
+
+  it('keeps the wall open at the exact boundary only via a credit', () => {
+    expect(canStartReview(50, 50, 0)).toBe(false);
+    expect(canStartReview(50, 50, 1)).toBe(true);
+  });
+});
+
+describe('planDisplayName', () => {
+  it('uses the catalogue display name, not the capitalized id', () => {
+    // The ids read backwards on purpose (starter is the $49 tier whose display
+    // name is "Creator"); a UI that capitalizes the id advertises a tier the
+    // pricing page does not sell.
+    expect(planDisplayName('starter')).toBe('Creator');
+    expect(planDisplayName('pro')).toBe('Pro');
+    expect(planDisplayName('agency')).toBe('Agency');
+    expect(planDisplayName('free')).toBe('Free');
+  });
+
+  it('survives an unrecognized value by falling back to Free', () => {
+    expect(planDisplayName('enterprise')).toBe('Free');
+    expect(planDisplayName('')).toBe('Free');
+  });
+});
+
+describe('isUpgrade', () => {
+  it('follows the price ladder, not the id order', () => {
+    // pro is $19 and starter is $49 — moving pro → starter is an upgrade even
+    // though the id order suggests otherwise. The billing webhook depends on
+    // this to decide whether a mid-cycle change earns a fresh allowance.
+    expect(isUpgrade('pro', 'starter')).toBe(true);
+    expect(isUpgrade('starter', 'pro')).toBe(false);
+    expect(isUpgrade('free', 'pro')).toBe(true);
+    expect(isUpgrade('starter', 'agency')).toBe(true);
+    expect(isUpgrade('agency', 'free')).toBe(false);
+    expect(isUpgrade('pro', 'pro')).toBe(false);
+  });
+});
+
+describe('isFreeWindowElapsed', () => {
+  // The free plan is advertised as "1 check per month" (plans.ts). This
+  // function is the only thing that makes that promise true: without it the
+  // counter had no reset path at all and the free tier was once per lifetime.
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.parse('2026-08-30T00:00:00.000Z');
+
+  it('treats a missing periodStart as elapsed', () => {
+    // Rows created before window tracking existed (and rows where no window
+    // was ever stamped) must roll on first touch, not never.
+    expect(isFreeWindowElapsed(null, now)).toBe(true);
+  });
+
+  it('keeps a window that started under 30 days ago', () => {
+    const started = new Date(now - 29 * DAY);
+    expect(isFreeWindowElapsed(started, now)).toBe(false);
+    expect(isFreeWindowElapsed(new Date(now), now)).toBe(false);
+  });
+
+  it('rolls a window at and past 30 days', () => {
+    expect(isFreeWindowElapsed(new Date(now - 30 * DAY), now)).toBe(true);
+    expect(isFreeWindowElapsed(new Date(now - 400 * DAY), now)).toBe(true);
+  });
+
+  it('never rolls from a future stamp', () => {
+    // Clock skew or a manual fix must not trip the roll.
+    expect(isFreeWindowElapsed(new Date(now + DAY), now)).toBe(false);
   });
 });

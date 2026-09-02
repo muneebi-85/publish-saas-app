@@ -17,8 +17,8 @@ export default function SEOPage() {
   return (
     <PlanGate
       feature="SEO engine"
-      requiredPlan="starter"
-      description="Generate platform-tuned titles, tags, and descriptions. Included on Starter, Pro, and Agency plans."
+      requiredPlan="pro"
+      description="Generate platform-tuned titles, tags, and descriptions. Included on every paid plan."
     >
       <SEOBody />
     </PlanGate>
@@ -34,10 +34,16 @@ function SEOBody() {
   const [copied, setCopied] = useState('');
 
   const trimmed = title.trim();
-  const canAnalyze = trimmed.length >= 3 && !loading;
+  const hasTitle = trimmed.length >= 3;
+  // canAnalyze gates the BUTTON (a click mid-analysis is a double submit);
+  // hasTitle is what the error branch should report on — folding !loading
+  // into that message printed "Enter a video title of at least 3 characters"
+  // for a perfectly valid title pressed while a request was in flight.
+  const canAnalyze = hasTitle && !loading;
 
   const handleAnalyze = async () => {
-    if (!canAnalyze) {
+    if (loading) return;
+    if (!hasTitle) {
       setError('Enter a video title of at least 3 characters.');
       return;
     }
@@ -99,7 +105,7 @@ function SEOBody() {
                 placeholder="Paste the exact title you plan to publish"
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleAnalyze(); }}
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
               />
             </div>
             <div className="md:col-span-3">
@@ -108,7 +114,7 @@ function SEOBody() {
                 id="seo-platform"
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value as typeof PLATFORMS[number])}
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
               >
                 {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
               </select>
@@ -129,7 +135,7 @@ function SEOBody() {
         </Card>
 
         {error && (
-          <div className="bg-crimson-50 border border-crimson-200 text-crimson-700 px-4 py-3 rounded-xl text-[13px] flex items-start gap-2">
+          <div className="bg-crimson-50 border border-crimson-200 text-crimson-700 p-4 rounded-xl text-[13px] flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <div>
               <div className="font-semibold">Analysis failed</div>
@@ -149,15 +155,15 @@ function SEOBody() {
               ].map((s) => (
                 <Card key={s.label} padded={false} className="p-5">
                   <div className="text-[12px] font-semibold text-ink-600">{s.label}</div>
-                  <div className={`font-display text-[32px] font-bold tabular-nums tracking-tight mt-1 ${
-                    s.value >= 85 ? 'text-brand-600' : s.value >= 70 ? 'text-amber-700' : 'text-crimson-700'
+                  <div className={`font-display text-[30px] font-semibold tabular-nums tracking-[-0.025em] mt-1 ${
+                    s.value >= 85 ? 'text-grass-700' : s.value >= 70 ? 'text-amber-700' : 'text-crimson-700'
                   }`}>
                     {s.value}
                   </div>
-                  <div className="mt-3 h-1.5 w-full bg-white/[0.08] rounded-full overflow-hidden">
+                  <div className="mt-3 h-1.5 w-full bg-ink-100 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${
-                        s.value >= 85 ? 'bg-brand-600' : s.value >= 70 ? 'bg-amber-500' : 'bg-crimson-500'
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        s.value >= 85 ? 'bg-grass-600' : s.value >= 70 ? 'bg-amber-600' : 'bg-crimson-600'
                       }`}
                       style={{ width: `${s.value}%` }}
                     />
@@ -174,15 +180,15 @@ function SEOBody() {
             <Card>
               <div className="flex items-center gap-2 mb-3">
                 <Sparkles className="w-4 h-4 text-brand-600" />
-                <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">Optimized titles</h3>
+                <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">Optimized titles</h3>
               </div>
               <div className="space-y-2">
                 {analysis.optimizedTitles.map((t, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-surface-canvas border border-ink-200">
+                  <div key={i} className="flex items-center justify-between gap-3 p-3.5 rounded-lg bg-surface-canvas border border-ink-200">
                     <span className="text-[14px] text-ink-800 leading-relaxed">{t}</span>
                     <button
                       onClick={() => copyText(t, `title-${i}`)}
-                      className="text-ink-400 hover:text-white transition-colors shrink-0"
+                      className="text-ink-400 hover:text-ink-900 transition-colors shrink-0"
                       aria-label="Copy title"
                     >
                       {copied === `title-${i}` ? <Check className="w-4 h-4 text-brand-600" /> : <Copy className="w-4 h-4" />}
@@ -196,7 +202,7 @@ function SEOBody() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Hash className="w-4 h-4 text-brand-600" />
-                  <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">Suggested tags</h3>
+                  <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">Suggested tags</h3>
                 </div>
                 <Badge variant="outline">{platform}</Badge>
               </div>
@@ -205,7 +211,7 @@ function SEOBody() {
                   <button
                     key={i}
                     onClick={() => copyText(tag, `tag-${i}`)}
-                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white/[0.08] hover:bg-white/[0.09] text-[12px] font-medium text-ink-800 transition-colors"
+                    className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-ink-100 hover:bg-ink-200 text-[12px] font-medium text-ink-800 transition-colors"
                   >
                     <Hash className="w-3 h-3 text-ink-400" />
                     {tag}
@@ -217,7 +223,7 @@ function SEOBody() {
 
             <Card>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">Generated description</h3>
+                <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">Generated description</h3>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -227,7 +233,7 @@ function SEOBody() {
                   {copied === 'desc' ? 'Copied' : 'Copy'}
                 </Button>
               </div>
-              <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4 text-[13px] text-ink-700 leading-relaxed whitespace-pre-line">
+              <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4 text-[13px] text-ink-700 leading-relaxed whitespace-pre-line">
                 {analysis.description}
               </div>
             </Card>

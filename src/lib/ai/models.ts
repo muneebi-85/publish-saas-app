@@ -26,18 +26,6 @@ export const NIM_MODELS = {
    * Used for: thumbnail analysis (composition, faces, text legibility).
    */
   vision: env.NVIDIA_MODEL_VISION || 'meta/llama-3.2-90b-vision-instruct',
-
-  /**
-   * Small, cheap classifier.
-   * Used for: guardrails, off-topic detection, PII scan on inputs.
-   */
-  guard: env.NVIDIA_MODEL_GUARD || 'meta/llama-3.1-8b-instruct',
-
-  /**
-   * Retrieval embeddings.
-   * Used for: RAG over platform policy documents.
-   */
-  embed: env.NVIDIA_MODEL_EMBED || 'nvidia/nv-embedqa-e5-v5',
 } as const;
 
 export type NimModelKind = keyof typeof NIM_MODELS;

@@ -1,5 +1,6 @@
 import { requirePageAuth } from '@/lib/api-guards';
 import { prisma } from '@/lib/db';
+import { scoreBand } from '@/lib/score-band';
 import ProjectsClient from './ProjectsClient';
 
 /** Narrow a value out of the free-form report JSON, or undefined if it isn't a string. */
@@ -7,13 +8,15 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+const FETCH_CAP = 50;
+
 export default async function ProjectsPage() {
   const authCtx = await requirePageAuth();
 
   const reports = await prisma.analysisReport.findMany({
     where: { userId: authCtx.dbUserId },
     orderBy: { createdAt: 'desc' },
-    take: 50, // Limit memory footprint
+    take: FETCH_CAP, // Limit memory footprint
     select: {
       id: true,
       projectId: true,
@@ -41,7 +44,9 @@ export default async function ProjectsPage() {
       title: r.title || 'Untitled Project',
       description: str(data.description) ?? 'No description available.',
       folder: str(data.folder) ?? 'General',
-      riskLevel: r.overallScore >= 80 ? 'LOW' : r.overallScore >= 50 ? 'MEDIUM' : 'HIGH',
+      // The shared bands (85 strong / 70 fair), so a project card can never
+      // call a 76 "LOW risk" while its gauge shows amber "Improve".
+      riskLevel: scoreBand(r.overallScore) === 'strong' ? 'LOW' : scoreBand(r.overallScore) === 'fair' ? 'MEDIUM' : 'HIGH',
       scores: {
         overall: r.overallScore,
         monetization: r.monetizationScore,

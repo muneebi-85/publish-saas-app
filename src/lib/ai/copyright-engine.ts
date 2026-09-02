@@ -9,7 +9,7 @@
  */
 
 import { chatJSON } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden } from './guardrails';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, fenceSafe } from './guardrails';
 import { CopyrightMetric } from '../types';
 
 export interface CopyrightInput {
@@ -17,7 +17,26 @@ export interface CopyrightInput {
   musicSourceDescription?: string; // "royalty-free from Artlist" / "TV show clip" / "unknown"
   detectedLogos?: string[];        // pre-extracted from vision pass
   hasWatermark?: boolean;
-  stockFootagePercent?: number;    // creator self-report, 0..100
+  stockFootagePercent?: number;    // DERIVED estimate from declared signals — the UI has no stock-% field, so this is never a direct self-report
+}
+
+/**
+ * Copyright composite, from the WORST of the risk bands the engine produces
+ * (plus a watermark penalty), not music alone.
+ *
+ * The previous music-only mapping let a video with licensed music and a High
+ * movie-clip risk score 96/100 — an overstated-safety direction. Lives HERE so
+ * every consumer (the orchestrator's headline score and the scorecard card)
+ * imports the one implementation and the two can never disagree.
+ */
+export function copyrightCompositeScore(c: {
+  musicMatchRisk: string;
+  movieClipRisk: string;
+  watermarkDetected?: boolean;
+}): number {
+  const band = (r: string): number => (r === 'Low' ? 96 : r === 'Medium' ? 75 : 45);
+  const worst = Math.min(band(c.musicMatchRisk), band(c.movieClipRisk));
+  return c.watermarkDetected ? Math.min(worst, 75) : worst;
 }
 
 interface RawCopyrightResponse {
@@ -31,7 +50,7 @@ const SYSTEM = `${TRUST_SYSTEM_PREAMBLE}
 
 You are the copyright & brand-safety review layer for Publish.
 
-You are given the creator's DECLARED inputs only: a free-text music-source description, a list of logos a vision pass may have detected, a watermark flag, a stock-footage percentage, and a script excerpt. Treat every input as a self-report, not ground truth. You are NOT running an audio fingerprint or a frame-level scan; you are doing a policy-level risk read on top of what the creator typed and what the vision pass surfaced.
+You are given the creator's DECLARED inputs only: a free-text music-source description, a list of logos a vision pass may have detected, a watermark flag, a stock-footage estimate DERIVED from those same declared signals (not a number the creator typed — the app has no stock-% field), and a script excerpt. Treat every input as a self-report, not ground truth. You are NOT running an audio fingerprint or a frame-level scan; you are doing a policy-level risk read on top of what the creator typed and what the vision pass surfaced.
 
 RISK CLASSIFICATION
 Classify each of musicMatchRisk, logoRisk, and movieClipRisk conservatively. A false positive (Medium when it is really Low) is far preferable to missing a real claim. Under uncertainty, choose the higher band. Anchor your reasoning in the actual claim mechanism: YouTube Content ID matches on the audio waveform and reference video/frames, NOT on the creator's typed description — so a "royalty-free" string is at best weak evidence and can never be called "verified" or "clean".
@@ -65,11 +84,11 @@ export async function analyzeCopyright(input: CopyrightInput): Promise<Copyright
       {
         role: 'user',
         content:
-`Music source: ${input.musicSourceDescription || 'unspecified'}
-Detected logos: ${(input.detectedLogos ?? []).join(', ') || 'none'}
+`Music source: """${fenceSafe(input.musicSourceDescription || 'unspecified')}"""
+Detected logos: """${fenceSafe((input.detectedLogos ?? []).join(', ') || 'none')}"""
 Watermark present: ${input.hasWatermark ? 'yes' : 'no'}
-Stock footage %: ${input.stockFootagePercent ?? 'unknown'}
-Script excerpt: """${(input.scriptText ?? '').slice(0, 1500)}"""`,
+Stock footage %: ${input.stockFootagePercent !== undefined ? `${input.stockFootagePercent} (estimated by the app from the declared signals above — the creator did not type this number)` : 'unknown'}
+Script excerpt: """${fenceSafe((input.scriptText ?? '').slice(0, 1500))}"""`,
       },
     ],
     { model: 'reasoning', temperature: 0.2, maxTokens: 800 },
@@ -77,16 +96,26 @@ Script excerpt: """${(input.scriptText ?? '').slice(0, 1500)}"""`,
 
   // Only emit a stock-footage estimate when we actually have a signal. When the
   // creator gave us nothing, we say so rather than inventing a default 18%.
-  const stockPct = input.stockFootagePercent;
-  const stockFootageEstimate =
-    typeof stockPct === 'number'
-      ? `${stockPct}% (${stockPct < 30 ? 'Fair Use Compliant' : 'High — verify licensing'})`
-      : null;
+  // The label is factual, never a legal verdict: "Fair Use Compliant" stamped
+  // from a creator self-report would be exactly the fair-use guarantee the
+  // system prompt forbids the model from making.
+  const stockFootageEstimate = describeStockFootage(input.stockFootagePercent);
 
   if (!raw) return heuristicCopyright(input);
 
+  // The heuristic's read of the creator's own declared source is a FLOOR the
+  // model output cannot go below — the same contract the voice engine applies
+  // to AI-generated audio. The declared UI value is the one input the model
+  // is shown verbatim, so a model pass that grades a declared commercial track
+  // ("popular") safer than the declaration itself would be a false-safe, the
+  // worst failure direction this engine has (and the fallback path would have
+  // graded it High on a model-outage day, making the two paths disagree).
+  const declaredFloor = musicSourceRisk((input.musicSourceDescription || '').toLowerCase());
+  const flooredMusicRisk = maxRisk(normalizeRisk(raw.musicMatchRisk), declaredFloor);
+
   return {
-    musicMatchRisk: normalizeRisk(raw.musicMatchRisk),
+    musicMatchRisk: flooredMusicRisk,
+    musicSource: (input.musicSourceDescription || '').toLowerCase() || undefined,
     detectedLogos:  input.detectedLogos ?? [],
     movieClipRisk:  normalizeRisk(raw.movieClipRisk),
     watermarkDetected: !!input.hasWatermark,
@@ -97,23 +126,72 @@ Script excerpt: """${(input.scriptText ?? '').slice(0, 1500)}"""`,
   };
 }
 
+/** The higher of two risk bands — the floor's whole job. */
+function maxRisk(a: 'Low' | 'Medium' | 'High', b: 'Low' | 'Medium' | 'High'): 'Low' | 'Medium' | 'High' {
+  const order = { Low: 0, Medium: 1, High: 2 } as const;
+  return order[a] >= order[b] ? a : b;
+}
+
 function normalizeRisk(v: string | undefined): 'Low' | 'Medium' | 'High' {
   if (v === 'High' || v === 'Medium' || v === 'Low') return v;
   return 'Medium'; // conservative default
 }
 
+/**
+ * Factual stock-footage label. The percentage is DERIVED by the app from the
+ * creator's declared signals (AI-generated source, watermark, stock music) —
+ * there is no stock-% input field, so calling it "declared" would be false —
+ * and it is not a legal test either: there is no "under 30% = fair use" safe
+ * harbor, so the label names the threshold this app reviews above and never
+ * issues a compliance verdict (the system prompt forbids exactly that for
+ * the model).
+ */
+function describeStockFootage(stockPct: number | undefined): string | null {
+  if (typeof stockPct !== 'number' || !Number.isFinite(stockPct)) return null;
+  const pct = Math.max(0, Math.min(100, Math.round(stockPct)));
+  return pct < 30
+    ? `${pct}% estimated from declared signals — below the 30% review threshold, not a fair-use clearance; keep licensing receipts for any third-party clips`
+    : `${pct}% estimated from declared signals — above the 30% review threshold; verify licensing for every third-party clip before publishing`;
+}
+
+/**
+ * Music-source keyword read, shared by both paths. Negations are checked
+ * FIRST: the unanchored royalty-free pattern used to match "licensed" inside
+ * "unlicensed" (and "royalty free" inside "not royalty free"), grading the
+ * exact opposite of the stated source — a false-safe, the worst failure
+ * direction this engine has.
+ *
+ * The product UI does not send free text: it sends one of the canonical
+ * values from `MUSIC_SOURCES` (none/original/licensed/stock/popular, plus
+ * `unknown`). Those are mapped explicitly BEFORE the keyword pass, because the
+ * literal tokens disagree with the keyword patterns in both directions —
+ * "popular" is the UI's label for a commercial track (the one choice that
+ * near-guarantees a Content ID claim) yet matched no pattern and graded
+ * Medium, while "stock" is the UI's label for "Stock / royalty-free" and
+ * must not grade below that.
+ */
+function musicSourceRisk(src: string): 'Low' | 'Medium' | 'High' {
+  if (src === 'none' || src === 'original' || src === 'licensed' || src === 'stock') return 'Low';
+  if (src === 'popular' || src === 'unknown') return 'High';
+  if (/\bunlicensed\b|\bno\s+licen[cs]e\b|\bnot\s+royalty[- ]?free\b|\bstolen\b/.test(src)) {
+    return 'High';
+  }
+  if (/\bartlist\b|\bepidemic\b|\broyalty[- ]?free\b|\blicensed\b|\boriginal\b/.test(src)) {
+    return 'Low';
+  }
+  if (/\btv\b|\bfilm\b|\bmovie\b|\bradio\b|\bunknown\b|\btop\s?40\b|\bbillboard\b/.test(src)) {
+    return 'High';
+  }
+  return 'Medium';
+}
+
 export function heuristicCopyright(input: CopyrightInput): CopyrightMetric {
   const src = (input.musicSourceDescription || '').toLowerCase();
-  const musicRisk: 'Low' | 'Medium' | 'High' =
-    /artlist|epidemic|royalty[- ]?free|licensed|original/.test(src) ? 'Low' :
-    /tv|film|movie|radio|unknown|top ?40|billboard/.test(src) ? 'High' : 'Medium';
-  const stockPct = input.stockFootagePercent;
-  const stockFootageEstimate =
-    typeof stockPct === 'number'
-      ? `${stockPct}% (${stockPct < 30 ? 'Fair Use Compliant' : 'High — verify licensing'})`
-      : null;
+  const musicRisk: 'Low' | 'Medium' | 'High' = musicSourceRisk(src);
+  const stockFootageEstimate = describeStockFootage(input.stockFootagePercent);
   return {
     musicMatchRisk: musicRisk,
+    musicSource: src || undefined,
     detectedLogos: input.detectedLogos ?? [],
     movieClipRisk: 'Low',
     watermarkDetected: !!input.hasWatermark,

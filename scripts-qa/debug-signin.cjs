@@ -40,8 +40,8 @@ async function main() {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
   })()`;
-  await evalJs(setInput('input[name="identifier"]', 'qa2.freebuff.tester@gmail.com'));
-  await evalJs(setInput('input[name="password"]', 'FreebuffQA#2026x!'));
+  await evalJs(setInput('input[name="identifier"]', process.env.QA_EMAIL ?? ''));
+  await evalJs(setInput('input[name="password"]', process.env.QA_PASSWORD ?? ''));
   await new Promise((r) => setTimeout(r, 400));
   const vals = await evalJs(`Array.from(document.querySelectorAll('input')).map(i => i.name + '=' + i.value).join(' | ')`);
   console.log('FIELDS:', vals);

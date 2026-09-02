@@ -4,7 +4,6 @@ const h = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   rateLimit: vi.fn(),
   report: {
-    findUnique: vi.fn(),
     findFirst: vi.fn(),
   },
   challenge: {
@@ -53,6 +52,7 @@ const TARGET = {
   overallScore: 74,
   targetPlatform: 'YouTube',
   userId: 'user_them',
+  createdAt: new Date('2026-08-01T00:00:00.000Z'),
 };
 
 const MINE = {
@@ -60,7 +60,21 @@ const MINE = {
   title: 'My video',
   overallScore: 82,
   targetPlatform: 'YouTube',
+  createdAt: new Date('2026-08-10T00:00:00.000Z'),
 };
+
+/**
+ * The route issues two analysisReport.findFirst calls — target (gated on
+ * `sharedAt`) then mine (ownership-scoped on `user.clerkId`). Dispatch on the
+ * where-shape so each mock answers for the query it belongs to, and so a
+ * regression that drops either scoping fails here instead of in production.
+ */
+function mockReports(target: unknown, mine: unknown) {
+  h.report.findFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => {
+    if (args.where.sharedAt !== undefined) return target;
+    return mine;
+  });
+}
 
 function acceptRequest(targetReportId: string, myReportId: string) {
   return new Request('http://localhost/api/challenge/accept', {
@@ -74,8 +88,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.requireAuth.mockResolvedValue(AUTH);
   h.rateLimit.mockResolvedValue({ success: true });
-  h.report.findUnique.mockResolvedValue(TARGET);
-  h.report.findFirst.mockResolvedValue(MINE);
+  mockReports(TARGET, MINE);
   h.challenge.findFirst.mockResolvedValue(null);
   h.challenge.update.mockResolvedValue({ id: 'clwchallenge000000000000001' });
   h.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
@@ -90,7 +103,7 @@ afterEach(() => {
 
 describe('POST /api/challenge/accept', () => {
   it('rejects a challenge against your own report', async () => {
-    h.report.findUnique.mockResolvedValue({ ...TARGET, userId: 'user_me' });
+    mockReports({ ...TARGET, userId: 'user_me' }, MINE);
 
     const res = await POST(acceptRequest(TARGET.id, MINE.id));
     expect(res.status).toBe(400);
@@ -99,18 +112,46 @@ describe('POST /api/challenge/accept', () => {
   });
 
   it('404s when the target report does not exist', async () => {
-    h.report.findUnique.mockResolvedValue(null);
+    mockReports(null, MINE);
 
     const res = await POST(acceptRequest(TARGET.id, MINE.id));
     expect(res.status).toBe(404);
   });
 
+  it('404s when the target score card was never published', async () => {
+    // The sharedAt gate on the target query is the opt-in the challenge loop
+    // runs on: an id alone (leaked, guessed, revoked) must not mint credits.
+    const calls: { where: Record<string, unknown> }[] = [];
+    h.report.findFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => {
+      calls.push(args);
+      // The target query exists and gates on sharedAt — assert it below.
+      return args.where.sharedAt !== undefined ? null : MINE;
+    });
+
+    const res = await POST(acceptRequest(TARGET.id, MINE.id));
+    expect(res.status).toBe(404);
+    expect(calls.some((c) => c.where.sharedAt !== undefined)).toBe(true);
+    expect(h.challenge.create).not.toHaveBeenCalled();
+    expect(h.user.update).not.toHaveBeenCalled();
+  });
+
   it('404s when the accepter report is not owned by the caller', async () => {
-    h.report.findFirst.mockResolvedValue(null);
+    mockReports(TARGET, null);
 
     const res = await POST(acceptRequest(TARGET.id, MINE.id));
     expect(res.status).toBe(404);
     expect(h.challenge.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an accept with a report that predates the target (farming guard)', async () => {
+    // The whole point of the challenge is "I can beat this": reusing a stale
+    // report let two colluding accounts mint challenger credits forever.
+    mockReports(TARGET, { ...MINE, createdAt: TARGET.createdAt });
+
+    const res = await POST(acceptRequest(TARGET.id, MINE.id));
+    expect(res.status).toBe(400);
+    expect(h.challenge.create).not.toHaveBeenCalled();
+    expect(h.user.update).not.toHaveBeenCalled();
   });
 
   it('records a fresh accept and credits the challenger once', async () => {
@@ -170,7 +211,7 @@ describe('POST /api/challenge/accept', () => {
   it('rejects malformed ids before touching the DB', async () => {
     const res = await POST(acceptRequest('not-a-cuid!', MINE.id));
     expect(res.status).toBe(400);
-    expect(h.report.findUnique).not.toHaveBeenCalled();
+    expect(h.report.findFirst).not.toHaveBeenCalled();
   });
 
   it('answers 429 when rate-limited', async () => {

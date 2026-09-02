@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { humanizeScriptContent, HumanizeOptions } from '@/lib/ai/humanizer-engine';
 import { analyzeScriptText } from '@/lib/ai/script-optimizer-engine';
-import { rateLimit, clientKey, LIMITS } from '@/lib/ratelimit';
+import { rateLimit, userKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 import * as v from '@/lib/validate';
 import { requirePaidPlan } from '@/lib/api-guards';
 import { prisma } from '@/lib/db';
@@ -17,9 +17,17 @@ export async function POST(req: Request) {
   const authCtx = await requirePaidPlan();
   if (authCtx instanceof NextResponse) return authCtx;
 
-  const rl = await rateLimit(clientKey(req, 'humanize'), LIMITS.HUMANIZE.limit, LIMITS.HUMANIZE.windowMs);
+  // Keyed to the authenticated account, not the IP — same contract as every
+  // other route behind requireAuth(): a shared NAT cannot exhaust one bucket,
+  // and rotating IPs cannot reset it.
+  const rl = await rateLimit(
+    userKey(authCtx.clerkId, 'humanize'),
+    LIMITS.HUMANIZE.limit,
+    LIMITS.HUMANIZE.windowMs,
+  );
   if (!rl.success) {
-    return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+    const { body, init } = tooManyRequests(rl);
+    return NextResponse.json(body, init);
   }
 
   // Cap the body before parsing. scriptText tops out at 15k chars, so 64KB is

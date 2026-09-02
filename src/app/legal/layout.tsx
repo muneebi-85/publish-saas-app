@@ -12,9 +12,12 @@ import { Footer } from '@/components/Footer';
  */
 export default function LegalLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-white text-ink-900">
+    // surface tokens, not bg-white: the theme class persists across routes,
+    // so a user who toggled dark in the dashboard would otherwise land here
+    // with near-white ink-900 text on a hardcoded white page.
+    <div className="min-h-screen bg-surface-panel text-ink-900 legal-always-light">
       {/* Header */}
-      <header className="border-b border-ink-100 bg-white/85 backdrop-blur sticky top-0 z-20">
+      <header className="border-b border-ink-200 bg-surface-panel/85 backdrop-blur sticky top-0 z-20">
         <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center">
             <Logo />
@@ -39,14 +42,14 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
               <li key={l.href}>
                 <Link
                   href={l.href}
-                  className="block text-[13px] text-ink-600 hover:text-ink-900 py-1 transition-colors"
+                  className="block text-[13px] text-ink-600 hover:text-ink-900 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded-sm"
                 >
                   {l.label}
                 </Link>
               </li>
             ))}
           </ul>
-          <div className="mt-6 pt-6 border-t border-ink-100 text-[11.5px] text-ink-500 space-y-1">
+          <div className="mt-6 pt-6 border-t border-ink-200 text-[11.5px] text-ink-500 space-y-1">
             <div>Effective: {LEGAL.effectiveDate}</div>
             <div>Contact: <a href={`mailto:${LEGAL.supportEmail}`} className="underline underline-offset-2">{LEGAL.supportEmail}</a></div>
           </div>
@@ -59,43 +62,77 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
 
       <Footer />
 
-      {/* Legal typography — kept scoped to this layout so it doesn't affect the app. */}
-      <style>{`
+      {/* Legal typography — kept scoped to this layout so it doesn't affect the app.
+          The colors are the .legal-always-light remaps (below), so the page stays
+          readable in both themes; the H1 uses the same Geist display voice as the
+          product (var(--font-display) was never defined, so it used to fall back
+          to Georgia serif while everything else was sans).
+          Injected via dangerouslySetInnerHTML: <style> is a raw-text element, and
+          React's apostrophe escaping inside a normal text child wrote literal
+          &#x27; entities into the DOM — text the client render never produced,
+          which failed hydration (React #425) on every legal page. The string is
+          a compile-time literal, so this is the documented safe use. */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        .legal-always-light {
+          --legal-ink:   rgb(15 23 42);
+          --legal-ink-2: rgb(51 65 85);
+          --legal-ink-3: rgb(30 41 59);
+          --legal-meta:  rgb(100 116 139);
+          --legal-wash:  rgb(248 250 252);
+        }
+        .dark .legal-always-light {
+          --legal-ink:   rgb(247 248 250);
+          --legal-ink-2: rgb(198 204 214);
+          --legal-ink-3: rgb(210 214 221);
+          --legal-meta:  rgb(155 163 176);
+          --legal-wash:  rgb(23 26 31);
+        }
         .prose-legal h1 {
-          font-family: var(--font-display), Georgia, serif;
+          font-family: 'Geist', 'Inter', -apple-system, system-ui, sans-serif;
           font-size: 30px; font-weight: 600; letter-spacing: -0.02em;
-          color: rgb(15 23 42);
+          color: var(--legal-ink);
           margin-bottom: 6px;
         }
         .prose-legal .effective-line {
-          font-size: 12px; color: rgb(100 116 139); margin-bottom: 32px;
+          font-size: 12px; color: var(--legal-meta); margin-bottom: 32px;
         }
         .prose-legal h2 {
-          font-size: 17px; font-weight: 600; color: rgb(15 23 42);
+          font-size: 17px; font-weight: 600; color: var(--legal-ink);
           margin-top: 40px; margin-bottom: 12px;
           scroll-margin-top: 96px;
         }
         .prose-legal h3 {
-          font-size: 14.5px; font-weight: 600; color: rgb(30 41 59);
+          font-size: 14.5px; font-weight: 600; color: var(--legal-ink-3);
           margin-top: 22px; margin-bottom: 8px;
         }
         .prose-legal p, .prose-legal li {
-          font-size: 14px; line-height: 1.72; color: rgb(51 65 85);
+          font-size: 14px; line-height: 1.72; color: var(--legal-ink-2);
         }
         .prose-legal p { margin-bottom: 14px; }
         .prose-legal ul { margin: 8px 0 16px 22px; list-style: disc; }
         .prose-legal ol { margin: 8px 0 16px 22px; list-style: decimal; }
         .prose-legal li { margin-bottom: 5px; }
-        .prose-legal strong { color: rgb(15 23 42); font-weight: 600; }
-        .prose-legal a { color: rgb(15 23 42); text-decoration: underline; text-underline-offset: 3px; }
-        .prose-legal a:hover { color: rgb(51 65 85); }
+        .prose-legal strong { color: var(--legal-ink); font-weight: 600; }
+        .prose-legal a { color: var(--legal-ink); text-decoration: underline; text-underline-offset: 3px; }
+        .prose-legal a:hover { color: var(--legal-ink-2); }
         .prose-legal .callout {
-          border-left: 3px solid rgb(15 23 42);
+          border-left: 3px solid var(--legal-ink);
           padding: 12px 18px; margin: 18px 0;
-          background: rgb(248 250 252); border-radius: 6px;
-          font-size: 13.5px; color: rgb(30 41 59);
+          background: var(--legal-wash); border-radius: 6px;
+          font-size: 13.5px; color: var(--legal-ink-3);
         }
-      `}</style>
+        /* Printing a policy is a common workflow (compliance archiving); the
+           browser's print engine forces white regardless of theme class. */
+        @media print {
+          .legal-always-light {
+            --legal-ink:   rgb(15 23 42);
+            --legal-ink-2: rgb(51 65 85);
+            --legal-ink-3: rgb(30 41 59);
+            --legal-meta:  rgb(100 116 139);
+            --legal-wash:  rgb(248 250 252);
+          }
+        }
+      `}} />
     </div>
   );
 }

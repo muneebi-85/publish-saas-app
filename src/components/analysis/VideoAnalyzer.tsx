@@ -76,17 +76,17 @@ export const VideoAnalyzer: React.FC<{ video: VideoMetric }> = ({ video }) => {
   ];
 
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
+    <section className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-lg bg-ink-100 text-ink-900 flex items-center justify-center shrink-0 shadow-subtle">
             <Video className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
               Video &amp; editing analysis
             </h2>
-            <p className="text-xs text-ink-500 mt-0.5">
+            <p className="text-[12px] text-ink-500 mt-0.5">
               Editing pace, cut density, resolution, and AI-visual artifact risk.
             </p>
           </div>
@@ -103,7 +103,7 @@ export const VideoAnalyzer: React.FC<{ video: VideoMetric }> = ({ video }) => {
       </div>
 
       {!measured && (
-        <div className="mx-6 mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12.5px] text-amber-800 leading-relaxed">
+        <div className="mx-6 mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-[12px] text-amber-800 leading-relaxed">
           No video frames were decoded, so nothing on this layer was measured. Attach the
           exported master and cut density, held frames, resolution, and bitrate are read from
           the file itself — we don&apos;t estimate any of them without it.
@@ -112,9 +112,9 @@ export const VideoAnalyzer: React.FC<{ video: VideoMetric }> = ({ video }) => {
 
       <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-2.5">
         {tiles.map((m) => (
-          <div key={m.label} className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-            <div className="text-[11px] font-medium text-ink-500">{m.label}</div>
-            <div className="text-[15px] font-semibold text-ink-900 mt-1">{m.value}</div>
+          <div key={m.label} className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">{m.label}</div>
+            <div className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900 mt-1">{m.value}</div>
             <div className="text-[11px] text-ink-500 mt-1">{m.sub}</div>
           </div>
         ))}
@@ -123,13 +123,13 @@ export const VideoAnalyzer: React.FC<{ video: VideoMetric }> = ({ video }) => {
       {(video.visualHookVerdict || video.onScreenText) && (
         <div className="px-6 pb-5 -mt-1 space-y-2">
           {video.visualHookVerdict && (
-            <div className="rounded-xl bg-surface-canvas border border-ink-200 p-3 text-[13px] text-ink-700 leading-relaxed">
+            <div className="rounded-lg bg-surface-canvas border border-ink-200 p-3.5 text-[13px] text-ink-700 leading-relaxed">
               <span className="font-medium text-ink-900">First three seconds. </span>
               {video.visualHookVerdict}
             </div>
           )}
           {video.onScreenText && (
-            <div className="rounded-xl bg-surface-canvas border border-ink-200 p-3 text-[13px] text-ink-700 leading-relaxed">
+            <div className="rounded-lg bg-surface-canvas border border-ink-200 p-3.5 text-[13px] text-ink-700 leading-relaxed">
               <span className="font-medium text-ink-900">On-screen text. </span>
               {video.onScreenText}
             </div>
@@ -142,7 +142,7 @@ export const VideoAnalyzer: React.FC<{ video: VideoMetric }> = ({ video }) => {
           {measured ? 'Recommendations' : 'How to enable this layer'}
         </h4>
         {video.recommendations.map((rec, i) => (
-          <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
+          <div key={i} className="flex items-start gap-2.5 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
             <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
             {rec}
           </div>
@@ -150,9 +150,9 @@ export const VideoAnalyzer: React.FC<{ video: VideoMetric }> = ({ video }) => {
       </div>
 
       {video.basis && (
-        <div className="px-6 pb-6 -mt-2 flex items-start gap-2 border-t border-white/[0.05] pt-4 mx-6">
+        <div className="px-6 pb-6 -mt-2 flex items-start gap-2 border-t border-ink-200 pt-4 mx-6">
           <Info className="w-3.5 h-3.5 text-ink-400 shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-[11.5px] text-ink-500 leading-relaxed">{video.basis}</p>
+          <p className="text-[12px] text-ink-500 leading-relaxed">{video.basis}</p>
         </div>
       )}
     </section>

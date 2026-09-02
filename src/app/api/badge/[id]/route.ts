@@ -2,16 +2,17 @@
  * GET /api/badge/[id] — the embeddable "my script scored 87/100" badge.
  *
  * Serves a static-looking SVG that renders the share-page score for a report
- * id (unguessable cuid, public only because a creator copied a share link and
- * chose to embed it). The badge links to the public score card, so every
- * creator who embeds it on their site gives Publish a backlink — the SEO loop
- * the audit asked for.
+ * the creator PUBLISHED (`sharedAt` — stamped by clicking "Share score"; the
+ * embed snippet is only handed out from the published score card). The badge
+ * links to the public score card, so every creator who embeds it on their site
+ * gives Publish a backlink — the SEO loop the audit asked for.
  *
  * PUBLIC BY DESIGN: same exposure as /share/[id] and /api/share/[id] — score,
  * title, platform. Nothing private.
  */
 
 import { prisma } from '@/lib/db';
+import { rateLimit, clientKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,15 +45,26 @@ function clipTitle(title: string, maxChars = 30): string {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: { id: string } },
 ): Promise<Response> {
+  // Public and DB-backed: throttle by IP like every other public route, so an
+  // embed target cannot be turned into free unbounded database load.
+  const rl = await rateLimit(clientKey(req, 'badge'), LIMITS.READ.limit, LIMITS.READ.windowMs);
+  if (!rl.success) {
+    const { body, init } = tooManyRequests(rl);
+    return Response.json(body, init);
+  }
+
   if (!/^[a-z0-9_-]{8,64}$/i.test(params.id)) {
     return new Response('Not found', { status: 404 });
   }
 
-  const row = await prisma.analysisReport.findUnique({
-    where: { id: params.id },
+  // Opt-in gate, same as the share page: only a published score card can be
+  // embedded. Anything else is 404, so a revoked card stops rendering on every
+  // site that embedded it within the cache window.
+  const row = await prisma.analysisReport.findFirst({
+    where: { id: params.id, sharedAt: { not: null } },
     select: { title: true, targetPlatform: true, overallScore: true },
   });
   if (!row) return new Response('Not found', { status: 404 });

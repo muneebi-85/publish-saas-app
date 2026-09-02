@@ -36,7 +36,7 @@ export const RENEWAL_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
 export const DUNNING_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** Subscription statuses that still represent a live, paid-for entitlement. */
-const LIVE_STATUSES = new Set(['active', 'on_trial']);
+export const LIVE_STATUSES = new Set(['active', 'on_trial']);
 /** Statuses where the charge is failing but LS has not given up yet. */
 const RETRYING_STATUSES = new Set(['past_due', 'unpaid']);
 
@@ -150,6 +150,28 @@ export function decideEntitlement(
 }
 
 /**
+ * How long a free-tier window runs. Paid windows are maintained by billing
+ * webhooks (`periodEnd`); the free tier has no webhook, so its window is
+ * measured from `periodStart` and rolled by the read/debit paths.
+ */
+export const FREE_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * True when the free tier's monthly window has lapsed and the counter must
+ * roll back to zero.
+ *
+ * `periodStart === null` counts as elapsed: free windows are stamped lazily,
+ * so a null stamp means the row predates the window logic (or the user never
+ * started a window) and the first touch should stamp one. Without that, the
+ * free tier's "1 check per month" was once per ACCOUNT LIFETIME — the counter
+ * had nothing that could ever reset it.
+ */
+export function isFreeWindowElapsed(periodStart: Date | null, now: number): boolean {
+  if (periodStart === null) return true;
+  return now - periodStart.getTime() >= FREE_PERIOD_MS;
+}
+
+/**
  * Thrown by the quota debit when the plan's monthly allowance is spent.
  * A distinct class so routes can answer 402 (payment required) instead of
  * mistaking a quota boundary for a 500.
@@ -166,4 +188,54 @@ export class QuotaExceededError extends Error {
     this.auditsUsed = auditsUsed;
     this.auditsLimit = auditsLimit;
   }
+}
+
+// ─── Referral / challenge credits ──────────────────────────────────────────
+//
+// Bonus credits (`User.referralCredits`) are earned through the referral and
+// challenge programs. Their documented promise is that they are "spent once
+// the plan's monthly allowance is full, so bonus credits extend the wall": a
+// review debits the monthly counter while it has room, and falls back to
+// spending a credit only when the counter is full. The debit itself is I/O
+// (session.ts) — this is the pure decision both the read-side gate
+// (`canAnalyze`) and the write-side debit must agree on, so a meter that says
+// "you can still review" can never disagree with the debit that enforces it.
+
+/** Where a review is paid from, decided once and shared by every check. */
+export type DebitSource = 'allowance' | 'referral_credit' | 'exhausted';
+
+export interface DebitDecision {
+  source: DebitSource;
+  /** True when the review can start at all. */
+  ok: boolean;
+}
+
+/**
+ * Decide how the next review is paid for.
+ *
+ * `referralCredits > 0` keeps the wall open past a full monthly allowance —
+ * that is the entire point of the credit. Negative or non-integer inputs are
+ * clamped defensively because every caller feeds it raw database columns.
+ */
+export function decideDebit(
+  auditsUsed: number,
+  auditsLimit: number,
+  referralCredits: number,
+): DebitDecision {
+  const used = Math.max(0, Math.floor(auditsUsed));
+  const limit = Math.max(0, Math.floor(auditsLimit));
+  const credits = Math.max(0, Math.floor(referralCredits));
+
+  if (used < limit) return { source: 'allowance', ok: true };
+  if (credits > 0) return { source: 'referral_credit', ok: true };
+  return { source: 'exhausted', ok: false };
+}
+
+/** Can the user start another review right now? */
+export function canStartReview(
+  auditsUsed: number,
+  auditsLimit: number,
+  referralCredits: number,
+): boolean {
+  return decideDebit(auditsUsed, auditsLimit, referralCredits).ok;
 }

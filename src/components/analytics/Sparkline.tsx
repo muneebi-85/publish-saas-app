@@ -9,6 +9,13 @@ interface SparklineProps {
   min?: number;
   max?: number;
   className?: string;
+  /**
+   * Direction the stroke color should express. Callers that show their own
+   * delta next to the sparkline (reports rows, TrendCard) pass it so the line
+   * and the number never contradict each other; the default compares the
+   * series endpoints.
+   */
+  trend?: number;
 }
 
 /**
@@ -23,9 +30,10 @@ export const Sparkline: React.FC<SparklineProps> = ({
   min: minProp,
   max: maxProp,
   className,
+  trend: trendProp,
 }) => {
   if (!data.length) {
-    return <span className={className} style={{ color: '#9ca3af', fontSize: 11 }}>—</span>;
+    return <span className={className} style={{ color: 'rgb(var(--ink-400))', fontSize: 11 }}>—</span>;
   }
 
   const min = minProp ?? Math.min(...data);
@@ -42,8 +50,10 @@ export const Sparkline: React.FC<SparklineProps> = ({
   const path = points.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
   const last = points[points.length - 1];
 
-  const trend = data.length < 2 ? 0 : data[data.length - 1] - data[0];
-  const stroke = trend > 0 ? '#7CFF9A' : trend < 0 ? '#EF4444' : '#71717A';
+  const trend = trendProp !== undefined ? trendProp : (data.length < 2 ? 0 : data[data.length - 1] - data[0]);
+  // Green up / red down is the only place red does NOT mean the accent, so it
+  // reads from the semantic tokens rather than the brand ramp.
+  const stroke = trend > 0 ? 'rgb(var(--grass-500))' : trend < 0 ? 'rgb(var(--crimson-500))' : 'rgb(var(--ink-400))';
 
   return (
     <svg
@@ -54,8 +64,8 @@ export const Sparkline: React.FC<SparklineProps> = ({
       height={height}
       viewBox={`0 0 ${width} ${height}`}
     >
-      <path d={path} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={last.x} cy={last.y} r={2.25} fill={stroke} />
+      <path d={path} fill="none" style={{ stroke }} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={last.x} cy={last.y} r={2.25} style={{ fill: stroke }} />
     </svg>
   );
 };

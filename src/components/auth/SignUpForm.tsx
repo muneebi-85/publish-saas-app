@@ -144,7 +144,7 @@ export const SignUpForm: React.FC = () => {
         <form onSubmit={onVerify} className="space-y-4">
           <Field
             label="Verification code"
-            icon={<KeyRound className="h-[17px] w-[17px]" />}
+            icon={<KeyRound className="h-4 w-4" />}
             inputMode="numeric"
             autoComplete="one-time-code"
             required
@@ -154,14 +154,14 @@ export const SignUpForm: React.FC = () => {
           />
           <SubmitButton busy={busy}>Verify and continue</SubmitButton>
         </form>
-        <div className="mt-5 flex items-center justify-between text-[13.5px]">
+        <div className="mt-6 flex items-center justify-between text-[13px] font-medium">
           <button
             type="button"
             onClick={() => {
               setStep('form');
               setError(null);
             }}
-            className="flex items-center gap-1.5 text-gray-500 transition-colors hover:text-gray-900"
+            className="flex items-center gap-1.5 text-ink-500 transition-colors hover:text-ink-900"
           >
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
@@ -169,7 +169,7 @@ export const SignUpForm: React.FC = () => {
             type="button"
             onClick={onResend}
             disabled={busy}
-            className="font-semibold text-red-brand transition-colors hover:text-red-brand-ink disabled:opacity-60"
+            className="text-red-brand transition-colors hover:text-red-brand-ink disabled:opacity-60"
           >
             Resend code
           </button>
@@ -189,7 +189,7 @@ export const SignUpForm: React.FC = () => {
       <form onSubmit={onCreate} className="space-y-4">
         <Field
           label="Full name"
-          icon={<User className="h-[17px] w-[17px]" />}
+          icon={<User className="h-4 w-4" />}
           autoComplete="name"
           placeholder="Enter your full name"
           value={fullName}
@@ -197,7 +197,7 @@ export const SignUpForm: React.FC = () => {
         />
         <Field
           label="Email address"
-          icon={<Mail className="h-[17px] w-[17px]" />}
+          icon={<Mail className="h-4 w-4" />}
           type="email"
           autoComplete="email"
           required
@@ -207,7 +207,7 @@ export const SignUpForm: React.FC = () => {
         />
         <PasswordField
           label="Password"
-          icon={<Lock className="h-[17px] w-[17px]" />}
+          icon={<Lock className="h-4 w-4" />}
           autoComplete="new-password"
           required
           placeholder="Create a password"
@@ -222,7 +222,7 @@ export const SignUpForm: React.FC = () => {
                     key={label}
                     className={
                       'flex items-center gap-1.5 text-[12px] transition-colors ' +
-                      (met ? 'text-[#16A34A]' : 'text-gray-400')
+                      (met ? 'text-grass-700' : 'text-ink-400')
                     }
                   >
                     <Check className={'h-3.5 w-3.5 ' + (met ? 'opacity-100' : 'opacity-40')} />
@@ -245,13 +245,13 @@ export const SignUpForm: React.FC = () => {
         <SubmitButton busy={busy}>Create account</SubmitButton>
       </form>
 
-      <p className="mt-4 text-center text-[12px] leading-relaxed text-gray-400">
+      <p className="mt-5 text-center text-[12px] leading-relaxed text-ink-500">
         By creating an account, you agree to our{' '}
-        <Link href="/legal/terms" className="text-red-brand hover:text-red-brand-ink">
+        <Link href="/legal/terms" className="font-medium text-red-brand hover:text-red-brand-ink">
           Terms of Service
         </Link>{' '}
         and{' '}
-        <Link href="/legal/privacy" className="text-red-brand hover:text-red-brand-ink">
+        <Link href="/legal/privacy" className="font-medium text-red-brand hover:text-red-brand-ink">
           Privacy Policy
         </Link>
         .

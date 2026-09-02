@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { rateLimit, clientKey, LIMITS } from '@/lib/ratelimit';
+import { rateLimit, userKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 import * as v from '@/lib/validate';
 import { requireAuth } from '@/lib/api-guards';
 import { publishReport, provenanceLines } from '@/lib/ml/publish';
@@ -24,15 +24,24 @@ export async function POST(req: Request) {
   const authCtx = await requireAuth();
   if (authCtx instanceof NextResponse) return authCtx;
 
-  const rl = await rateLimit(clientKey(req, 'publish-score'), LIMITS.SEO.limit, LIMITS.SEO.windowMs);
-  if (!rl.success) return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
-
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  // Keyed to the authenticated account, not the IP — the same contract every
+  // authenticated route follows, so a shared NAT cannot exhaust one bucket.
+  const rl = await rateLimit(
+    userKey(authCtx.clerkId, 'publish-score'),
+    LIMITS.SEO.limit,
+    LIMITS.SEO.windowMs,
+  );
+  if (!rl.success) {
+    const { body, init } = tooManyRequests(rl);
+    return NextResponse.json(body, init);
   }
+
+  // Size-capped, non-throwing parse like every other route. A thumbnail feature
+  // object is the largest legal payload here by far; 128 KB is generous
+  // headroom, and anything bigger is an attack rather than a request.
+  const parsed = await v.jsonBody(req, { maxBytes: 128_000 });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const body = parsed.value;
 
   const title = v.string(body.title, { min: 1, max: 300, field: 'title' });
   if (!title.ok) return NextResponse.json({ error: title.error }, { status: 400 });

@@ -13,8 +13,10 @@ for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
 }
 
 const INSTANCE = process.env.CLERK_INSTANCE_DOMAIN || 'resolved-buzzard-30.clerk.accounts.dev';
-const EMAIL = process.env.QA_EMAIL || 'qa2.freebuff.tester@gmail.com';
-const PASSWORD = process.env.QA_PASSWORD || 'FreebuffQA#2026x!';
+const EMAIL = process.env.QA_EMAIL;
+if (!EMAIL) { console.error('Set QA_EMAIL before running the sign-in harness.'); process.exit(1); }
+const PASSWORD = process.env.QA_PASSWORD;
+if (!PASSWORD) { console.error('Set QA_PASSWORD before running the sign-in harness.'); process.exit(1); }
 
 async function main() {
   // 1. Mint a dev_browser token

@@ -58,7 +58,9 @@ export async function POST(req: Request) {
 
   const result = await attachReferral(code.value, authCtx.dbUserId);
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 400 });
+    // retryable marks a server-side fault (DB outage and friends), not bad
+    // input — answer 503 so the client knows to retry rather than blame the code.
+    return NextResponse.json({ error: result.error }, { status: result.retryable ? 503 : 400 });
   }
 
   return NextResponse.json(

@@ -36,11 +36,30 @@ export async function POST(req: Request) {
 
   // An empty submission clears the name rather than storing "". The UI then
   // falls back to the email local part instead of rendering a blank header.
-  const updated = await prisma.user.update({
-    where: { id: authCtx.dbUserId },
-    data: { name: name.value.length > 0 ? name.value : null },
-    select: { name: true },
-  });
+  //
+  // P2025 = row vanished mid-request (the purge sweep racing this write). The
+  // preferences and brand-kit siblings catch it and answer 409; an unhandled
+  // throw here surfaced as a raw framework 500 instead.
+  let updated: { name: string | null };
+  try {
+    updated = await prisma.user.update({
+      where: { id: authCtx.dbUserId },
+      data: { name: name.value.length > 0 ? name.value : null },
+      select: { name: true },
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Your account is no longer available — it may have been deleted. Refresh and try again.' },
+        { status: 409 },
+      );
+    }
+    console.error('[POST /api/me/profile] update failed:', err);
+    return NextResponse.json(
+      { error: 'Could not save your profile. Please try again.' },
+      { status: 503 },
+    );
+  }
 
   return NextResponse.json(
     { success: true, name: updated.name ?? '' },

@@ -54,17 +54,17 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
   const humanSignals = a.evidence.filter((e) => e.direction === 'human-indicator');
 
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
+    <section className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-lg bg-ink-100 text-ink-900 flex items-center justify-center shrink-0 shadow-subtle">
             <ShieldQuestion className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
               Content authenticity
             </h2>
-            <p className="text-xs text-ink-500 mt-0.5">
+            <p className="text-[12px] text-ink-500 mt-0.5">
               How strongly this content reads as AI-generated — an estimate, never a determination.
             </p>
           </div>
@@ -76,31 +76,31 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
 
       {/* Score + confidence, deliberately at equal visual weight. */}
       <div className="p-6 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Human Authenticity Score</div>
-          <div className="text-[22px] font-semibold text-ink-900 mt-1 tabular-nums">
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Human Authenticity Score</div>
+          <div className="font-display text-[24px] font-semibold tracking-[-0.02em] text-ink-900 mt-1 tabular-nums">
             {a.humanAuthenticityScore}
             <span className="text-[13px] font-medium text-ink-500">/100</span>
           </div>
           <div className="text-[11px] text-ink-500 mt-1">Higher reads more human</div>
         </div>
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Confidence</div>
-          <div className="text-[22px] font-semibold text-ink-900 mt-1 tabular-nums">
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Confidence</div>
+          <div className="font-display text-[24px] font-semibold tracking-[-0.02em] text-ink-900 mt-1 tabular-nums">
             {a.confidence}
             <span className="text-[13px] font-medium text-ink-500">%</span>
           </div>
           <div className="text-[11px] text-ink-500 mt-1">{confidenceLabel(a.confidence)}</div>
         </div>
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Assessment</div>
-          <div className="text-[15px] font-semibold text-ink-900 mt-1">{style.label}</div>
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Assessment</div>
+          <div className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900 mt-1">{style.label}</div>
           <div className="text-[11px] text-ink-500 mt-1 leading-relaxed">{style.blurb}</div>
         </div>
       </div>
 
       {a.creatorDeclared && (
-        <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-[13px] text-ink-700 leading-relaxed">
+        <div className="mx-6 mb-4 flex items-start gap-2.5 p-3.5 rounded-lg bg-surface-panel border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
           <Info className="w-4 h-4 text-ink-500 shrink-0 mt-0.5" />
           <span>
             You declared AI generation on this upload, so this reflects your own disclosure rather
@@ -119,14 +119,14 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
           {aiSignals.map((e, i) => (
             <div
               key={i}
-              className="p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] leading-relaxed"
+              className="p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] leading-relaxed"
             >
               <div className="flex items-start gap-2.5">
                 <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink-900">
                     {e.signal}
-                    <span className="ml-2 text-[11px] font-medium text-ink-500 uppercase tracking-wide">
+                    <span className="ml-2 text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em]">
                       {e.weight}
                     </span>
                   </div>
@@ -147,14 +147,14 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
           {humanSignals.map((e, i) => (
             <div
               key={i}
-              className="p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] leading-relaxed"
+              className="p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] leading-relaxed"
             >
               <div className="flex items-start gap-2.5">
                 <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink-900">
                     {e.signal}
-                    <span className="ml-2 text-[11px] font-medium text-ink-500 uppercase tracking-wide">
+                    <span className="ml-2 text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em]">
                       {e.weight}
                     </span>
                   </div>
@@ -173,7 +173,7 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
         {a.falsePositiveReasons.map((reason, i) => (
           <div
             key={i}
-            className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed"
+            className="flex items-start gap-2.5 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed"
           >
             <HelpCircle className="w-4 h-4 text-ink-400 shrink-0 mt-0.5" />
             {reason}
@@ -183,7 +183,7 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
 
       {a.inconclusive.length > 0 && (
         <div className="px-6 pb-5 space-y-2">
-          <h4 className="text-[12px] font-semibold text-ink-500">
+          <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">
             Not evaluated ({a.inconclusive.length})
           </h4>
           <p className="text-[12px] text-ink-500 leading-relaxed">
@@ -192,7 +192,7 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
           {a.inconclusive.map((item, i) => (
             <div
               key={i}
-              className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-600 leading-relaxed"
+              className="flex items-start gap-2.5 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] text-ink-600 leading-relaxed"
             >
               <Minus className="w-4 h-4 text-ink-400 shrink-0 mt-0.5" />
               {item}
@@ -207,7 +207,7 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
           {a.recommendations.map((rec, i) => (
             <div
               key={i}
-              className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed"
+              className="flex items-start gap-2.5 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed"
             >
               <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
               {rec}
@@ -217,7 +217,7 @@ export const AuthenticityPanel: React.FC<{ authenticity: AuthenticityAssessment 
       )}
 
       <div className="px-6 py-4 border-t border-ink-200 bg-surface-canvas">
-        <h4 className="text-[11px] font-semibold text-ink-500 uppercase tracking-wide mb-2">
+        <h4 className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] mb-2">
           Limitations
         </h4>
         <ul className="space-y-1.5">

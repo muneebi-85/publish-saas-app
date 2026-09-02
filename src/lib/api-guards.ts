@@ -9,6 +9,7 @@ import { auth, currentUser } from '@clerk/nextjs/server';
 import { ensureUser, getUserPlanState, Plan } from './session';
 import { Role } from '@prisma/client';
 import { primaryEmailOf } from './clerk-identity';
+import { planDisplayName } from './plans';
 
 // Re-exported because routes have always imported it from here. The
 // implementation lives in `clerk-identity.ts`, which has no framework imports
@@ -54,7 +55,7 @@ export async function requirePaidPlan(): Promise<AuthedContext | NextResponse> {
   if (ctx.plan === 'free') {
     return NextResponse.json(
       {
-        error: 'This feature requires a paid plan (Starter, Pro, or Agency).',
+        error: `This feature requires a paid plan (${planDisplayName('pro')}, ${planDisplayName('starter')}, or ${planDisplayName('agency')}).`,
         upgradeRequired: true,
         plan: ctx.plan,
       },

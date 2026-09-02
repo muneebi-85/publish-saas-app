@@ -7,7 +7,7 @@
  */
 
 import { chatJSON } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore } from './guardrails';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore, fenceSafe } from './guardrails';
 import { HookRetentionMetric } from '../types';
 
 interface RawHookResponse {
@@ -55,35 +55,70 @@ Return ONLY this JSON, no prose outside it:
   "recommendedHooks":    string[] // 2-3 entries; each a paste-ready hook plus its WHY + honest impact; each <= 180 chars
 }`;
 
+/**
+ * The explicit "this layer did not run" state — mirrors `unmeasuredVideo` /
+ * `unmeasuredThumbnail`. Returned when there is no script or transcript, so
+ * the numbers are never displayed (the page checks `analyzed`) and the
+ * orchestrator excludes the layer from the weighted headline instead of
+ * blending in a fabricated retention figure.
+ */
+export function unmeasuredHook(): HookRetentionMetric {
+  return {
+    first5SecRetention: 0,
+    first10SecRetention: 0,
+    first30SecRetention: 0,
+    hookDropoffReason:
+      'Not analyzed — no script or transcript was supplied, so there was no opening to read. Attach the script (or an audio track to transcribe) and re-review to get real retention predictions.',
+    recommendedHooks: [],
+    analyzed: false,
+  };
+}
+
 export async function analyzeHook(
   openingScript: string,
   platform: string = 'YouTube',
 ): Promise<HookRetentionMetric> {
   const trimmed = openingScript.trim().slice(0, 2000);
 
+  // No opening to read: say so rather than sending an empty fence to the model
+  // and rendering whatever retention numbers come back as a prediction. The
+  // same guard `analyzeScript` uses; `heuristicHook` would have the same
+  // problem (its regex reads empty string and returns a passing 88).
+  if (!trimmed) return unmeasuredHook();
+
   const raw = await chatJSON<RawHookResponse>(
     [
       { role: 'system', content: SYSTEM(platform) },
-      { role: 'user',   content: `Opening script:\n\n"""${trimmed}"""` },
+      { role: 'user',   content: `Opening script:\n\n"""${fenceSafe(trimmed)}"""` },
     ],
     { model: 'reasoning', temperature: 0.5, maxTokens: 900 },
   );
 
   if (!raw) return heuristicHook(openingScript);
 
+  // Clamp the monotonic retention relationship the prompt mandates but a
+  // schema-violating model may ignore (5s=40, 10s=90 would otherwise flow
+  // straight into the overall score at 15% weight). Same philosophy as
+  // conservativeScore: never trust the model's numbers unchecked.
+  const first5 = conservativeScore(raw.first5SecRetention ?? 60);
+  const first10 = Math.min(conservativeScore(raw.first10SecRetention ?? 55), first5 + 5);
+  const first30 = Math.min(conservativeScore(raw.first30SecRetention ?? 50), first10 + 5);
+
   return {
-    first5SecRetention:  conservativeScore(raw.first5SecRetention  ?? 60),
-    first10SecRetention: conservativeScore(raw.first10SecRetention ?? 55),
-    first30SecRetention: conservativeScore(raw.first30SecRetention ?? 50),
+    first5SecRetention:  first5,
+    first10SecRetention: first10,
+    first30SecRetention: first30,
     hookDropoffReason:   scrubForbidden(raw.hookDropoffReason ?? 'Opening lacks specificity.').clean,
     recommendedHooks:    (raw.recommendedHooks ?? [])
       .slice(0, 3)
       .map((h) => scrubForbidden(h).clean),
+    basis: 'model',
   };
 }
 
 export function heuristicHook(script: string, platform: string = 'YouTube'): HookRetentionMetric {
   const opening = script.trim();
+  if (!opening) return unmeasuredHook();
   const startsWeak = /^(hi|hey|in this video|welcome back|today we)/i.test(opening);
   const base = startsWeak ? 62 : 88;
 
@@ -102,10 +137,14 @@ export function heuristicHook(script: string, platform: string = 'YouTube'): Hoo
     first5SecRetention:  conservativeScore(base),
     first10SecRetention: conservativeScore(base - 8),
     first30SecRetention: conservativeScore(base - 18),
+    // Basis marker: these retention numbers are a coarse pattern check, not a
+    // model read. The UI discloses this; the score itself still flows through
+    // the same conservative clamps, so a degraded deploy cannot inflate it.
+    basis: 'heuristic',
     // WHERE + WHY + fix direction, branched on whether the opener throat-clears.
     hookDropoffReason: startsWeak
       ? `Your first line trips the greeting/"in this video" throat-clear pattern, spending ${platform}'s AVD-weighted first 3s before any stakes — lead with the ${topic} stakes instead ("Hi guys, welcome back" -> "Here's why ${topic} is quietly costing you views"); typically claws back a few points of first-30s retention.`
-      : `No throat-clear detected, but your real 5s/30s curve isn't measured here — the opener names ${topic} but not its payoff in line 1; connect ${platform} analytics to see the actual drop-off, and front-load the concrete promise to shave the warm-up before viewers commit.`,
+      : `No throat-clear detected, but this read came from pattern matching rather than the full model pass — the opener names ${topic} but not its payoff in line 1; connect ${platform} analytics to see the actual drop-off, and front-load the concrete promise to shave the warm-up before viewers commit.`,
     // Labeled as paste-ready templates the creator adapts — not measured guarantees.
     recommendedHooks: [
       `Stakes-first template for ${topic}: "The way most people do ${topic} is silently losing them views — here's what actually works." Naming a concrete loss inside the first 3s is what ${platform}'s early-retention gate rewards; swap in your real number once you know it.`,

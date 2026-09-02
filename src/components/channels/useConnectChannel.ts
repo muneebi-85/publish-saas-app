@@ -57,12 +57,16 @@ export function buildConnectReturnUrl(
  *
  * Connect flow
  * ────────────
- * 1. POST /api/channels with the platform. When the platform account is
- *    already linked to the Clerk session, the row is created/updated directly.
- * 2. The API answers 428 `connectRequired` when no OAuth token exists yet.
- *    The hook then starts Clerk's account-linking flow via
- *    `user.createExternalAccount(...)`, which sends the user to Google/TikTok
- *    and back through /sso-callback (AuthenticateWithRedirectCallback).
+ * 1. POST /api/channels with the platform and the creator's public channel
+ *    link (or @handle). The server resolves the channel through the
+ *    platform's own public endpoints — no OAuth required — and creates the
+ *    row with the real public counts.
+ * 2. When no link is provided the API falls back to the OAuth path: it uses
+ *    the platform token already linked to the Clerk session, or answers 428
+ *    `connectRequired`, and the hook then starts Clerk's account-linking flow
+ *    via `user.createExternalAccount(...)`, which sends the user to
+ *    Google/TikTok and back through /sso-callback
+ *    (AuthenticateWithRedirectCallback).
  * 3. The callback lands the user back on `redirectTo?connect=<PLATFORM>`.
  *    On mount this hook sees the param, retries the connect — now with a token
  *    present — and strips the param so a refresh does not re-fire.
@@ -116,7 +120,7 @@ export function useConnectChannel(
   );
 
   const connectImpl = useCallback(
-    async (platform: string, allowOAuth: boolean): Promise<boolean> => {
+    async (platform: string, allowOAuth: boolean, url?: string): Promise<boolean> => {
       setPending(platform);
       setError('');
       setNotice('');
@@ -124,7 +128,7 @@ export function useConnectChannel(
         const res = await fetch('/api/channels', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ platform }),
+          body: JSON.stringify(url ? { platform, url } : { platform }),
         });
         const data = await res.json().catch(() => ({}));
 
@@ -158,8 +162,8 @@ export function useConnectChannel(
   );
 
   const connect = useCallback(
-    (platform: string, opts?: { allowOAuth?: boolean }) =>
-      connectImpl(platform, opts?.allowOAuth ?? true),
+    (platform: string, opts?: { allowOAuth?: boolean; url?: string }) =>
+      connectImpl(platform, opts?.allowOAuth ?? true, opts?.url),
     [connectImpl],
   );
 
@@ -187,18 +191,23 @@ export function useConnectChannel(
     const ret = parseOAuthReturn(searchParams);
     if (ret.kind === 'none') return;
 
+    // Strip only after the auto-finish settles. Stripping while the connect
+    // POST is still in flight made a cold-session 401 unrecoverable without a
+    // manual click: the param was already gone, so the outcome the provider
+    // handed back was lost to the URL rewrite while its result was unknown.
+    const strip = () =>
+      router.replace(stripFlowParams(searchParams, window.location.pathname), { scroll: false });
+
     if (ret.kind === 'error') {
       // A failed/cancelled handshake. Skip the auto-connect so this message is
       // not immediately overwritten by the connect attempt's own error text.
       setError(ret.message);
+      strip();
     } else {
       // No OAuth escalation here: if the provider flow was cancelled there is
       // still no token, and the error above explains why nothing happened.
-      void connectImpl(ret.platform, false);
+      void connectImpl(ret.platform, false).finally(strip);
     }
-
-    // Strip the flow params so a refresh does not re-fire the connect.
-    router.replace(stripFlowParams(searchParams, window.location.pathname), { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

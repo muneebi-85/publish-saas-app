@@ -21,7 +21,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({ analyzeImage: vi.fn() }));
-vi.mock('./nvidia', () => ({ analyzeImage: h.analyzeImage }));
+// extractJSON is the real parser out of nvidia.ts (not mocked): the
+// fenced-block and junk-input branches below exist to test exactly it.
+vi.mock('./nvidia', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./nvidia')>();
+  return { ...actual, analyzeImage: h.analyzeImage };
+});
 
 import {
   analyzeVideoFrames,
@@ -178,7 +183,7 @@ describe('pacingScore', () => {
 
 describe('analyzeVideoFrames', () => {
   it('reports the measured half from the decode and marks the layer measured', async () => {
-    const out = await analyzeVideoFrames(SIGNALS, 'YouTube', false);
+    const out = await analyzeVideoFrames(SIGNALS, 'YouTube');
     expect(out.measured).toBe(true);
     expect(out.resolution).toBe('1920x1080 (1080p)');
     expect(out.compressionQuality).toContain('Mbps total');
@@ -189,20 +194,20 @@ describe('analyzeVideoFrames', () => {
   it('reports the cut rate over probed seconds, never scaled to the runtime', async () => {
     // The whole point of the probe design. 6 cuts in 12s of a 10-minute file is
     // "1 cut every 2.0s across 12s probed" — not 300 cuts inferred for the runtime.
-    const out = await analyzeVideoFrames(SIGNALS, 'YouTube', false);
+    const out = await analyzeVideoFrames(SIGNALS, 'YouTube');
     expect(out.sceneTransitionRate).toBe('1 cut every 2.0s (6 cuts across 12s probed)');
     expect(out.sceneTransitionRate).not.toContain('600');
   });
 
   it('states what was sampled, and that pace is banded rather than observed', async () => {
-    const out = await analyzeVideoFrames(SIGNALS, 'YouTube', false);
+    const out = await analyzeVideoFrames(SIGNALS, 'YouTube');
     expect(out.basis).toContain('12 frames');
     expect(out.basis).toContain('21 frame pairs');
     expect(out.basis).toContain('banded reading');
   });
 
   it('says no hard cuts rather than reporting a rate of zero', async () => {
-    const out = await analyzeVideoFrames({ ...SIGNALS, cuts: 0 }, 'YouTube', false);
+    const out = await analyzeVideoFrames({ ...SIGNALS, cuts: 0 }, 'YouTube');
     expect(out.sceneTransitionRate).toBe('No hard cuts in the 12s sampled');
   });
 
@@ -210,7 +215,6 @@ describe('analyzeVideoFrames', () => {
     const out = await analyzeVideoFrames(
       { ...SIGNALS, comparisons: 1, cuts: 0, probedSeconds: 0 },
       'YouTube',
-      false,
     );
     expect(out.sceneTransitionRate).toContain('Not measured');
     expect(out.editingPacingScore).toBeNull();
@@ -219,7 +223,7 @@ describe('analyzeVideoFrames', () => {
   });
 
   it('carries the vision readings through', async () => {
-    const out = await analyzeVideoFrames(SIGNALS, 'YouTube', false);
+    const out = await analyzeVideoFrames(SIGNALS, 'YouTube');
     expect(out.cameraMovementRating).toContain('Locked tripod');
     expect(out.onScreenText).toContain('captions');
     expect(out.visualHookVerdict).toContain('title card');
@@ -232,7 +236,7 @@ describe('analyzeVideoFrames', () => {
   it('judges the hook sheet separately from the runtime sheet', async () => {
     // One call cannot answer both questions: folding the opening frames into the
     // spread would get them judged against frames from ten minutes later.
-    await analyzeVideoFrames(SIGNALS, 'TikTok', false);
+    await analyzeVideoFrames(SIGNALS, 'TikTok');
     expect(h.analyzeImage).toHaveBeenCalledTimes(2);
     const urls = h.analyzeImage.mock.calls.map((c) => c[0]);
     expect(urls).toContain(SIGNALS.sheetUrl);
@@ -240,7 +244,7 @@ describe('analyzeVideoFrames', () => {
   });
 
   it('leaves the hook unrated when no hook sheet was built', async () => {
-    const out = await analyzeVideoFrames({ ...SIGNALS, hookSheetUrl: undefined }, 'YouTube', false);
+    const out = await analyzeVideoFrames({ ...SIGNALS, hookSheetUrl: undefined }, 'YouTube');
     expect(h.analyzeImage).toHaveBeenCalledTimes(1);
     expect(out.visualHookScore).toBeNull();
     expect(out.visualHookVerdict).toBeNull();
@@ -254,7 +258,7 @@ describe('analyzeVideoFrames', () => {
     // everything judged says it was not judged.
     h.analyzeImage.mockRejectedValue(new Error('502 from the vision endpoint'));
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const out = await analyzeVideoFrames(SIGNALS, 'YouTube', false);
+    const out = await analyzeVideoFrames(SIGNALS, 'YouTube');
     spy.mockRestore();
 
     expect(out.measured).toBe(true);
@@ -270,7 +274,7 @@ describe('analyzeVideoFrames', () => {
 
   it('survives junk in place of JSON', async () => {
     h.analyzeImage.mockResolvedValue('I am unable to view images.');
-    const out = await analyzeVideoFrames(SIGNALS, 'YouTube', false);
+    const out = await analyzeVideoFrames(SIGNALS, 'YouTube');
     expect(out.measured).toBe(true);
     expect(out.shotVarietyScore).toBeNull();
     expect(out.resolution).toBe('1920x1080 (1080p)');
@@ -278,7 +282,7 @@ describe('analyzeVideoFrames', () => {
 
   it('reads JSON out of a fenced code block', async () => {
     h.analyzeImage.mockResolvedValue('```json\n' + SHEET_JSON + '\n```');
-    const out = await analyzeVideoFrames({ ...SIGNALS, hookSheetUrl: undefined }, 'YouTube', false);
+    const out = await analyzeVideoFrames({ ...SIGNALS, hookSheetUrl: undefined }, 'YouTube');
     expect(out.cameraMovementRating).toContain('Locked tripod');
   });
 
@@ -286,7 +290,7 @@ describe('analyzeVideoFrames', () => {
     h.analyzeImage.mockResolvedValue(
       JSON.stringify({ cameraMovement: 'Handheld', shotVariety: 60, onScreenText: 'None' }),
     );
-    const out = await analyzeVideoFrames({ ...SIGNALS, hookSheetUrl: undefined }, 'YouTube', false);
+    const out = await analyzeVideoFrames({ ...SIGNALS, hookSheetUrl: undefined }, 'YouTube');
     expect(out.aiVisualArtifactRisk).toBe('Medium');
   });
 
@@ -296,7 +300,6 @@ describe('analyzeVideoFrames', () => {
     const frozen = await analyzeVideoFrames(
       { ...SIGNALS, cuts: 0, staticPairs: 18, comparisons: 21 },
       'YouTube',
-      false,
     );
     spy.mockRestore();
     const text = frozen.recommendations.join(' ');
@@ -338,9 +341,12 @@ describe('unmeasuredVideo', () => {
     expect(unmeasuredVideo('TikTok', false, null).recommendations.join(' ')).toContain('9:16');
   });
 
-  it('does not rate an AI-flagged upload as low visual-artifact risk', async () => {
+  it('never asserts a safe artifact band for footage nobody looked at', async () => {
+    // Conservative default both when the creator declared AI and when they did
+    // not: the risk is UNEVALUATED, not cleared. The previous non-AI 'Low'
+    // asserted a safe band for a video the vision model never saw.
     expect(unmeasuredVideo('YouTube', true, null).aiVisualArtifactRisk).toBe('Medium');
-    expect(unmeasuredVideo('YouTube', false, null).aiVisualArtifactRisk).toBe('Low');
+    expect(unmeasuredVideo('YouTube', false, null).aiVisualArtifactRisk).toBe('Medium');
   });
 
   it('does not tell an AI-flagged creator their video is AI-generated', async () => {

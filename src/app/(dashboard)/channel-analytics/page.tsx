@@ -16,6 +16,7 @@ import {
   fetchChannelVideos,
   fetchChannelCtr,
   titlesMatch,
+  countsToNumbers,
   type ChannelVideo,
 } from '@/lib/channels';
 
@@ -42,7 +43,7 @@ export default async function ChannelAnalyticsPage() {
   const authCtx = await requirePageAuth();
   const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
-  const [channels, reports] = await Promise.all([
+  const [channelRows, reports] = await Promise.all([
     prisma.channel.findMany({
       where: { userId: authCtx.dbUserId },
       orderBy: { createdAt: 'desc' },
@@ -62,6 +63,10 @@ export default async function ChannelAnalyticsPage() {
       take: 200,
     }),
   ]);
+
+  // Channel count columns are BigInt in the database; this page does plain
+  // number arithmetic with them.
+  const channels = channelRows.map(countsToNumbers);
 
   const totalReports = reports.length;
   const averageScore =
@@ -115,7 +120,12 @@ export default async function ChannelAnalyticsPage() {
         if (videosRes.ok) liveVideos = videosRes.videos;
         else liveError = videosRes.error;
         if (ctrRes.ok) liveCtr = { impressions: ctrRes.impressions, ctr: ctrRes.ctr };
-        else if (liveError) liveError = `${liveError} · ${ctrRes.error}`;
+        else {
+          // An independent surface: the old `else if (liveError)` kept the CTR
+          // failure only when the videos call had ALSO failed, so a lone CTR
+          // failure made impressions/CTR silently vanish with no explanation.
+          liveError = liveError ? `${liveError} · ${ctrRes.error}` : ctrRes.error;
+        }
       } else {
         liveError = 'Reconnect the Google account to pull live video stats.';
       }
@@ -148,7 +158,7 @@ export default async function ChannelAnalyticsPage() {
         showUtility
         actions={
           <Link href="/connected-channels">
-            <Button variant="dark" leftIcon={<Plus className="w-4 h-4" />}>
+            <Button leftIcon={<Plus className="w-4 h-4" />}>
               Connect channel
             </Button>
           </Link>
@@ -156,19 +166,19 @@ export default async function ChannelAnalyticsPage() {
       />
 
       {channels.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-12 h-12 bg-white/[0.08] rounded-full flex items-center justify-center mb-4">
-            <Radio className="w-6 h-6 text-ink-400" />
+        <Card className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mb-4">
+            <Radio className="w-5 h-5" />
           </div>
-          <h3 className="font-display text-lg font-bold tracking-tight text-ink-900 mb-1">
+          <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
             No channels connected
           </h3>
-          <p className="text-sm text-ink-600 max-w-sm mb-6">
+          <p className="text-[13px] leading-relaxed text-ink-600 mt-2 mb-6 max-w-sm">
             Connect a channel to group your reviews by platform and watch content health move over
             time. Reviews work without a connected channel — this page just organises them.
           </p>
           <Link href="/connected-channels">
-            <Button variant="dark" leftIcon={<Plus className="w-4 h-4" />}>Connect channel</Button>
+            <Button leftIcon={<Plus className="w-4 h-4" />}>Connect channel</Button>
           </Link>
         </Card>
       ) : (
@@ -179,7 +189,7 @@ export default async function ChannelAnalyticsPage() {
             <Card>
               <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
                 <div>
-                  <h3 className="font-display text-lg font-bold tracking-tight text-ink-900 inline-flex items-center gap-2">
+                  <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900 inline-flex items-center gap-2">
                     <Youtube className="w-4 h-4 text-crimson-600" /> Live YouTube data
                   </h3>
                   <p className="text-[13px] text-ink-600 mt-0.5">
@@ -190,20 +200,20 @@ export default async function ChannelAnalyticsPage() {
                 <div className="flex items-center gap-4">
                   {liveCtr && liveCtr.impressions != null && (
                     <div className="text-right">
-                      <div className="text-[11px] font-medium text-ink-500 flex items-center gap-1">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 flex items-center gap-1">
                         <Eye className="w-3 h-3" /> Impressions (28d)
                       </div>
-                      <div className="text-[15px] font-semibold tabular-nums text-ink-900">
+                      <div className="text-[16px] font-semibold tabular-nums text-ink-900">
                         {fmtCompact(liveCtr.impressions)}
                       </div>
                     </div>
                   )}
                   {liveCtr && liveCtr.ctr != null && (
                     <div className="text-right">
-                      <div className="text-[11px] font-medium text-ink-500 flex items-center gap-1">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 flex items-center gap-1">
                         <BarChart3 className="w-3 h-3" /> Click-through
                       </div>
-                      <div className="text-[15px] font-semibold tabular-nums text-ink-900">
+                      <div className="text-[16px] font-semibold tabular-nums text-ink-900">
                         {liveCtr.ctr.toFixed(1)}%
                       </div>
                     </div>
@@ -212,22 +222,22 @@ export default async function ChannelAnalyticsPage() {
               </div>
 
               {liveError && !liveVideos ? (
-                <p className="text-[12.5px] text-ink-500 bg-surface-canvas border border-ink-200 rounded-xl px-4 py-3">
+                <p className="text-[12px] leading-relaxed text-ink-600 bg-surface-canvas border border-ink-200 rounded-lg px-3.5 py-3">
                   {liveError}
                 </p>
               ) : liveVideos && liveVideos.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[560px]">
                     <thead>
-                      <tr className="text-left text-[11px] font-medium text-ink-500 border-b border-ink-100">
-                        <th className="py-2 pr-4 font-medium">Upload</th>
-                        <th className="py-2 pr-4 font-medium text-right">Views</th>
-                        <th className="py-2 pr-4 font-medium text-right">Likes</th>
-                        <th className="py-2 pr-4 font-medium text-right">Publish Score</th>
-                        <th className="py-2 font-medium text-right">Score → views</th>
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 border-b border-ink-200">
+                        <th className="py-2 pr-4">Upload</th>
+                        <th className="py-2 pr-4 text-right">Views</th>
+                        <th className="py-2 pr-4 text-right">Likes</th>
+                        <th className="py-2 pr-4 text-right">Publish Score</th>
+                        <th className="py-2 text-right">Score → views</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-ink-100">
+                    <tbody className="divide-y divide-ink-200">
                       {liveVideos.slice(0, 10).map((video) => {
                         const score = scoreByVideo.get(video.videoId);
                         return (
@@ -236,7 +246,7 @@ export default async function ChannelAnalyticsPage() {
                               <div className="text-ink-900 font-medium truncate max-w-[260px]">
                                 {video.title}
                               </div>
-                              <div className="text-[11px] text-ink-400 mt-0.5 tabular-nums">
+                              <div className="text-[11px] text-ink-500 mt-0.5 tabular-nums">
                                 {new Date(video.publishedAt).toLocaleDateString('en-US', {
                                   month: 'short',
                                   day: 'numeric',
@@ -256,13 +266,13 @@ export default async function ChannelAnalyticsPage() {
                                   {score}/100
                                 </Badge>
                               ) : (
-                                <span className="text-[11px] text-ink-400">Not reviewed</span>
+                                <span className="text-[11px] text-ink-500">Not reviewed</span>
                               )}
                             </td>
                             <td className="py-2.5 text-right">
                               {score !== undefined ? (
                                 <span
-                                  className={`text-[11.5px] font-semibold ${
+                                  className={`text-[12px] font-semibold ${
                                     (score >= 80 && video.views > 0) || score < 50
                                       ? 'text-grass-700'
                                       : 'text-ink-400'
@@ -283,12 +293,12 @@ export default async function ChannelAnalyticsPage() {
                   </table>
                 </div>
               ) : (
-                <p className="text-[12.5px] text-ink-500 bg-surface-canvas border border-ink-200 rounded-xl px-4 py-3">
+                <p className="text-[12px] leading-relaxed text-ink-600 bg-surface-canvas border border-ink-200 rounded-lg px-3.5 py-3">
                   No public uploads found on this channel.
                 </p>
               )}
 
-              <p className="text-[11px] text-ink-400 mt-4 leading-relaxed">
+              <p className="text-[11px] text-ink-500 mt-4 leading-relaxed">
                 Scores are the reviews you ran for the matching upload; views, likes and
                 impressions come straight from the YouTube Data API using your read-only Google
                 connection. Titles match on an exact-enough basis, so a renamed upload may not pair.
@@ -356,7 +366,7 @@ export default async function ChannelAnalyticsPage() {
             <Card className="lg:col-span-3">
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">
+                  <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
                     Platform health scores
                   </h3>
                   <p className="text-[13px] text-ink-600 mt-0.5">
@@ -366,7 +376,7 @@ export default async function ChannelAnalyticsPage() {
                 </div>
                 <Link
                   href="/reports"
-                  className="text-[12.5px] text-ink-600 hover:text-ink-900 inline-flex items-center gap-1 transition-colors"
+                  className="text-[12px] text-ink-600 hover:text-ink-900 inline-flex items-center gap-1 transition-colors"
                 >
                   History <ArrowUpRight className="w-3 h-3" />
                 </Link>
@@ -380,23 +390,23 @@ export default async function ChannelAnalyticsPage() {
                   return (
                     <div
                       key={channel.id}
-                      className="flex items-center gap-4 py-3 border-b border-ink-100 last:border-b-0"
+                      className="flex items-center gap-4 py-3 border-b border-ink-200 last:border-b-0"
                     >
                       {score !== null ? (
                         <ScoreGauge score={score} size="sm" showLabel={false} />
                       ) : (
-                        <div className="w-10 h-10 rounded-full border border-dashed border-ink-200 flex items-center justify-center text-[10px] text-ink-400 shrink-0">
+                        <div className="w-11 h-11 rounded-full border border-dashed border-ink-200 flex items-center justify-center text-[11px] text-ink-500 shrink-0">
                           —
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <Icon className="w-3.5 h-3.5 text-ink-500" strokeWidth={1.75} />
-                          <span className="text-[13.5px] font-medium text-ink-900 capitalize">
+                          <Icon className="w-3.5 h-3.5 text-ink-500" />
+                          <span className="text-[13px] font-medium text-ink-900 capitalize">
                             {channel.name || channel.platform}
                           </span>
                         </div>
-                        <div className="text-[11.5px] text-ink-500 mt-0.5 tabular-nums">
+                        <div className="text-[12px] text-ink-500 mt-0.5 tabular-nums">
                           {channel.subscribers > 0
                             ? `${channel.subscribers.toLocaleString()} subs · `
                             : ''}
@@ -416,7 +426,7 @@ export default async function ChannelAnalyticsPage() {
                   );
                 })}
               </div>
-              <p className="text-[11px] text-ink-400 mt-4">
+              <p className="text-[11px] text-ink-500 mt-4">
                 These are averages of your own review scores, not platform-reported metrics. A high
                 score means the reviews found few blockers — it is not a prediction of views or
                 revenue.
@@ -426,7 +436,7 @@ export default async function ChannelAnalyticsPage() {
             {/* Recent analysis */}
             <Card className="lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">
+                <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
                   Recent reviews
                 </h3>
               </div>
@@ -438,7 +448,7 @@ export default async function ChannelAnalyticsPage() {
                     <Link
                       href={`/analysis/${report.id}`}
                       key={report.id}
-                      className="flex items-start gap-3 p-3.5 rounded-xl bg-surface-canvas border border-ink-200 hover:border-white/[0.14] transition-colors"
+                      className="flex items-start gap-3 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 hover:border-ink-300 transition-colors"
                     >
                       <div
                         className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
@@ -454,13 +464,13 @@ export default async function ChannelAnalyticsPage() {
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[13.5px] font-medium text-ink-900 truncate">
+                        <div className="text-[13px] font-medium text-ink-900 truncate">
                           {report.title || 'Untitled'}
                         </div>
                         <div className="text-[12px] text-ink-600 mt-0.5 leading-relaxed">
                           Publish Score {report.overallScore}/100 · {report.targetPlatform}
                         </div>
-                        <div className="text-[11px] text-ink-400 mt-1.5">
+                        <div className="text-[11px] text-ink-500 mt-1.5">
                           {new Date(report.createdAt).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
@@ -472,8 +482,8 @@ export default async function ChannelAnalyticsPage() {
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed border-ink-200 p-8 text-center">
-                  <div className="w-10 h-10 bg-white/[0.08] rounded-full flex items-center justify-center mx-auto mb-3">
-                    <ShieldCheck className="w-5 h-5 text-ink-400" />
+                  <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mx-auto mb-4">
+                    <ShieldCheck className="w-5 h-5" />
                   </div>
                   <div className="text-[13px] text-ink-700 font-medium">
                     No reviews in the last {WINDOW_DAYS} days
@@ -491,7 +501,7 @@ export default async function ChannelAnalyticsPage() {
       {/* Next step — describes what the product does today, not a roadmap. */}
       <Card className="mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">
+          <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
             Review every video before it goes live
           </h3>
           <p className="text-[13px] text-ink-600 mt-1.5 max-w-lg leading-relaxed">

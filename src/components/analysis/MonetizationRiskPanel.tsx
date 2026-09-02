@@ -29,17 +29,17 @@ export const MonetizationRiskPanel: React.FC<{ analysis: MonetizationRiskAnalysi
   analysis: m,
 }) => {
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
+    <section className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-lg bg-ink-100 text-ink-900 flex items-center justify-center shrink-0 shadow-subtle">
             <DollarSign className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
               Monetization risk
             </h2>
-            <p className="text-xs text-ink-500 mt-0.5">
+            <p className="text-[12px] text-ink-500 mt-0.5">
               Advertiser, policy, and copyright exposure found before you publish.
             </p>
           </div>
@@ -50,25 +50,25 @@ export const MonetizationRiskPanel: React.FC<{ analysis: MonetizationRiskAnalysi
       </div>
 
       <div className="p-6 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Readiness</div>
-          <div className="text-[22px] font-semibold text-ink-900 mt-1 tabular-nums">
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Readiness</div>
+          <div className="font-display text-[24px] font-semibold tracking-[-0.02em] text-ink-900 mt-1 tabular-nums">
             {m.score}
             <span className="text-[13px] font-medium text-ink-500">/100</span>
           </div>
           <div className="text-[11px] text-ink-500 mt-1">Residual risk after fixes</div>
         </div>
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Confidence</div>
-          <div className="text-[22px] font-semibold text-ink-900 mt-1 tabular-nums">
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Confidence</div>
+          <div className="font-display text-[24px] font-semibold tracking-[-0.02em] text-ink-900 mt-1 tabular-nums">
             {m.confidence}
             <span className="text-[13px] font-medium text-ink-500">%</span>
           </div>
           <div className="text-[11px] text-ink-500 mt-1">Based on inputs supplied</div>
         </div>
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Findings</div>
-          <div className="text-[22px] font-semibold text-ink-900 mt-1 tabular-nums">{m.items.length}</div>
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Findings</div>
+          <div className="font-display text-[24px] font-semibold tracking-[-0.02em] text-ink-900 mt-1 tabular-nums">{m.items.length}</div>
           <div className="text-[11px] text-ink-500 mt-1">
             {m.items.length === 0 ? 'No rules fired' : 'Each with a fix below'}
           </div>
@@ -79,7 +79,7 @@ export const MonetizationRiskPanel: React.FC<{ analysis: MonetizationRiskAnalysi
         <div className="px-6 pb-5 space-y-2.5">
           <h4 className="text-[12px] font-semibold text-brand-600">Exposure found</h4>
           {m.items.map((item, i) => (
-            <div key={i} className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
+            <div key={i} className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <AlertTriangle className={`w-4 h-4 shrink-0 ${RISK_ICON_COLOR[item.risk]}`} />
@@ -94,7 +94,7 @@ export const MonetizationRiskPanel: React.FC<{ analysis: MonetizationRiskAnalysi
                   <Badge variant={RISK_BADGE[item.risk]}>{item.risk}</Badge>
                 </div>
               </div>
-              <div className="text-[12.5px] text-ink-600 mb-1.5 break-words">
+              <div className="text-[12px] text-ink-600 mb-1.5 break-words">
                 <span className="font-medium text-ink-700">Where: </span>
                 {item.location}
               </div>
@@ -102,7 +102,7 @@ export const MonetizationRiskPanel: React.FC<{ analysis: MonetizationRiskAnalysi
                 <span className="font-medium">Why: </span>
                 {item.why}
               </div>
-              <div className="flex items-start gap-2.5 p-3 rounded-lg bg-white/[0.03] border border-white/[0.08] text-[13px] text-ink-700 leading-relaxed">
+              <div className="flex items-start gap-2.5 p-3 rounded-lg bg-surface-panel border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
                 <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
                 <span>
                   <span className="font-medium">Fix: </span>
@@ -114,7 +114,7 @@ export const MonetizationRiskPanel: React.FC<{ analysis: MonetizationRiskAnalysi
         </div>
       ) : (
         <div className="px-6 pb-5">
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
+          <div className="flex items-start gap-2.5 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
             <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
             No monetization risk rules fired on the inputs supplied. Read the &ldquo;not
             evaluated&rdquo; list below before treating this as clear — several categories are not
@@ -125,13 +125,13 @@ export const MonetizationRiskPanel: React.FC<{ analysis: MonetizationRiskAnalysi
 
       {m.inconclusive.length > 0 && (
         <div className="px-6 pb-5 space-y-2">
-          <h4 className="text-[12px] font-semibold text-ink-500">
+          <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">
             Not evaluated ({m.inconclusive.length})
           </h4>
           {m.inconclusive.map((item, i) => (
             <div
               key={i}
-              className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-600 leading-relaxed"
+              className="flex items-start gap-2.5 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] text-ink-600 leading-relaxed"
             >
               <Minus className="w-4 h-4 text-ink-400 shrink-0 mt-0.5" />
               {item}
@@ -141,7 +141,7 @@ export const MonetizationRiskPanel: React.FC<{ analysis: MonetizationRiskAnalysi
       )}
 
       <div className="px-6 py-4 border-t border-ink-200 bg-surface-canvas">
-        <h4 className="text-[11px] font-semibold text-ink-500 uppercase tracking-wide mb-2">
+        <h4 className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] mb-2">
           Limitations
         </h4>
         <ul className="space-y-1.5">

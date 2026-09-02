@@ -21,8 +21,10 @@ if (!secret) {
   process.exit(1);
 }
 
-const email = process.argv[2] || 'qa2.freebuff.tester@gmail.com';
-const password = process.argv[3] || 'FreebuffQA#2026x!';
+const email = process.argv[2] ?? process.env.QA_EMAIL;
+if (!email) { console.error('Pass the email as argv[2] or set QA_EMAIL.'); process.exit(1); }
+const password = process.argv[3] ?? process.env.QA_PASSWORD;
+if (!password) { console.error('Pass the password as argv[3] or set QA_PASSWORD.'); process.exit(1); }
 
 async function main() {
   const res = await fetch('https://api.clerk.com/v1/users', {

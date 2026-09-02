@@ -19,16 +19,22 @@
 import { NextResponse } from 'next/server';
 import { verifyWebhookSignature, LemonEvent } from '@/lib/billing/lemonsqueezy';
 import { resolvePlan, asPlan, parseDate } from '@/lib/billing/plan-resolution';
+import { isUpgrade } from '@/lib/plans';
 import { prisma } from '@/lib/db';
-import { setUserPlan, resetQuota, PLAN_LIMITS, Plan } from '@/lib/session';
+import { setUserPlan, resetQuota, downgradeToFree, PLAN_LIMITS, Plan } from '@/lib/session';
 import { sendPaymentFailed, sendPlanActivated } from '@/lib/email';
 import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** Ranking used only to decide whether a mid-cycle change deserves a fresh allowance. */
-const PLAN_RANK: Record<Plan, number> = { free: 0, starter: 1, pro: 2, agency: 3 };
+// Upgrade vs. downgrade is decided by `isUpgrade` from the plan catalogue —
+// the one ladder the whole app shares. This route used to carry its own
+// `{ free: 0, starter: 1, pro: 2, agency: 3 }` ranking, which is the id order
+// rather than the price order: it read the cheaper Pro tier ($19) as an upgrade
+// over the pricier Creator tier ($49) and reset the allowance on a mid-cycle
+// DOWNGRADE, handing out free reviews, while a real upgrade the other way got
+// no fresh allowance at all.
 
 /** Dedup rows are only useful for as long as Lemon Squeezy might retry. */
 const DEDUP_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -78,9 +84,40 @@ async function findOrCreateUser(clerkId: string | undefined, email: string | und
   // No signed user id (e.g. the buyer used a Lemon Squeezy-hosted link rather
   // than our checkout route). Match on the paying email instead. We never create
   // an account from an email alone — there would be no Clerk identity to attach.
+  // The match is case-insensitive because the Clerk-sourced row and the
+  // LS-captured billing email can differ purely in casing ("John@X.com" vs
+  // "john@x.com") — a case-sensitive miss locked a paying customer out of
+  // their entitlement. Clerk emails are unique per instance, so ONE matching
+  // row is the healthy state and is attached deterministically. When several
+  // rows genuinely share the address we refuse to guess: "attach to the
+  // newest" silently granted the paid tier to whichever account most recently
+  // claimed the address — an attacker registering the victim's email would
+  // sit as the newest row and receive the entitlement instead of the buyer.
+  // The callers ACK with a 500 so LS retries, and an operator can reconcile.
   if (email) {
-    const existing = await prisma.user.findFirst({ where: { email } });
-    if (existing) return existing;
+    // `findFirst` with take:1, not findMany: the insensitive match seq-scans
+    // (no functional index on lower(email)), and loading every matching row
+    // to then use only the newest wastes the scan's whole payload.
+    const newest = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!newest) return null;
+    // Exactly one row is the healthy state — attach. More than one means the
+    // address is claimed by several accounts (see the header comment): refuse
+    // to pick one silently, because "newest wins" is exactly the ordering an
+    // attacker registering the victim's address wins by. Returning null makes
+    // the callers log + ACK-fail so LS retries and an operator reconciles.
+    const duplicates = await prisma.user.count({
+      where: { email: { equals: email, mode: 'insensitive' } },
+    });
+    if (duplicates > 1) {
+      console.error(
+        `[billing webhook] email ${email} matches ${duplicates} accounts — refusing to attach the entitlement automatically.`,
+      );
+      return null;
+    }
+    return newest;
   }
   return null;
 }
@@ -313,12 +350,21 @@ export async function POST(req: Request) {
           await setUserPlan(sub.userId, nextPlan, periodEnd);
           // Upgrading mid-cycle should immediately grant the larger allowance.
           // Downgrading must NOT reset — that would hand out extra reviews.
-          if (PLAN_RANK[nextPlan] > PLAN_RANK[userPlan]) {
+          if (isUpgrade(userPlan, nextPlan)) {
             await resetQuota(sub.userId);
           }
         } else {
           // Same tier, new period boundary (e.g. plan renewal date moved).
           await setUserPlan(sub.userId, nextPlan, periodEnd);
+          // When the boundary genuinely advanced, a renewal landed through
+          // subscription_updated — possibly without its payment_success
+          // sibling, which is otherwise the only place the monthly counter
+          // resets. Without this, the customer pays for the new period and
+          // still 402s on every analyze until the next payment_success (up to
+          // a month out).
+          if (periodEnd.getTime() > sub.user.periodEnd.getTime()) {
+            await resetQuota(sub.userId);
+          }
         }
         appliedPlan = nextPlan;
         break;
@@ -360,6 +406,23 @@ export async function POST(req: Request) {
         }
 
         const paidPlan = resolvedPlan ?? asPlan(sub.plan) ?? 'free';
+        if (!resolvedPlan && paidPlan === 'free') {
+          // A renewal on a variant no operator ever mapped (see the created
+          // branch's handling of the same case). Writing the free "plan" here
+          // would zero the user's free-tier counter mid-window and stamp paid
+          // period fields onto a free row — quota state mutated on exactly the
+          // ambiguity the header says the customer must not pay for. Record
+          // the payment on the subscription row and leave the user row alone.
+          console.error(
+            `[billing webhook] payment_success on unmapped variant for ${lsSubscriptionId}; ` +
+              `leaving user ${sub.userId}'s quota and plan untouched.`,
+          );
+          await prisma.subscription.update({
+            where: { lsSubscriptionId },
+            data: { status: 'active', currentPeriodStart: periodStart, currentPeriodEnd: periodEnd },
+          });
+          break;
+        }
         await prisma.subscription.update({
           where: { lsSubscriptionId },
           data: {
@@ -384,7 +447,7 @@ export async function POST(req: Request) {
         // record the intent and leave the plan intact; `subscription_expired`
         // (or the reconciliation sweep) performs the actual downgrade.
         if (!lsSubscriptionId) break;
-        await prisma.subscription.updateMany({
+        const cancelled = await prisma.subscription.updateMany({
           where: { lsSubscriptionId },
           data: {
             status: 'cancelled',
@@ -393,6 +456,21 @@ export async function POST(req: Request) {
             currentPeriodEnd: parseDate(attrs.ends_at) ?? periodEnd,
           },
         });
+        // Zero rows means the `subscription_created` event was never persisted
+        // (LS exhausted its retries on it, or it is still queued). ACKing here
+        // would make Lemon Squeezy drop this event for good; when `created`
+        // finally lands its upsert writes status active with no cancelledAt —
+        // a subscription the customer cancelled recorded as live. A 500 makes
+        // LS redeliver once the row exists, which is the correct outcome.
+        if (cancelled.count === 0) {
+          console.error(
+            `[billing webhook] subscription_cancelled for unknown row ${lsSubscriptionId} — returning 500 so LS retries after the created event lands.`,
+          );
+          return NextResponse.json(
+            { error: 'Subscription row not yet present; retry later.' },
+            { status: 500 },
+          );
+        }
         break;
       }
 
@@ -420,9 +498,16 @@ export async function POST(req: Request) {
           );
           break;
         }
-        await setUserPlan(sub.userId, 'free');
-        // Fresh counter so the free tier's own allowance starts clean.
-        await resetQuota(sub.userId);
+        // The downgradeToFree write re-anchors periodStart (so the free tier's
+        // 30-day window starts from the downgrade, not from whenever the paid
+        // period began) and zeroes the counter — the exact mirror of the
+        // cron-reconciliation path, and the state setUserPlan+resetQuota used
+        // to leave behind: a stale periodStart that could make the free window
+        // read as already-elapsed plus a dangling paid periodEnd on a free row.
+        await downgradeToFree(
+          sub.userId,
+          `subscription_expired webhook for ${lsSubscriptionId}`,
+        );
         appliedPlan = 'free';
         break;
       }

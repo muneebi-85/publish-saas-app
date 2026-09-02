@@ -59,6 +59,23 @@ const SAFE_REPLACEMENTS: [RegExp, string][] = [
 ];
 
 /**
+ * Neutralize the prompt-fence delimiter inside user-supplied text.
+ *
+ * Every engine wraps creator text in `"""…"""` fences so the model can tell
+ * content from instructions. A script that itself contains `"""` closes the
+ * fence early, and everything after it reads as instructions to the model —
+ * the classic injection primitive (score manipulation is the reachable damage;
+ * schema normalization and the scrub pass bound the rest).
+ *
+ * Replacing each `"` with `″` (double prime) keeps the text visually intact
+ * while making the fence sequence impossible to reproduce from inside the
+ * payload. Applied at the single choke point every engine already imports.
+ */
+export function fenceSafe(text: string): string {
+  return text.replace(/"/g, '″');
+}
+
+/**
  * Coerce an unknown LLM output value into displayable text.
  *
  * Models occasionally violate a `string[]` schema and return objects (e.g.
@@ -123,8 +140,14 @@ export function scrubForbidden(text: unknown): { clean: string; replaced: boolea
  * Nudge borderline scores toward the conservative side.
  * A predicted 87 becomes 84, an 82 becomes 79 — enough to flip risk-band edges
  * without materially changing the user experience for clearly-safe content.
+ *
+ * Non-finite input (a model returned "85%" as a string, null, or an object)
+ * maps to the neutral 50, never NaN: NaN flows through every comparison below
+ * and ends up serialized as `null` in the stored report, silently breaking the
+ * `number` contract on every downstream consumer.
  */
 export function conservativeScore(raw: number): number {
+  if (!Number.isFinite(raw)) return 50;
   const clamped = Math.max(0, Math.min(100, Math.round(raw)));
   if (clamped >= 90) return clamped;                // clearly safe — keep
   if (clamped >= 80) return Math.max(80, clamped - 3);

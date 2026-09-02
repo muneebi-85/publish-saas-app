@@ -74,3 +74,22 @@ ml/data-smoke/
 ml/**/__pycache__/
 .tmp-*.json
 .fs-probe.txt
+
+# QA harness session artifacts. These are live credentials (Clerk sign-in
+# tokens, session JWTs, cookie jars) and a full Chrome profile with its
+# Login Data / Cookies databases — never commit them. The harness scripts
+# under scripts-qa/ ARE tracked; only what they emit is not.
+scripts-qa/.chrome-profile/
+scripts-qa/*.jwt
+scripts-qa/clerk-cookies.json
+scripts-qa/.debug-out.txt
+scripts-qa/shots/
+scripts-qa/.cdp-tab.json
+scripts-qa/audit-*-results.json
+
+# Private strategy research — product-internal, not for the public repo.
+research-2026/
+.dev-audit.log
+.dev.log
+
+.vercel

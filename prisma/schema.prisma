@@ -46,8 +46,8 @@ model User {
   /// Unique referral code for the "share and earn" program. Generated
   /// automatically the first time the user visits the referral section.
   referralCode      String?   @unique
-  /// Free audits earned through the referral or challenge program. Consumed
-  /// before the plan's monthly allowance, so bonus credits extend the wall.
+  /// Free audits earned through the referral or challenge program. Spent once
+  /// the plan's monthly allowance is full, so bonus credits extend the wall.
   referralCredits   Int       @default(0)
   /// Opt-in for the public leaderboard ("best scores this week"). Off by
   /// default — nothing about a creator's scores is public unless they flip
@@ -102,6 +102,12 @@ model AnalysisReport {
   monetizationScore Int
   overallScore      Int
   report            Json
+  /// When the creator published the public score card. Null until they click
+  /// "Share score" — the opt-in every public surface (share page, share API,
+  /// badge, OG image, community board, challenge accepts) gates on. Without
+  /// it, every report was world-readable at /share/<id> by default, which
+  /// contradicted the copy that called sharing "opt-in".
+  sharedAt          DateTime?
   createdAt         DateTime @default(now())
 
   @@index([userId, createdAt])
@@ -129,6 +135,12 @@ model AnalysisJob {
   reportId       String?
   error          String?
   quotaCharged   Boolean   @default(false)
+  /// True when the debit that paid for this run consumed a referral/challenge
+  /// credit instead of the plan's monthly allowance. The terminal-failure
+  /// refund must restore the pool it was paid from — restoring the allowance
+  /// instead would mint free monthly capacity, and vice versa would destroy a
+  /// credit the user earned.
+  paidWithCredits Boolean  @default(false)
   attempts       Int       @default(0)
   startedAt      DateTime?
   finishedAt     DateTime?
@@ -201,17 +213,22 @@ model Channel {
   name        String
   url         String?
   avatarUrl   String?
-  subscribers Int      @default(0)
-  videosCount Int      @default(0)
-  viewsCount  Int      @default(0)
+  /// BigInt, not Int: lifetime view counts of large channels (100B+) overflow
+  /// a 32-bit INT4. Reads convert to Number at the boundary — exact for every
+  /// realistic count (well within 2^53).
+  subscribers BigInt   @default(0)
+  videosCount BigInt   @default(0)
+  viewsCount  BigInt   @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   /// Scoped to the owner, not global. A global unique on (platform, channelId)
   /// meant the second user to connect the same channel hit a P2002 conflict
-  /// instead of the intended 403 — and made the ownership check unenforceable,
-  /// since the row could only ever belong to whoever connected first. Two
-  /// creators sharing a channel (agency + client) is normal and must work.
+  /// instead of the intended 409 — and made the ownership check unenforceable,
+  /// since the row could only ever belong to whoever connected first. The
+  /// scoped index lets the route decide: a channel already claimed by another
+  /// account is refused there (409), and if sharing an agency channel is ever
+  /// product-sanctioned, the rule change lives in the route, not the index.
   @@unique([userId, platform, channelId])
   @@index([userId])
   /// Backs the cross-owner "is this channel already connected?" lookup in
@@ -234,10 +251,15 @@ model Referral {
   /// The account created from that link (internal DB id).
   refereeId  String   @unique
   referee    User     @relation("referee", fields: [refereeId], references: [id], onDelete: Cascade)
-  /// Both sides are credited once per referral. Set false until the credit
-  /// transaction commits, so a retried attach cannot double-pay.
-  granted    Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  /// Both sides earn one free audit per referral. The REFEREE's credit is
+  /// granted at attach (`granted` guards a retried attach from double-paying).
+  /// The REFERRER's credit is paid only once the referee completes their
+  /// first review (`referrerCreditedAt`, stamped by the review worker):
+  /// paying it at attach let a farmer mint unlimited audits from throwaway
+  /// signups — now every farmed credit costs a real pipeline run.
+  granted            Boolean   @default(false)
+  referrerCreditedAt DateTime?
+  createdAt          DateTime  @default(now())
 
   @@index([referrerId])
   @@index([code])
@@ -262,6 +284,11 @@ model Challenge {
   acceptedAt        DateTime?
   createdAt         DateTime  @default(now())
 
+  /// One accepter can only ever close a given challenge once. The unique
+  /// (reportId, acceptedByUserId) pair is the real concurrency guard: the
+  /// route's findFirst pre-check is advisory only, and without this constraint
+  /// two concurrent accepts both pass it and both pay the challenger a credit.
+  @@unique([reportId, acceptedByUserId])
   @@index([challengerId])
   @@index([reportId])
 }

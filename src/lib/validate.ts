@@ -35,7 +35,18 @@ export function enumOf<T extends string>(
 export function integer(input: unknown, {
   min = 0, max = Number.MAX_SAFE_INTEGER, field = 'value',
 }: { min?: number; max?: number; field?: string } = {}): ValidateResult<number> {
-  const n = typeof input === 'number' ? input : Number(input);
+  // Only genuine JSON numbers and their string spellings pass. The previous
+  // `Number(input)` coercion let `null`, `''`, `true`, `[]` and `['5']` all
+  // validate as 0/1/5 — a missing field silently becoming `0` is exactly the
+  // wrong direction at the boundary this module exists to guard.
+  let n: number;
+  if (typeof input === 'number') {
+    n = input;
+  } else if (typeof input === 'string' && input.trim() !== '' && /^-?\d+$/.test(input.trim())) {
+    n = Number(input);
+  } else {
+    return { ok: false, error: `${field} must be an integer` };
+  }
   if (!Number.isFinite(n) || !Number.isInteger(n)) {
     return { ok: false, error: `${field} must be an integer` };
   }
@@ -48,8 +59,22 @@ export function boolean(input: unknown, field = 'value'): ValidateResult<boolean
   return { ok: false, error: `${field} must be a boolean` };
 }
 
-/** Hosts that resolve to the local network. Blocked to prevent SSRF. */
-const PRIVATE_HOST = /^(localhost|127\.|0\.|10\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?|.*\.local|.*\.internal)/i;
+/**
+ * Hosts that resolve to the local network. Blocked to prevent SSRF.
+ *
+ * The IPv4 ranges are matched literally. Every bracketed IPv6 literal is
+ * blocked wholesale: WHATWG URLs bracket IPv6 hostnames, and covering
+ * mapped-loopback (`[::ffff:127.0.0.1]`), link-local (`fe80::`), and
+ * unique-local (`fd00::`) one pattern at a time has already missed forms — a
+ * legitimate upload/thumbnail URL is always a hostname (S3/R2/CDN), never a
+ * bare IPv6 literal, so denying the whole family is the safe default.
+ *
+ * What this CANNOT catch: a public hostname whose DNS rebinds to a private
+ * address at fetch time. Resolution-based blocking is out of reach for a
+ * lexical guard; today these URLs are fetched by NVIDIA/Deepgram, not by us,
+ * so the guard is defense-in-depth for the day that changes.
+ */
+const PRIVATE_HOST = /^(localhost|127\.|0\.|10\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[|.*\.local|.*\.internal)/i;
 
 /**
  * Public https(s) URL. Rejects non-HTTP schemes (javascript:, data:, file:) and
@@ -126,7 +151,14 @@ export async function jsonBody(
   } catch {
     return { ok: false, error: 'Could not read request body' };
   }
-  if (raw.length > maxBytes) return { ok: false, error: 'Request body is too large' };
+  // Measure BYTES, not UTF-16 code units: `raw.length` under-counts astral
+  // text (emoji, CJK extensions) by ~half and by up to 4× for the 4-byte
+  // sequences — a "200 KB cap" silently admitting up to ~800 KB. The
+  // content-length pre-check above already covers honest clients; this is the
+  // authoritative bound for everything else, including chunked requests.
+  if (Buffer.byteLength(raw, 'utf8') > maxBytes) {
+    return { ok: false, error: 'Request body is too large' };
+  }
   if (!raw.trim()) return { ok: true, value: {} };
   try {
     const parsed = JSON.parse(raw);

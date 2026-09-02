@@ -35,18 +35,25 @@ import ConnectedAccountsPanel from '@/components/channels/ConnectedAccountsPanel
  */
 
 const PLATFORMS = [
-  { key: 'YOUTUBE', name: 'YouTube', benefit: 'Track watch-time signals and monetization health on every upload.', icon: <Youtube className="w-6 h-6" strokeWidth={2} />, chip: 'bg-crimson-50 text-crimson-700' },
-  { key: 'TIKTOK', name: 'TikTok', benefit: 'Spot trending hooks and flag risks before your video goes live.', icon: <Video className="w-5 h-5" strokeWidth={2} />, chip: 'bg-white/[0.06] text-white' },
+  { key: 'YOUTUBE', name: 'YouTube', benefit: 'Track watch-time signals and monetization health on every upload.', icon: <Youtube className="w-5 h-5" strokeWidth={2} />, chip: 'bg-crimson-50 text-crimson-700' },
+  { key: 'TIKTOK', name: 'TikTok', benefit: 'Spot trending hooks and flag risks before your video goes live.', icon: <Video className="w-5 h-5" strokeWidth={2} />, chip: 'bg-ink-100 text-ink-900' },
 ] as const;
 
 const fmt = (n: number) => (n > 0 ? n.toLocaleString() : null);
 
 export default function ChannelsClient({ initialChannels }: { initialChannels: ChannelRow[] }) {
   const [channels, setChannels] = useState<ChannelRow[]>(initialChannels);
+  const [links, setLinks] = useState<Record<string, string>>({});
   const { pending, error, notice, connect, disconnect } = useConnectChannel(
     '/connected-channels',
     (channel) => setChannels((prev) => [channel, ...prev.filter((c) => c.id !== channel.id)]),
   );
+
+  function onConnect(platform: string) {
+    const url = (links[platform] ?? '').trim();
+    if (!url) return;
+    void connect(platform, { url, allowOAuth: false });
+  }
 
   function onDisconnect(channel: ChannelRow) {
     if (!confirm('Disconnect this channel? Past reports are kept.')) return;
@@ -65,12 +72,12 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
         showUtility
       />
 
-      <Card padded className="mb-6 flex items-start gap-3 bg-brand-50 border-brand-100">
-        <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-brand-100 flex items-center justify-center shrink-0">
-          <Lock className="w-4 h-4 text-brand-600" />
+      <Card padded className="mb-6 flex items-start gap-3 bg-brand-50 border-brand-200">
+        <div className="w-8 h-8 rounded-lg bg-surface-panel text-brand-600 ring-1 ring-inset ring-brand-100 flex items-center justify-center shrink-0">
+          <Lock className="w-4 h-4" />
         </div>
         <div>
-          <p className="text-[13.5px] font-semibold text-ink-900">Read-only and secure</p>
+          <p className="text-[13px] font-semibold text-ink-900">Read-only and secure</p>
           <p className="text-[13px] text-ink-600 mt-0.5 leading-relaxed max-w-2xl">
             We request read-only access to your public analytics, and numbers come straight from the
             platform API. Publish never posts, edits, or deletes on your behalf — disconnect anytime.
@@ -79,19 +86,19 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
       </Card>
 
       <div className="flex items-center gap-2 mb-4">
-        <span className="text-[12px] font-semibold text-brand-600 inline-flex items-center gap-1.5">
+        <span className="text-[12px] font-medium text-ink-600 inline-flex items-center gap-1.5">
           <Plug className="w-3.5 h-3.5" />
           {connected} of {PLATFORMS.length} connected
         </span>
       </div>
 
       {error && (
-        <p role="alert" className="mb-4 text-[12.5px] font-medium text-crimson-700">
+        <p role="alert" className="mb-4 text-[12px] font-medium text-crimson-700">
           {error}
         </p>
       )}
       {notice && (
-        <p className="mb-4 text-[12.5px] font-medium text-grass-700 inline-flex items-center gap-1.5">
+        <p className="mb-4 text-[12px] font-medium text-grass-700 inline-flex items-center gap-1.5">
           <CheckCircle2 className="w-4 h-4" />
           {notice}
         </p>
@@ -109,7 +116,7 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
                     {p.icon}
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-display text-[15px] font-bold tracking-tight text-ink-900">{p.name}</h3>
+                    <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">{p.name}</h3>
                     {channel ? (
                       <Badge variant="success" dot className="mt-1">Connected</Badge>
                     ) : (
@@ -121,7 +128,7 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
 
               <p className="text-[13px] text-ink-600 mt-4 leading-relaxed flex-1">{p.benefit}</p>
 
-              <div className="mt-5 pt-4 border-t border-ink-100">
+              <div className="mt-5 pt-4 border-t border-ink-200">
                 {channel ? (
                   <div className="space-y-3">
                     <div className="min-w-0">
@@ -137,8 +144,15 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
                         {subscribers ? `${subscribers} subscribers` : 'Subscribers not measured'}
                         {channel.videosCount > 0 ? ` · ${fmt(channel.videosCount)} videos` : ''}
                       </div>
-                      <div className="text-[11px] text-ink-400 mt-1">
-                        Synced {new Date(channel.updatedAt).toLocaleString()}
+                      <div className="text-[11px] text-ink-500 mt-1">
+                        {/* Fixed locale, UTC, and no time component: the bare
+                            toLocaleString() rendered the server's locale/timezone
+                            during SSR and the browser's on hydration — a React
+                            hydration mismatch. Without an explicit timeZone the
+                            date-only form still diverges near UTC midnight. */}
+                        Synced {new Date(channel.updatedAt).toLocaleDateString('en-US', {
+                          year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
+                        })}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -162,18 +176,35 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
                   </div>
                 ) : (
                   <div className="space-y-2.5">
-                    <Button
-                      variant="secondary" size="sm" full
-                      isLoading={pending === p.key}
-                      onClick={() => void connect(p.key)}
-                      aria-label={`Connect ${p.name}`}
-                    >
-                      {pending === p.key ? 'Connecting…' : 'Connect'}
-                    </Button>
-                    <p className="text-[11.5px] text-ink-500 leading-relaxed">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={links[p.key] ?? ''}
+                        onChange={(e) => setLinks((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            onConnect(p.key);
+                          }
+                        }}
+                        placeholder={p.key === 'YOUTUBE' ? 'youtube.com/@yourname' : 'tiktok.com/@yourname'}
+                        aria-label={`${p.name} channel link`}
+                        className="flex-1 min-w-0 h-8 px-3 rounded-lg bg-surface-panel border border-ink-300 text-[13px] text-ink-900 placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 outline-none transition-colors"
+                      />
+                      <Button
+                        variant="secondary" size="sm"
+                        isLoading={pending === p.key}
+                        disabled={!(links[p.key] ?? '').trim()}
+                        onClick={() => onConnect(p.key)}
+                        aria-label={`Connect ${p.name}`}
+                      >
+                        {pending === p.key ? 'Connecting…' : 'Connect'}
+                      </Button>
+                    </div>
+                    <p className="text-[12px] text-ink-500 leading-relaxed">
                       {pending === p.key
-                        ? 'Authorizing with the platform — you may be asked to sign in.'
-                        : `You'll be asked to authorize your ${p.key === 'YOUTUBE' ? 'Google' : 'TikTok'} account.`}
+                        ? 'Reading the channel from the platform…'
+                        : `Paste your ${p.name} channel link — we read its public name and counts straight from the platform.`}
                     </p>
                   </div>
                 )}
@@ -190,7 +221,7 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
       />
 
       <div className="mt-6 flex items-center gap-2 text-[12px] text-ink-500">
-        <Lock className="w-3.5 h-3.5 text-brand-600" />
+        <Lock className="w-3.5 h-3.5 text-ink-400" />
         <span>More platforms are added as their approval scopes clear. You can also manage connections from Settings.</span>
       </div>
     </div>

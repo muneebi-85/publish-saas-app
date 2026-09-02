@@ -51,11 +51,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 });
   }
 
-  const updated = await prisma.user.update({
-    where: { id: authCtx.dbUserId },
-    data,
-    select: { productEmails: true, leaderboardOptIn: true },
-  });
+  // The row can vanish mid-request (account deletion racing this call), which
+  // Prisma surfaces as P2025. Answer it as a 503 retry, not a raw framework
+  // 500 — the same treatment the neighbouring me/* routes give their writes.
+  let updated: { productEmails: boolean; leaderboardOptIn: boolean };
+  try {
+    updated = await prisma.user.update({
+      where: { id: authCtx.dbUserId },
+      data,
+      select: { productEmails: true, leaderboardOptIn: true },
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Account is no longer available. Refresh and try again.' },
+        { status: 409 },
+      );
+    }
+    console.error('[POST /api/me/preferences] write failed:', err);
+    return NextResponse.json({ error: 'Could not save your preferences.' }, { status: 503 });
+  }
 
   return NextResponse.json(
     { success: true, productEmails: updated.productEmails, leaderboardOptIn: updated.leaderboardOptIn },

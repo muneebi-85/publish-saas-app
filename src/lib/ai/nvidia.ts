@@ -47,11 +47,6 @@ interface ChatCompletionResponse {
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
-interface EmbeddingResponse {
-  data: { embedding: number[]; index: number }[];
-  usage?: { prompt_tokens: number; total_tokens: number };
-}
-
 // ─── Chat completion ───────────────────────────────────
 /** Status codes worth retrying: rate limits and transient upstream faults. */
 const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
@@ -168,7 +163,15 @@ export async function chatJSON<T = unknown>(
   return repair ? safeParse<T>(repair) : null;
 }
 
-function safeParse<T>(raw: string): T | null {
+/**
+ * Parse a JSON object out of model text: strips code fences, then rescues the
+ * first `{…}` block if the whole string is not valid JSON.
+ *
+ * Exported because engines that call `chat` (not `chatJSON`) still need to
+ * parse vision responses — three engines had three private copies of this,
+ * drifting apart. One copy, one fix.
+ */
+export function extractJSON<T>(raw: string): T | null {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?/i, '')
@@ -186,6 +189,10 @@ function safeParse<T>(raw: string): T | null {
       return null;
     }
   }
+}
+
+function safeParse<T>(raw: string): T | null {
+  return extractJSON<T>(raw);
 }
 
 // ─── Vision helper: pass an image URL or base64 data URI ─
@@ -206,37 +213,4 @@ export async function analyzeImage(
     ],
     { ...opts, model: 'vision', maxTokens: opts.maxTokens ?? 800 },
   );
-}
-
-// ─── Embeddings ────────────────────────────────────────
-export async function embed(texts: string[]): Promise<number[][] | null> {
-  if (!hasLiveModel()) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
-  try {
-    const res = await fetch(`${env.NVIDIA_BASE_URL}/embeddings`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: NIM_MODELS.embed,
-        input: texts,
-        input_type: 'query',
-      }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      console.error(`[NIM] embeddings ${res.status}`);
-      return null;
-    }
-    const data = (await res.json()) as EmbeddingResponse;
-    return data.data.map((d) => d.embedding);
-  } catch (err) {
-    console.error('[NIM] embeddings failed:', (err as Error).message);
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
 }

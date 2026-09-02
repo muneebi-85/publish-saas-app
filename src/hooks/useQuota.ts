@@ -19,6 +19,8 @@ export interface QuotaState {
   plan: Plan;
   auditsUsed: number;
   auditsLimit: number;
+  /** Bonus reviews from referrals/challenges; extend the wall past the limit. */
+  referralCredits: number;
   canAnalyze: boolean;
   percentUsed: number;
   isNearLimit: boolean;
@@ -30,6 +32,7 @@ const INITIAL: QuotaState = {
   plan: 'free',
   auditsUsed: 0,
   auditsLimit: PLAN_LIMITS.free,
+  referralCredits: 0,
   canAnalyze: true,
   percentUsed: 0,
   isNearLimit: false,
@@ -67,6 +70,9 @@ export function useQuota(): QuotaState & { refresh: () => void } {
         plan,
         auditsUsed,
         auditsLimit,
+        referralCredits: Number.isFinite(Number(data.referralCredits))
+          ? Math.max(0, Math.floor(Number(data.referralCredits)))
+          : 0,
         canAnalyze: Boolean(data.canAnalyze),
         percentUsed:
           typeof data.percentUsed === 'number'
@@ -77,9 +83,15 @@ export function useQuota(): QuotaState & { refresh: () => void } {
         authenticated: Boolean(data.authenticated),
       });
     } catch {
-      setState((s) => ({ ...s, loading: false }));
+      // A failed fetch keeps `authenticated` at its last-known value rather
+      // than the false initial state: a signed-in user whose quota read
+      // transiently failed is still signed in, and treating them as anonymous
+      // (e.g. the pricing page's upgrade click) would bounce them to sign-up
+      // mid-upgrade. The signed-out branch below is the only place that may
+      // set it false deliberately.
+      setState((s) => ({ ...s, loading: false, authenticated: isSignedIn ? true : s.authenticated }));
     }
-  }, []);
+  }, [isSignedIn]);
 
   useEffect(() => {
     if (!isSignedIn) {

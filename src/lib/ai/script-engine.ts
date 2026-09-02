@@ -8,7 +8,7 @@
  */
 
 import { chatJSON } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden } from './guardrails';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, fenceSafe } from './guardrails';
 import { ScriptIssue } from '../types';
 
 type IssueSeverity = 'critical' | 'warning' | 'info';
@@ -179,7 +179,7 @@ export async function analyzeScript(scriptText: string): Promise<ScriptAnalysisR
   const raw = await chatJSON<RawScriptResponse>(
     [
       { role: 'system', content: SYSTEM },
-      { role: 'user', content: `Script:\n\n"""${trimmed.slice(0, 8000)}"""` },
+      { role: 'user', content: `Script:\n\n"""${fenceSafe(trimmed.slice(0, 8000))}"""` },
     ],
     { model: 'reasoning', temperature: 0.3, maxTokens: 1400 },
   );
@@ -190,25 +190,70 @@ export async function analyzeScript(scriptText: string): Promise<ScriptAnalysisR
     .slice(0, 6)
     .map((it, i) => ({
       id: `s-${i + 1}`,
-      type: it.type,
-      severity: it.severity,
-      reviewSeverity: it.reviewSeverity,
+      type: normalizeIssueType(it.type),
+      severity: normalizeIssueSeverity(it.severity),
+      reviewSeverity: normalizeReviewSeverity(it.reviewSeverity),
       text: scrubForbidden(it.text ?? '').clean,
       suggestion: scrubForbidden(it.suggestion ?? '').clean,
       specific_fix: it.specific_fix ? scrubForbidden(it.specific_fix).clean : undefined,
-      platform_specific: it.platform_specific,
-      viralityImpact: it.viralityImpact,
-      monetizationImpact: it.monetizationImpact,
-      line: Math.max(1, Math.round(it.line ?? 1)),
+      platform_specific: normalizePlatforms(it.platform_specific),
+      viralityImpact: normalizeViralityImpact(it.viralityImpact),
+      monetizationImpact: normalizeMonetizationImpact(it.monetizationImpact),
+      line: Math.max(1, Math.round(Number(it.line) || 1)),
       reasoning: it.reasoning ? scrubForbidden(it.reasoning).clean : undefined,
       estimatedMetricImpact: it.estimated_metric_impact ? scrubForbidden(it.estimated_metric_impact).clean : undefined,
     }));
 
   return {
-    gptProbability: Math.max(0, Math.min(100, Math.round(raw.gptProbability ?? 0))),
+    gptProbability: Math.max(0, Math.min(100, Math.round(Number(raw.gptProbability) || 0))),
     storytellingArc: scrubForbidden(raw.storytellingArc ?? 'Structure detected').clean,
     issues,
   };
+}
+
+// ─── Enum normalization for LLM output ─────────────────
+// `ScriptIssue` declares string-literal unions. A model that returns
+// "critical" for severity or "Demonetized" for monetizationImpact would store
+// rows violating that contract — and the strict `===` comparisons in the
+// orchestrator (blockingCount/highCount) would silently miss them, deflating
+// the safety-critical counts. Unknown values default to the conservative
+// option, mirroring normalizeRisk in the other engines.
+function normalizeIssueType(v: unknown): ScriptIssue['type'] {
+  return v === 'gpt-phrase' || v === 'repetition' || v === 'weak-hook' || v === 'weak-cta'
+    ? v
+    : 'gpt-phrase';
+}
+
+function normalizeIssueSeverity(v: unknown): ScriptIssue['severity'] {
+  return v === 'high' || v === 'medium' || v === 'low' ? v : 'medium';
+}
+
+function normalizeReviewSeverity(v: unknown): ScriptIssue['reviewSeverity'] {
+  if (v === 'critical' || v === 'warning' || v === 'info') return v;
+  // An unparseable review severity is treated as the more serious band, never
+  // dropped: a lost "critical" is the failure this guard exists to prevent.
+  return 'warning';
+}
+
+type PlatformNameLiterals = NonNullable<ScriptIssue['platform_specific']>[number];
+
+function normalizePlatforms(v: unknown): ScriptIssue['platform_specific'] {
+  const KNOWN: readonly PlatformNameLiterals[] = ['YouTube', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn'];
+  if (!Array.isArray(v)) return undefined;
+  const kept = KNOWN.filter((p) => (v as unknown[]).includes(p));
+  return kept.length ? kept : undefined;
+}
+
+function normalizeViralityImpact(v: unknown): ScriptIssue['viralityImpact'] {
+  return v === 'boost' || v === 'neutral' || v === 'suppress' ? v : 'neutral';
+}
+
+function normalizeMonetizationImpact(v: unknown): ScriptIssue['monetizationImpact'] {
+  const lower = typeof v === 'string' ? v.toLowerCase() : '';
+  if (lower === 'demonetized' || lower === 'demoted' || lower === 'none') return lower;
+  // Unknown impact read as "demoted": worse than the safe "none", not as bad
+  // as a full demonetization we cannot confirm.
+  return 'demoted';
 }
 
 // ─── Deterministic fallback ────────────────────────────

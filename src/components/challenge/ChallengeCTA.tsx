@@ -25,7 +25,7 @@ export function ChallengeCTA({ reportId }: { reportId: string }) {
 
   if (!isLoaded) {
     return (
-      <div className="h-11 rounded-xl bg-white/[0.06] border border-white/[0.1] animate-pulse" />
+      <div className="h-9 w-48 rounded-lg bg-ink-100 border border-ink-300 animate-pulse" />
     );
   }
 
@@ -34,7 +34,7 @@ export function ChallengeCTA({ reportId }: { reportId: string }) {
       <Link
         href={`/sign-in?redirect_url=${encodeURIComponent(challengeUrl)}`}
         onClick={handleClick}
-        className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/[0.14] bg-white/[0.04] px-5 text-[13.5px] font-bold text-white transition-colors hover:border-brand-600 hover:text-brand-600"
+        className="inline-flex h-9 items-center gap-2 rounded-lg border border-ink-300 bg-surface-panel px-3.5 text-[13px] font-medium text-ink-900 shadow-xs transition-colors hover:bg-ink-50 hover:border-ink-400"
       >
         <Swords className="w-4 h-4" /> I can beat this score
         <ArrowRight className="w-4 h-4" />
@@ -46,7 +46,7 @@ export function ChallengeCTA({ reportId }: { reportId: string }) {
     <Link
       href={challengeUrl}
       onClick={handleClick}
-      className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-600 px-5 text-[13.5px] font-bold text-[#060606] transition-colors hover:bg-brand-400"
+      className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand-600 px-3.5 text-[13px] font-medium text-on-brand shadow-xs transition-colors hover:bg-brand-700"
     >
       <Swords className="w-4 h-4" /> I can beat this score
       <ArrowRight className="w-4 h-4" />

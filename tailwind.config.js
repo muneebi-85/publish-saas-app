@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -12,69 +13,101 @@ module.exports = {
         // 900 = near-black primary text (#111), 600 = secondary (#666),
         // 200 = hairline borders (#ECECEC), 50 = canvas (#FAFAFA).
         ink: {
-          50:  'var(--ink-50)',
-          100: 'var(--ink-100)',
-          150: 'var(--ink-150)',
-          200: 'var(--ink-200)',
-          300: 'var(--ink-300)',
-          400: 'var(--ink-400)',
-          500: 'var(--ink-500)',
-          600: 'var(--ink-600)',
-          700: 'var(--ink-700)',
-          800: 'var(--ink-800)',
-          900: 'var(--ink-900)',
-          950: 'var(--ink-950)',
+          50:  'rgb(var(--ink-50) / <alpha-value>)',
+          100: 'rgb(var(--ink-100) / <alpha-value>)',
+          150: 'rgb(var(--ink-150) / <alpha-value>)',
+          200: 'rgb(var(--ink-200) / <alpha-value>)',
+          300: 'rgb(var(--ink-300) / <alpha-value>)',
+          400: 'rgb(var(--ink-400) / <alpha-value>)',
+          500: 'rgb(var(--ink-500) / <alpha-value>)',
+          600: 'rgb(var(--ink-600) / <alpha-value>)',
+          700: 'rgb(var(--ink-700) / <alpha-value>)',
+          800: 'rgb(var(--ink-800) / <alpha-value>)',
+          900: 'rgb(var(--ink-900) / <alpha-value>)',
+          950: 'rgb(var(--ink-950) / <alpha-value>)',
         },
         surface: {
-          canvas:  'var(--canvas)',
-          panel:   'var(--panel)',
-          raised:  'var(--surface)',
-          sunken:  'var(--sunken)',
-          muted:   'var(--muted)',
+          canvas:  'rgb(var(--canvas) / <alpha-value>)',
+          panel:   'rgb(var(--panel) / <alpha-value>)',
+          raised:  'rgb(var(--surface) / <alpha-value>)',
+          sunken:  'rgb(var(--sunken) / <alpha-value>)',
+          muted:   'rgb(var(--muted) / <alpha-value>)',
         },
-        // Semantic scales, split by ROLE for a dark canvas:
-        //   50/100 → translucent tint + hairline for inline callout panels
-        //   500/600 → saturated solid fills (dots, bars, danger buttons)
-        //   700/800/900 → light text that clears AA on #0D0D0D
-        // Pairing a -600 fill with -700 text is the intended combination.
+        // Semantic scales. Every step resolves to a CSS variable, so the
+        // sidebar's light/dark toggle re-maps the whole system at the token
+        // layer and no component ever needs a `dark:` variant.
+        //   50/100  → tint fill + hairline for inline callouts
+        //   200/300 → decorative (rings, dividers, chart grid)
+        //   400/500/600 → solid fills (bars, dots, buttons)
+        //   700/800/900 → text that clears AA sitting on the 50 tint
+        // Pairing a -50 fill with -700 text is the intended combination.
         brand: {
-          50:  'rgba(124,255,154,0.08)',
-          100: 'rgba(124,255,154,0.18)',
-          200: '#BBF7D0',
-          300: '#9CFFB0',
-          400: '#9CFFB0',
-          500: '#7CFF9A',
-          600: '#7CFF9A',
-          700: '#5FE07D',
-          800: '#9CFFB0',
-          900: '#BBF7D0',
+          50:  'rgb(var(--brand-50) / <alpha-value>)',
+          100: 'rgb(var(--brand-100) / <alpha-value>)',
+          200: 'rgb(var(--brand-200) / <alpha-value>)',
+          300: 'rgb(var(--brand-300) / <alpha-value>)',
+          400: 'rgb(var(--brand-400) / <alpha-value>)',
+          500: 'rgb(var(--brand-500) / <alpha-value>)',
+          600: 'rgb(var(--brand-600) / <alpha-value>)',
+          700: 'rgb(var(--brand-700) / <alpha-value>)',
+          800: 'rgb(var(--brand-800) / <alpha-value>)',
+          900: 'rgb(var(--brand-900) / <alpha-value>)',
+          950: 'rgb(var(--brand-900) / <alpha-value>)',
         },
         grass: {
-          50:  'rgba(124,255,154,0.08)',
-          100: 'rgba(124,255,154,0.18)',
-          500: '#7CFF9A',
-          600: '#15803D',
-          700: '#7CFF9A',
-          800: '#BBF7D0',
-          900: '#DCFCE7',
+          50:  'rgb(var(--grass-50) / <alpha-value>)',
+          100: 'rgb(var(--grass-100) / <alpha-value>)',
+          200: 'rgb(var(--grass-200) / <alpha-value>)',
+          300: 'rgb(var(--grass-300) / <alpha-value>)',
+          400: 'rgb(var(--grass-400) / <alpha-value>)',
+          500: 'rgb(var(--grass-500) / <alpha-value>)',
+          600: 'rgb(var(--grass-600) / <alpha-value>)',
+          700: 'rgb(var(--grass-700) / <alpha-value>)',
+          800: 'rgb(var(--grass-800) / <alpha-value>)',
+          900: 'rgb(var(--grass-900) / <alpha-value>)',
+          950: 'rgb(var(--grass-900) / <alpha-value>)',
         },
         amber: {
-          50:  'rgba(245,158,11,0.10)',
-          100: 'rgba(245,158,11,0.20)',
-          500: '#F59E0B',
-          600: '#D97706',
-          700: '#FCD34D',
-          800: '#FDE68A',
-          900: '#FEF3C7',
+          50:  'rgb(var(--amber-50) / <alpha-value>)',
+          100: 'rgb(var(--amber-100) / <alpha-value>)',
+          200: 'rgb(var(--amber-200) / <alpha-value>)',
+          300: 'rgb(var(--amber-300) / <alpha-value>)',
+          400: 'rgb(var(--amber-400) / <alpha-value>)',
+          500: 'rgb(var(--amber-500) / <alpha-value>)',
+          600: 'rgb(var(--amber-600) / <alpha-value>)',
+          700: 'rgb(var(--amber-700) / <alpha-value>)',
+          800: 'rgb(var(--amber-800) / <alpha-value>)',
+          900: 'rgb(var(--amber-900) / <alpha-value>)',
+          950: 'rgb(var(--amber-900) / <alpha-value>)',
         },
         crimson: {
-          50:  'rgba(239,68,68,0.10)',
-          100: 'rgba(239,68,68,0.22)',
-          500: '#EF4444',
-          600: '#DC2626',
-          700: '#FCA5A5',
-          800: '#FECACA',
-          900: '#FEE2E2',
+          50:  'rgb(var(--crimson-50) / <alpha-value>)',
+          100: 'rgb(var(--crimson-100) / <alpha-value>)',
+          200: 'rgb(var(--crimson-200) / <alpha-value>)',
+          300: 'rgb(var(--crimson-300) / <alpha-value>)',
+          400: 'rgb(var(--crimson-400) / <alpha-value>)',
+          500: 'rgb(var(--crimson-500) / <alpha-value>)',
+          600: 'rgb(var(--crimson-600) / <alpha-value>)',
+          700: 'rgb(var(--crimson-700) / <alpha-value>)',
+          800: 'rgb(var(--crimson-800) / <alpha-value>)',
+          900: 'rgb(var(--crimson-900) / <alpha-value>)',
+          950: 'rgb(var(--crimson-900) / <alpha-value>)',
+        },
+        // Foreground for anything sitting ON a brand fill. White in light
+        // theme, near-black in dark — so `bg-brand-600 text-on-brand` is
+        // correct in both and no component hardcodes a hex.
+        'on-brand': 'rgb(var(--on-brand) / <alpha-value>)',
+        // Overlay wash for spinners and hover affordances above a panel or
+        // an uploaded image — a token, not a white alpha, so dark theme follows.
+        scrim: {
+          DEFAULT: 'var(--scrim)',
+          strong:  'var(--scrim-strong)',
+        },
+        // Hairline + focus ring, so `border-line` and `ring-line-strong`
+        // follow the theme instead of being written as white/black alphas.
+        line: {
+          DEFAULT: 'var(--ring)',
+          strong:  'var(--ring-strong)',
         },
         // Landing-page brand red — the YouTube mark's pure #FF0000, taken
         // verbatim from the Stitch comp. Registered here (not as hand-written
@@ -108,6 +141,9 @@ module.exports = {
         '6xl': ['64px',   { lineHeight: '68px', letterSpacing: '-0.04em' }],
         '7xl': ['80px',   { lineHeight: '84px', letterSpacing: '-0.04em' }],
       },
+      borderColor: {
+        DEFAULT: 'rgb(var(--ink-200) / <alpha-value>)',
+      },
       borderRadius: {
         DEFAULT: '8px',
         sm: '6px',
@@ -127,7 +163,7 @@ module.exports = {
       },
       backgroundImage: {
         'grid': "linear-gradient(rgba(17,17,17,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,17,0.03) 1px, transparent 1px)",
-        'radial-fade': 'radial-gradient(60% 50% at 50% 0%, rgba(22,163,74,0.06) 0%, transparent 70%)',
+        'radial-fade': 'radial-gradient(60% 50% at 50% 0%, rgba(224,0,0,0.05) 0%, transparent 70%)',
         'paper': 'linear-gradient(180deg, #FFFFFF 0%, #FAFAFA 100%)',
       },
       backgroundSize: {

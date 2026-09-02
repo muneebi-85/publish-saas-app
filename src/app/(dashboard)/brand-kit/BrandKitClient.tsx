@@ -32,11 +32,14 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
   const [error, setError] = useState<string | null>(null);
 
   // Object URLs are revoked on replace/unmount so a long editing session cannot
-  // leak one blob per preview.
+  // leak one blob per preview. The "Saved" flash timer is likewise cleared on
+  // unmount so it cannot fire a setState on a dead component.
   const previewRef = useRef<string | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
       if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
     };
   }, []);
 
@@ -123,12 +126,17 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
           'This deployment has no public storage URL configured, so logos cannot be displayed yet.',
         );
       }
+      if (!presign?.signedUrl || !presign?.fields) {
+        throw new Error('Could not prepare the upload.');
+      }
 
-      const put = await fetch(presign.signedUrl, {
-        method: 'PUT',
-        headers: presign.requiredHeaders,
-        body: file,
-      });
+      // Presigned POST: the policy fields go in the form, file appended last.
+      const form = new FormData();
+      for (const [k, v] of Object.entries(presign.fields as Record<string, string>)) {
+        form.append(k, v);
+      }
+      form.append('file', file, file.name);
+      const put = await fetch(presign.signedUrl, { method: 'POST', body: form });
       if (!put.ok) throw new Error(`Storage rejected the upload (${put.status}).`);
 
       setLogoUrl(presign.publicUrl);
@@ -164,7 +172,8 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
         throw new Error(data?.error ?? 'Could not save your brand kit.');
       }
       setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save your brand kit.');
     } finally {
@@ -173,7 +182,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
   };
 
   const inputClass =
-    'w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors';
+    'w-full bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors';
 
   return (
     <div className="animate-enter">
@@ -183,13 +192,13 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
         showUtility
         actions={
           <div className="flex items-center gap-2">
-            {error && <span className="text-[12.5px] text-crimson-700">{error}</span>}
+            {error && <span className="text-[12px] text-crimson-700">{error}</span>}
             {saved && (
-              <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-grass-700">
+              <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-grass-700">
                 <Check className="w-3.5 h-3.5" /> Saved
               </span>
             )}
-            <Button variant="dark" leftIcon={saving ? undefined : <Check className="w-4 h-4" />} onClick={save} isLoading={saving}>
+            <Button leftIcon={saving ? undefined : <Check className="w-4 h-4" />} onClick={save} isLoading={saving}>
               Save changes
             </Button>
           </div>
@@ -205,7 +214,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
             desc="Your saved palette, kept in one place so hex codes are here when you build a thumbnail."
           />
           {colors.length === 0 && (
-            <p className="text-[13px] text-ink-500 mb-4">
+            <p className="text-[13px] leading-relaxed text-ink-600 mb-4">
               No colors yet. Add the ones you actually use and their hex codes stay
               with your kit.
             </p>
@@ -227,7 +236,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
                     type="button"
                     onClick={() => removeColor(i)}
                     aria-label={`Remove ${c.name}`}
-                    className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/90 text-ink-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:text-white"
+                    className="absolute top-2 right-2 w-6 h-6 rounded-md bg-scrim-strong border border-ink-200 text-ink-600 flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas focus-visible:ring-brand-600"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -242,7 +251,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
             <button
               type="button"
               onClick={addColor}
-              className="w-28 h-20 rounded-xl border border-dashed border-white/[0.14] flex flex-col items-center justify-center gap-1 text-ink-500 hover:border-brand-600 hover:text-brand-600 transition-colors"
+              className="w-28 h-20 rounded-xl border border-dashed border-ink-300 flex flex-col items-center justify-center gap-1 text-ink-500 hover:border-brand-600 hover:text-brand-600 transition-colors"
               aria-label="Add color"
             >
               <Plus className="w-5 h-5" />
@@ -273,7 +282,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
                   <option key={f}>{f}</option>
                 ))}
               </select>
-              <p className="font-display text-2xl font-bold tracking-tight text-ink-900 mt-3">
+              <p className="font-display text-[24px] leading-[1.25] font-semibold tracking-[-0.02em] text-ink-900 mt-3">
                 The hook comes first
               </p>
             </div>
@@ -305,8 +314,8 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
             title="Logo & watermark"
             desc="Stored with your kit so it is one click away when you need it."
           />
-          <div className="grid grid-cols-1 sm:grid-cols-[auto,1fr] gap-4 items-stretch">
-            <div className="relative w-full sm:w-40 h-40 rounded-2xl border border-ink-200 bg-surface-canvas flex flex-col items-center justify-center gap-2 text-ink-500 overflow-hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-stretch">
+            <div className="relative w-full sm:w-40 h-40 rounded-xl border border-ink-200 bg-surface-canvas flex flex-col items-center justify-center gap-2 text-ink-500 overflow-hidden">
               {logoPreview || logoUrl ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded asset on an
@@ -325,20 +334,20 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
                       type="button"
                       onClick={removeLogo}
                       aria-label="Remove logo"
-                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 border border-ink-200 text-ink-600 flex items-center justify-center hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                      className="absolute top-2 right-2 w-6 h-6 rounded-md bg-scrim-strong border border-ink-200 text-ink-600 flex items-center justify-center hover:text-ink-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas focus-visible:ring-brand-600"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
                   )}
                   {logoUploading && (
-                    <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-scrim flex items-center justify-center">
                       <Loader2 className="w-5 h-5 animate-spin text-brand-600" />
                     </div>
                   )}
                 </>
               ) : (
                 <>
-                  <div className="w-12 h-12 rounded-xl border border-dashed border-white/[0.14] flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-xl border border-dashed border-ink-300 flex items-center justify-center">
                     <ImageIcon className="w-5 h-5 text-ink-400" />
                   </div>
                   <span className="text-[12px] font-medium text-ink-500">No logo yet</span>
@@ -346,17 +355,17 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
               )}
             </div>
             <label
-              className={`rounded-2xl border border-dashed border-white/[0.14] flex flex-col items-center justify-center gap-2 p-6 text-center transition-colors focus-within:border-brand-600 ${
+              className={`rounded-xl border border-dashed border-ink-300 flex flex-col items-center justify-center gap-2 p-6 text-center transition-colors focus-within:border-brand-600 ${
                 logoUploading ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:border-brand-600'
               }`}
             >
-              <div className="w-11 h-11 rounded-full bg-white/[0.08] flex items-center justify-center text-ink-600">
+              <div className="w-11 h-11 rounded-xl bg-ink-100 flex items-center justify-center text-ink-600">
                 {logoUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
               </div>
-              <div className="text-[14px] font-semibold text-ink-900">
+              <div className="text-[13px] font-medium text-ink-900">
                 {logoUrl ? 'Replace your logo' : 'Upload a logo'}
               </div>
-              <div className="text-[13px] text-ink-500">PNG, JPG, or WebP with a transparent background, up to 5MB.</div>
+              <div className="text-[13px] leading-relaxed text-ink-600">PNG, JPG, or WebP with a transparent background, up to 5MB.</div>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
@@ -370,10 +379,10 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
             </label>
           </div>
           {logoError && (
-            <p role="alert" className="text-[12.5px] text-crimson-700 mt-3">{logoError}</p>
+            <p role="alert" className="text-[12px] text-crimson-700 mt-3">{logoError}</p>
           )}
           {logoUrl && !logoError && (
-            <p className="text-[12.5px] text-ink-500 mt-3">
+            <p className="text-[12px] text-ink-500 mt-3">
               Uploaded. Choose <span className="font-medium text-ink-700">Save changes</span> to keep it on your kit.
             </p>
           )}
@@ -386,7 +395,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
             title="Tone of voice"
             desc="Selected tones and your brand description steer the AI when it rewrites scripts for you."
           />
-          <div className="flex flex-wrap gap-2 mb-5">
+          <div className="flex flex-wrap gap-1.5 mb-5">
             {TONE_OPTIONS.map((tone) => {
               const active = tones.includes(tone);
               return (
@@ -395,10 +404,10 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
                   type="button"
                   onClick={() => toggleTone(tone)}
                   aria-pressed={active}
-                  className={`px-3.5 h-9 rounded-full text-[13px] font-medium border transition-colors ${
+                  className={`px-3 h-8 rounded-lg text-[13px] font-medium border transition-colors ${
                     active
-                      ? 'bg-brand-50 border-brand-600 text-brand-700'
-                      : 'bg-white/[0.03] border-white/[0.08] text-ink-600 hover:border-white/[0.16] hover:text-white'
+                      ? 'bg-ink-900 border-ink-900 text-white'
+                      : 'bg-surface-panel border-ink-200 text-ink-600 hover:bg-ink-50 hover:text-ink-900'
                   }`}
                 >
                   {tone}
@@ -407,7 +416,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
             })}
           </div>
           {tones.length === 0 && (
-            <p className="text-[13px] text-ink-500 mb-5 -mt-2">
+            <p className="text-[13px] leading-relaxed text-ink-600 mb-5 -mt-2">
               No tone selected. Until you pick one, rewrites follow the script&apos;s
               own voice rather than a brand tone.
             </p>
@@ -421,7 +430,7 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors resize-none"
+              className="w-full bg-surface-panel border border-ink-300 rounded-lg px-3 py-2.5 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors resize-none"
               placeholder="Describe who you are and how you want to sound."
             />
           </div>
@@ -447,20 +456,20 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
             </Button>
           </form>
           {banned.length === 0 ? (
-            <p className="text-[13px] text-ink-500">No banned words yet. Add a few to keep the AI on-brand.</p>
+            <p className="text-[13px] leading-relaxed text-ink-600">No banned words yet. Add a few to keep the AI on-brand.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {banned.map((word) => (
                 <span
                   key={word}
-                  className="inline-flex items-center gap-1.5 pl-3 pr-1.5 h-8 rounded-full bg-white/[0.08] text-[13px] font-medium text-ink-700"
+                  className="inline-flex items-center gap-1.5 pl-2.5 pr-1 h-7 rounded-md bg-ink-100 text-[12px] font-medium text-ink-700"
                 >
                   {word}
                   <button
                     type="button"
                     onClick={() => removeBanned(word)}
                     aria-label={`Remove ${word}`}
-                    className="w-5 h-5 rounded-full flex items-center justify-center text-ink-400 hover:text-white hover:bg-white/[0.09] transition-colors"
+                    className="w-5 h-5 rounded-md flex items-center justify-center text-ink-500 hover:text-ink-900 hover:bg-ink-200 transition-colors"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -476,12 +485,12 @@ export const BrandKitClient: React.FC<{ initialKit: Kit }> = ({ initialKit }) =>
 
 const SectionHead: React.FC<{ icon: React.ReactNode; title: string; desc: string }> = ({ icon, title, desc }) => (
   <div className="flex items-start gap-3 mb-5">
-    <div className="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+    <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 ring-1 ring-inset ring-brand-100 flex items-center justify-center shrink-0">
       {icon}
     </div>
     <div>
-      <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">{title}</h2>
-      <p className="text-[13px] text-ink-600 mt-0.5">{desc}</p>
+      <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">{title}</h2>
+      <p className="text-[13px] leading-relaxed text-ink-600 mt-1">{desc}</p>
     </div>
   </div>
 );

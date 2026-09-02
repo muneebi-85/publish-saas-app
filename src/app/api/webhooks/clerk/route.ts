@@ -23,7 +23,7 @@ export const runtime = 'nodejs';
  * /api/account/delete — the two erasure paths must agree on what "still costs
  * the customer money" means, or one of them leaves a live subscription behind.
  */
-const BILLABLE = new Set(['active', 'on_trial', 'past_due', 'unpaid']);
+const BILLABLE = new Set(['active', 'on_trial', 'past_due', 'unpaid', 'paused']);
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
@@ -48,8 +48,16 @@ export async function POST(req: Request) {
     });
   }
 
-  const payload = await req.json();
-  const body = JSON.stringify(payload);
+  // Read the raw body first: `req.json()` would throw an unhandled rejection on
+  // a malformed body (surfacing as an opaque 500 and retry noise in svix), and
+  // verifying the raw text is what the svix signature actually covers — a
+  // parse-then-stringify round trip is not guaranteed to be byte-identical.
+  let body: string;
+  try {
+    body = await req.text();
+  } catch {
+    return new Response('Error occured -- could not read body', { status: 400 });
+  }
 
   const wh = new Webhook(WEBHOOK_SECRET);
   let evt: WebhookEvent;

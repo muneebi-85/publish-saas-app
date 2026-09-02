@@ -97,14 +97,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         )}
       </head>
       <body className="h-full antialiased bg-surface-canvas text-ink-900">
+        {/* The product UI is light by design and the marketing pages are always
+            light, so `system` is not the right default — a visitor on a
+            dark-mode OS would land on a theme the comps were never drawn for.
+            Dark stays available from the sidebar toggle. */}
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          defaultTheme="light"
+          enableSystem={false}
           disableTransitionOnChange
         >
           <TooltipProvider delayDuration={200}>
-            <NextTopLoader color="#7CFF9A" showSpinner={false} />
+            <NextTopLoader color="#E00000" height={2} showSpinner={false} />
             <ReferralCapture />
             {children}
             <Toaster position="bottom-right" richColors />

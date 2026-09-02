@@ -11,21 +11,24 @@ import { MarkAllSeen } from './MarkAllSeen';
 
 export const dynamic = 'force-dynamic';
 
+// Success is green, running is neutral, failure is crimson, billing amber —
+// the same semantics as the badges. A completed review used to wear the brand
+// red tint, which reads as a failure in this product's colour language.
 const ICON_MAP: Record<ActivityKind, { icon: React.ReactNode; chip: string }> = {
   review_complete: {
-    icon: <CheckCircle2 className="w-[18px] h-[18px]" />,
-    chip: 'bg-brand-50 text-brand-600',
+    icon: <CheckCircle2 className="w-4 h-4" />,
+    chip: 'bg-grass-50 text-grass-700',
   },
   review_failed: {
-    icon: <AlertTriangle className="w-[18px] h-[18px]" />,
+    icon: <AlertTriangle className="w-4 h-4" />,
     chip: 'bg-crimson-50 text-crimson-700',
   },
   review_running: {
-    icon: <Loader2 className="w-[18px] h-[18px]" />,
-    chip: 'bg-white/[0.08] text-ink-600',
+    icon: <Loader2 className="w-4 h-4" />,
+    chip: 'bg-ink-100 text-ink-600',
   },
   billing: {
-    icon: <CreditCard className="w-[18px] h-[18px]" />,
+    icon: <CreditCard className="w-4 h-4" />,
     chip: 'bg-amber-50 text-amber-700',
   },
 };
@@ -81,35 +84,35 @@ export default async function NotificationsPage() {
       {items.length === 0 ? (
         <Card className="py-16">
           <div className="flex flex-col items-center text-center">
-            <div className="w-14 h-14 rounded-full bg-white/[0.08] flex items-center justify-center text-ink-500 mb-4">
-              <BellOff className="w-6 h-6" />
+            <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mb-4">
+              <BellOff className="w-5 h-5" />
             </div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
               Nothing has happened yet
             </h2>
-            <p className="text-[14px] text-ink-600 mt-1 max-w-sm">
+            <p className="text-[13px] leading-relaxed text-ink-600 mt-2 max-w-sm">
               Review updates and billing changes land here. Run your first review and you will see it
               appear the moment it finishes.
             </p>
-            <Link href="/upload" className="mt-5">
-              <Button variant="dark" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+            <Link href="/upload" className="mt-6">
+              <Button rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
                 Run a review
               </Button>
             </Link>
           </div>
         </Card>
       ) : (
-        <div className="max-w-2xl space-y-8">
+        <div className="max-w-2xl space-y-6">
           {groups.map((group) => (
             <section key={group.label}>
-              <h2 className="text-[13px] font-semibold text-brand-600 mb-3">{group.label}</h2>
-              <Card padded={false} className="divide-y divide-ink-100 overflow-hidden">
+              <h2 className="text-[13px] font-semibold text-ink-900 mb-3">{group.label}</h2>
+              <Card padded={false} className="divide-y divide-ink-200 overflow-hidden">
                 {group.list.map((item) => {
                   const meta = ICON_MAP[item.kind];
                   const inner = (
                     <>
                       <div
-                        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${meta.chip}`}
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${meta.chip}`}
                       >
                         {meta.icon}
                       </div>
@@ -126,15 +129,18 @@ export default async function NotificationsPage() {
                       </div>
                       {item.unread && (
                         <span
-                          className="w-2 h-2 rounded-full bg-brand-500 shrink-0 mt-1.5"
+                          className="w-2 h-2 rounded-full bg-brand-600 shrink-0 mt-1.5"
                           aria-label="Unread"
                         />
                       )}
                     </>
                   );
 
+                  // Unread rows carry a faint brand tint — this is the one place
+                  // the accent marks "new", which is its job, distinct from the
+                  // green/crimson/amber event semantics above.
                   const rowClass = `w-full text-left flex items-start gap-3.5 px-5 py-4 transition-colors ${
-                    item.unread ? 'bg-brand-50 hover:bg-brand-100' : 'bg-transparent hover:bg-white/[0.03]'
+                    item.unread ? 'bg-brand-50 hover:bg-brand-100' : 'bg-transparent hover:bg-ink-50'
                   }`;
 
                   return item.href ? (
@@ -151,7 +157,7 @@ export default async function NotificationsPage() {
             </section>
           ))}
 
-          <p className="text-[11.5px] text-ink-400 leading-relaxed">
+          <p className="text-[12px] text-ink-500 leading-relaxed">
             This feed is built from your review jobs and subscription records, so it always matches
             what actually happened. Entries older than 60 days drop off here — your full review
             history stays in{' '}

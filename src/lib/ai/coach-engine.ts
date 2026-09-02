@@ -10,7 +10,7 @@
  */
 
 import { chat } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden } from './guardrails';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, fenceSafe } from './guardrails';
 
 export interface CoachMessage {
   role: 'user' | 'assistant';
@@ -35,6 +35,25 @@ Rules:
 - Keep answers under 180 words. Use at most one short bulleted list.`;
 
 /**
+ * Cross-report context: the coach's longitudinal memory. Derived from the
+ * creator's recent reports server-side and passed in alongside (or instead of)
+ * a single report's context — this is what turns "advice about this video"
+ * into "advice about this creator", which is the retention story for a coach
+ * product. Every field is optional so a first-time user (no history) and a
+ * long-time user (rich history) both get an honest, correctly-sized context.
+ */
+export interface CoachHistoryContext {
+  /** Reviews analysed so far, capped by the caller. */
+  reviewCount: number;
+  /** The trend across those reviews' overall scores. */
+  scoreTrend: 'improving' | 'flat' | 'declining';
+  /** Layer names that scored weakest across the history, strongest first. */
+  recurringWeaknesses: string[];
+  /** When present: the question is grounded in one of these reports. */
+  selectedReportTitle?: string;
+}
+
+/**
  * Grounds the coach in a creator's actual report (scores + top fixes) instead
  * of generic advice. Deliberately a compact summary — the full report would
  * bloat the prompt and the coach is meant to advise, not re-analyze.
@@ -53,12 +72,37 @@ function reportContextBlock(ctx: {
     ? ctx.topFixes.slice(0, 4).map((f) => `- ${f}`).join('\n')
     : '- (no fixes listed on this report)'; // cannot happen in practice; defensive
   return `\nThe creator is asking about a REAL report they just received:\n` +
-    `Title: "${ctx.title.slice(0, 120)}" (${ctx.platform})\n` +
+    `Title: """${fenceSafe(ctx.title.slice(0, 120))}""" (${ctx.platform})\n` +
     `Overall: ${ctx.overall}/100. Layer scores: ${scores}.\n` +
     `Their top fixes:\n${fixes}\n` +
     `When your advice touches one of these layers, reference the report's actual number or fix ` +
     `explicitly ("Your Retention at 54 is dragged by…") rather than speaking in generalities. ` +
     `If they ask something unrelated to the report, answer normally.`;
+}
+
+/**
+ * The longitudinal block: what the creator's own history shows. Written in the
+ * same voice as the report block so the two compose without style clash, and
+ * phrased as observed data (counts, trends, names) — never a diagnosis the
+ * numbers do not support.
+ */
+function historyContextBlock(ctx: CoachHistoryContext): string {
+  const parts: string[] = [
+    `\nAcross the creator's last ${ctx.reviewCount} reviews, their overall scores are ${ctx.scoreTrend}.`,
+  ];
+  if (ctx.recurringWeaknesses.length > 0) {
+    parts.push(
+      `Their weakest layers across those reviews (worst first): ${ctx.recurringWeaknesses.join(', ')}. ` +
+      `When they ask what to fix, prefer advice that moves these recurring weaknesses — a fix ` +
+      `that helps the same weakness twice is worth more than a one-off. Name the pattern when ` +
+      `relevant ("this is the same weak-open pattern your last reviews showed"), because the ` +
+      `creator cannot see these history blocks.`,
+    );
+  }
+  if (ctx.selectedReportTitle) {
+    parts.push(`They are currently asking about their report "${fenceSafe(ctx.selectedReportTitle.slice(0, 80))}".`);
+  }
+  return parts.join(' ');
 }
 
 export async function getCoachReply(
@@ -71,10 +115,11 @@ export async function getCoachReply(
     scores: Record<string, number>;
     topFixes: string[];
   } | null,
+  historyContext?: CoachHistoryContext | null,
 ): Promise<string | null> {
-  const system = reportContext
-    ? `${COACH_PERSONA}${reportContextBlock(reportContext)}`
-    : COACH_PERSONA;
+  let system = COACH_PERSONA;
+  if (reportContext) system += reportContextBlock(reportContext);
+  if (historyContext && historyContext.reviewCount > 0) system += historyContextBlock(historyContext);
   const messages = [
     { role: 'system' as const, content: system },
     ...history.slice(-8).map((m) => ({ role: m.role, content: m.content })),

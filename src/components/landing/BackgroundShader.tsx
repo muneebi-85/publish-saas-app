@@ -65,13 +65,22 @@ export default function BackgroundShader() {
     if (!vertexShader || !fragmentShader) return;
 
     const program = gl.createProgram();
-    if (!program) return;
+    if (!program) {
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      return;
+    }
 
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
 
+    // Shaders can be detached and freed the moment the program is linked.
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program);
       return;
     }
 
@@ -117,8 +126,12 @@ export default function BackgroundShader() {
 
     return () => {
       cancelAnimationFrame(animationFrameId);
-      if (gl && program) {
-        gl.deleteProgram(program);
+      // Free every GL object this effect created — program, shaders, and the
+      // vertex buffer. Leaking them accumulates until context loss on
+      // repeated landing-page visits.
+      if (gl) {
+        if (program) gl.deleteProgram(program);
+        if (positionBuffer) gl.deleteBuffer(positionBuffer);
       }
     };
   }, []);

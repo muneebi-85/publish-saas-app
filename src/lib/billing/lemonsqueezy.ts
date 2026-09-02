@@ -45,9 +45,10 @@ export type BillingInterval = 'monthly' | 'yearly';
 export const BILLING_INTERVALS: BillingInterval[] = ['monthly', 'yearly'];
 
 /**
- * `yearly` is the effective per-month price when billed annually (two months
- * free: 10 months of the monthly rate, rounded to a clean annual figure). The
- * quoted store prices must match what the yearly Lemon Squeezy variants charge.
+ * The catalogue's `yearly` is the ANNUAL total (ten months of the monthly
+ * rate — two months free). It is informational here: the Lemon Squeezy
+ * variant is the billing authority, so the registry carries the variant ids
+ * and never quotes the yearly figure to the checkout API.
  */
 /**
  * Name, price, allowance and features all come from the catalogue in

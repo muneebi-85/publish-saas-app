@@ -8,6 +8,7 @@
 
 import Link from 'next/link';
 import { Logo } from '@/components/ui/Logo';
+import { CookieSettingsLink } from '@/components/CookieSettingsLink';
 import { LEGAL, LEGAL_LINKS } from '@/lib/legal/config';
 
 export const Footer: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
@@ -47,7 +48,7 @@ export const Footer: React.FC<{ compact?: boolean }> = ({ compact = false }) => 
           <div>
             <div className="text-2xs font-semibold uppercase tracking-[0.14em] text-ink-500 mb-3">Product</div>
             <ul className="space-y-2 text-[13px]">
-              <li><Link href="/#features" className="text-ink-700 hover:text-ink-900">Features</Link></li>
+              <li><Link href="/#checks" className="text-ink-700 hover:text-ink-900">Features</Link></li>
               <li><Link href="/#pricing"  className="text-ink-700 hover:text-ink-900">Pricing</Link></li>
               <li><Link href="/#faq"      className="text-ink-700 hover:text-ink-900">FAQ</Link></li>
               <li><Link href="/community" className="text-ink-700 hover:text-ink-900">Leaderboard</Link></li>
@@ -73,6 +74,8 @@ export const Footer: React.FC<{ compact?: boolean }> = ({ compact = false }) => 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>Support: <a href={`mailto:${LEGAL.supportEmail}`} className="hover:text-ink-900">{LEGAL.supportEmail}</a></span>
             <span>Privacy: <a href={`mailto:${LEGAL.privacyEmail}`} className="hover:text-ink-900">{LEGAL.privacyEmail}</a></span>
+            {/* The cookie policy promises this entry — see legal/cookies §3. */}
+            <CookieSettingsLink />
           </div>
         </div>
       </div>

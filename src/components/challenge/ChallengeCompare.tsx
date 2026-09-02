@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { Swords, Trophy, ArrowRight, Loader2 } from 'lucide-react';
 import { track } from '@/lib/analytics';
 
@@ -70,7 +69,7 @@ export function ChallengeCompare({
 
   if (state.loading) {
     return (
-      <div className="rounded-2xl border border-brand-600/20 bg-brand-600/[0.05] p-4 flex items-center gap-3 text-[13px] text-ink-700">
+      <div className="rounded-xl border border-brand-200 bg-brand-50 p-4 flex items-center gap-3 text-[13px] text-ink-700">
         <Loader2 className="w-4 h-4 animate-spin text-brand-600" />
         Recording your challenge…
       </div>
@@ -78,9 +77,23 @@ export function ChallengeCompare({
   }
 
   if (state.error) {
+    // The accept is idempotent server-side, so a retry is always safe. Without
+    // it, one transient 500 permanently replaced the scores and verdict with
+    // this error box — a creator who paid for the review could not see the
+    // result they already won.
     return (
-      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-4 text-[13px] text-amber-700">
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-700">
         {state.error}
+        <button
+          type="button"
+          onClick={() => {
+            fired.current = false;
+            setState({ loading: true });
+          }}
+          className="ml-3 rounded-md border border-amber-300 bg-surface-panel px-2.5 py-1 text-[12px] font-medium text-ink-700 hover:bg-ink-50 transition-colors focus-ring outline-none"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -89,12 +102,12 @@ export function ChallengeCompare({
   const won = d.outcome === 'won';
 
   return (
-    <div className="rounded-2xl border border-brand-600/25 bg-brand-600/[0.06] p-5">
+    <div className="rounded-xl border border-brand-200 bg-brand-50 p-4">
       <div className="flex items-center gap-2 text-[12px] font-semibold text-brand-600">
         <Swords className="w-4 h-4" />
         Challenge result
         {d.creditsEarned > 0 && !d.already && (
-          <span className="rounded-full bg-grass-100 text-grass-800 px-2 py-0.5 text-[10.5px] font-bold">
+          <span className="rounded-md bg-grass-100 text-grass-800 px-2 py-0.5 text-[11px] font-semibold">
             +1 free audit earned
           </span>
         )}
@@ -102,14 +115,14 @@ export function ChallengeCompare({
 
       <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
         <div className="text-center">
-          <div className="text-[11px] text-ink-500 uppercase tracking-[0.08em]">Them</div>
-          <div className="font-display text-[30px] font-bold tabular-nums leading-none mt-1 text-ink-900">
+          <div className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em]">Them</div>
+          <div className="font-display text-[30px] font-semibold tracking-[-0.025em] tabular-nums leading-none mt-1 text-ink-900">
             {d.target.score}
           </div>
           <div className="text-[11px] text-ink-500 mt-1 truncate max-w-[120px]">{d.target.title}</div>
         </div>
         <div className="flex flex-col items-center">
-          <div className="text-[10.5px] font-bold text-ink-500 uppercase tracking-[0.1em]">
+          <div className="text-[11px] font-semibold text-ink-900 uppercase tracking-[0.08em]">
             {won ? 'You win' : d.outcome === 'tied' ? 'Tie' : 'Not yet'}
           </div>
           {won ? (
@@ -119,8 +132,8 @@ export function ChallengeCompare({
           )}
         </div>
         <div className="text-center">
-          <div className="text-[11px] text-ink-500 uppercase tracking-[0.08em]">You</div>
-          <div className="font-display text-[30px] font-bold tabular-nums leading-none mt-1 text-brand-600">
+          <div className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em]">You</div>
+          <div className="font-display text-[30px] font-semibold tracking-[-0.025em] tabular-nums leading-none mt-1 text-brand-600">
             {d.mine.score}
           </div>
           <div className="text-[11px] text-ink-500 mt-1 truncate max-w-[120px]">{myTitle}</div>
@@ -137,11 +150,23 @@ export function ChallengeCompare({
 
       {won && (
         <div className="mt-4">
-          <Link href={`/share/${d.mine.id}`}>
-            <span className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 text-[12.5px] font-bold text-[#060606] hover:bg-brand-400 transition-colors">
-              Share your winning score <ArrowRight className="w-3.5 h-3.5" />
-            </span>
-          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              // The score card 404s until sharedAt is stamped, and this report
+              // was just created by the challenge run — nothing has published
+              // it. Publish (idempotent), then follow the link the button
+              // promises; navigating first would land the creator on a 404.
+              void fetch(`/api/share/${d.mine.id}`, { method: 'POST' })
+                .catch(() => undefined)
+                .finally(() => {
+                  window.location.href = `/share/${d.mine.id}`;
+                });
+            }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 text-[12px] font-semibold text-on-brand hover:bg-brand-700 transition-colors"
+          >
+            Share your winning score <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>

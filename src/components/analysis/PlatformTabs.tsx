@@ -32,14 +32,14 @@ export const PlatformTabs: React.FC<{
   const Icon = PLATFORM_ICONS[report.platform] || Youtube;
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
+    <div className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
       {/* Header */}
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div>
-          <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+          <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
             Platform breakdown
           </h2>
-          <p className="text-xs text-ink-500 mt-1">
+          <p className="text-[12px] text-ink-500 mt-1">
             Each platform enforces its own monetization rules. Switch tabs to see the tailored review.
           </p>
         </div>
@@ -57,13 +57,13 @@ export const PlatformTabs: React.FC<{
               className={clsx(
                 'inline-flex items-center gap-2 px-3.5 h-9 rounded-t-lg -mb-px text-[13px] font-medium transition-colors border-b-2',
                 selected
-                  ? 'bg-white/[0.06] border-white text-white'
-                  : 'border-transparent text-ink-600 hover:text-white hover:bg-white/[0.04]',
+                  ? 'bg-ink-100 border-ink-900 text-ink-900'
+                  : 'border-transparent text-ink-600 hover:text-ink-900 hover:bg-ink-100',
               )}
             >
-              <PIcon className="w-3.5 h-3.5" strokeWidth={1.75} />
+              <PIcon className="w-3.5 h-3.5" />
               {r.platform}
-              <span className={clsx('text-[11px] tabular-nums font-semibold', selected ? 'text-ink-900' : 'text-ink-400')}>
+              <span className={clsx('text-[11px] tabular-nums font-semibold', selected ? 'text-ink-900' : 'text-ink-500')}>
                 {r.score}
               </span>
             </button>
@@ -76,11 +76,11 @@ export const PlatformTabs: React.FC<{
         {/* Overview column */}
         <div className="lg:col-span-2 space-y-4">
           <div className="rounded-xl border border-ink-200 p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-white/[0.06] text-white flex items-center justify-center">
-              <Icon className="w-4 h-4" strokeWidth={1.75} />
+            <div className="w-9 h-9 rounded-lg bg-ink-100 text-ink-900 flex items-center justify-center">
+              <Icon className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-ink-900">{report.platform}</div>
+              <div className="text-[13px] font-semibold text-ink-900">{report.platform}</div>
               <div className="mt-1">
                 <Badge variant={STATUS_TONE[report.policyStatus]} dot>
                   {report.policyStatus}
@@ -90,33 +90,33 @@ export const PlatformTabs: React.FC<{
           </div>
 
           <div>
-            <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 mb-1.5">
               Advertiser suitability
             </div>
-            <div className="rounded-xl border border-grass-100 bg-grass-50 p-3.5 flex items-start gap-2.5">
+            <div className="rounded-lg border border-grass-200 bg-grass-50 p-3.5 flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
               <span className="text-[13px] text-grass-800 leading-relaxed">{report.adSuitability}</span>
             </div>
           </div>
 
           <div>
-            <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 mb-1.5">
               Score
             </div>
             <div className="flex items-baseline gap-2">
               <span className={clsx(
-                'font-display text-4xl font-bold tabular-nums tracking-tight',
+                'font-display text-[30px] leading-[1.15] font-semibold tabular-nums tracking-[-0.025em]',
                 report.score >= 85 ? 'text-grass-700' : report.score >= 70 ? 'text-amber-700' : 'text-crimson-700',
               )}>
                 {report.score}
               </span>
-              <span className="text-sm text-ink-500">/ 100</span>
+              <span className="text-[13px] text-ink-500">/ 100</span>
             </div>
-            <div className="mt-2 h-1.5 w-full bg-white/[0.08] rounded-full overflow-hidden">
+            <div className="mt-2 h-1.5 w-full bg-ink-100 rounded-full overflow-hidden">
               <div
                 className={clsx(
-                  'h-full rounded-full transition-all duration-700',
-                  report.score >= 85 ? 'bg-grass-500' : report.score >= 70 ? 'bg-amber-500' : 'bg-crimson-500',
+                  'h-full rounded-full transition-all duration-500',
+                  report.score >= 85 ? 'bg-grass-600' : report.score >= 70 ? 'bg-amber-600' : 'bg-crimson-600',
                 )}
                 style={{ width: `${report.score}%` }}
               />
@@ -126,11 +126,11 @@ export const PlatformTabs: React.FC<{
 
         {/* Recommendations column */}
         <div className="lg:col-span-3 space-y-2">
-          <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 mb-1.5">
             {report.platform}-specific recommendations
           </div>
           {report.specificRecommendations.map((rec, i) => (
-            <div key={i} className="flex items-start gap-3 p-3.5 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
+            <div key={i} className="flex items-start gap-3 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
               <ShieldCheck className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
               {rec}
             </div>

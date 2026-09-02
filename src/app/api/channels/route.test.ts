@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
     deleteMany: vi.fn(),
   },
   rateLimit: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock('@/lib/api-guards', () => ({
@@ -22,7 +23,11 @@ vi.mock('@clerk/nextjs/server', () => ({
 }));
 
 vi.mock('@/lib/db', () => ({
-  prisma: { channel: h.channel },
+  prisma: {
+    channel: h.channel,
+    // The cross-owner connect check + write run inside one transaction.
+    $transaction: h.transaction,
+  },
 }));
 
 vi.mock('@/lib/ratelimit', () => ({
@@ -32,7 +37,11 @@ vi.mock('@/lib/ratelimit', () => ({
     body: { error: 'Too many requests', retryAfterMs: l?.retryAfterMs ?? 0 },
     init: { status: 429 },
   }),
-  LIMITS: { CHANNELS: { limit: 20, windowMs: 3_600_000 }, READ: { limit: 100, windowMs: 60_000 } },
+  LIMITS: {
+    CHANNELS: { limit: 20, windowMs: 3_600_000 },
+    READ: { limit: 100, windowMs: 60_000 },
+    PROJECT_WRITE: { limit: 60, windowMs: 3_600_000 },
+  },
 }));
 
 import { GET, POST, DELETE } from './route';
@@ -73,10 +82,41 @@ function postRequest(platform: string) {
   });
 }
 
+function postRequestWithUrl(platform: string, url: string) {
+  return new Request('http://localhost/api/channels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, url }),
+  });
+}
+
+const YT_ABOUT_HTML = `<html><body><script>var ytInitialData = ${JSON.stringify({
+  metadata: {
+    channelMetadataRenderer: {
+      title: 'QA Channel',
+      externalId: 'UCabc',
+      vanityChannelUrl: 'http://www.youtube.com/@qachannel',
+      avatar: { thumbnails: [{ url: 'https://yt3.example/hi.jpg' }] },
+    },
+  },
+  contents: {
+    aboutChannelViewModel: {
+      subscriberCountText: { simpleText: '1.5M subscribers' },
+      videoCountText: { runs: [{ text: '71' }, { text: ' videos' }] },
+      viewCountText: { simpleText: '66,561,390 views' },
+    },
+  },
+})};</script></body></html>`;
+
 beforeEach(() => {
   vi.clearAllMocks();
   h.requireAuth.mockResolvedValue(AUTH);
   h.rateLimit.mockResolvedValue({ success: true });
+  // The connect path's cross-owner check + write run inside one $transaction;
+  // hand it the same channel mocks so existing assertions keep working.
+  h.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+    fn({ channel: h.channel }),
+  );
 });
 
 afterEach(() => {
@@ -174,6 +214,88 @@ describe('POST /api/channels', () => {
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.error).toContain('did not respond in time');
+  });
+
+  describe('public-link connect (url in body)', () => {
+    it('creates a row from the public snapshot without any OAuth token', async () => {
+      h.getOauthToken.mockResolvedValue(null);
+      h.channel.findFirst.mockResolvedValue(null);
+      h.channel.create.mockResolvedValue({ id: 'c1', platform: 'YOUTUBE', name: 'QA Channel' });
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(YT_ABOUT_HTML, { status: 200 })));
+
+      const res = await POST(postRequestWithUrl('YOUTUBE', 'youtube.com/@qachannel'));
+      expect(res.status).toBe(201);
+      expect(h.getOauthToken).not.toHaveBeenCalled();
+      expect(h.channel.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'user_test',
+          platform: 'YOUTUBE',
+          channelId: 'UCabc',
+          name: 'QA Channel',
+          url: 'https://www.youtube.com/@qachannel',
+          avatarUrl: 'https://yt3.example/hi.jpg',
+          subscribers: 1500000,
+          videosCount: 71,
+          viewsCount: 66561390,
+        },
+      });
+    });
+
+    it('rejects an unparsable link with 400', async () => {
+      const res = await POST(postRequestWithUrl('YOUTUBE', 'https://vimeo.com/@someone'));
+      expect(res.status).toBe(400);
+      expect(h.channel.create).not.toHaveBeenCalled();
+    });
+
+    it('answers 502 with the platform message when the channel is not found', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
+
+      const res = await POST(postRequestWithUrl('YOUTUBE', '@missing_xyz'));
+      expect(res.status).toBe(502);
+      const body = await res.json();
+      expect(body.error).toContain('No YouTube channel found');
+      expect(h.channel.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a public channel already connected to another account', async () => {
+      h.channel.findFirst.mockResolvedValue({ id: 'c1', userId: 'someone_else' });
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(YT_ABOUT_HTML, { status: 200 })));
+
+      const res = await POST(postRequestWithUrl('YOUTUBE', '@qachannel'));
+      expect(res.status).toBe(409);
+      expect(h.channel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('refresh without an OAuth token', () => {
+    it('re-reads the stored public link of the user\'s own channel', async () => {
+      h.getOauthToken.mockResolvedValue(null);
+      h.channel.findFirst.mockResolvedValue({
+        id: 'c1',
+        url: 'https://www.youtube.com/@qachannel',
+      });
+      h.channel.update.mockResolvedValue({ id: 'c1', name: 'QA Channel' });
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(YT_ABOUT_HTML, { status: 200 })));
+
+      const res = await POST(postRequest('YOUTUBE'));
+      expect(res.status).toBe(200);
+      // The stored row is updated in place and keeps its channelId.
+      const data = h.channel.update.mock.calls[0][0].data as Record<string, unknown>;
+      expect(h.channel.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data });
+      expect(data).not.toHaveProperty('channelId');
+      expect(data.subscribers).toBe(1500000);
+      expect(h.channel.create).not.toHaveBeenCalled();
+    });
+
+    it('still answers 428 when there is no token and no stored link', async () => {
+      h.getOauthToken.mockResolvedValue(null);
+      h.channel.findFirst.mockResolvedValue(null);
+
+      const res = await POST(postRequest('TIKTOK'));
+      expect(res.status).toBe(428);
+      const body = await res.json();
+      expect(body.connectRequired).toBe(true);
+    });
   });
 });
 

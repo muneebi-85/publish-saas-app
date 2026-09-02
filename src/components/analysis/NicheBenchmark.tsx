@@ -146,15 +146,15 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
     : 'text-crimson-700';
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-6">
+    <div className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel p-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
           <BarChart3 className="w-4 h-4 text-ink-500 mt-0.5 shrink-0" aria-hidden="true" />
           <div>
-            <h2 className="font-display text-[17px] font-semibold text-ink-900">
+            <h2 className="font-display text-[18px] font-semibold text-ink-900">
               Niche benchmark
             </h2>
-            <p className="text-[12.5px] text-ink-500 mt-0.5 max-w-prose">
+            <p className="text-[12px] text-ink-500 mt-0.5 max-w-prose">
               A trained model&apos;s estimate of where this metadata ranks against real videos
               from channels your size in your category. Separate from the review score above.
             </p>
@@ -166,7 +166,7 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
-            className="bg-surface-sunken border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-[12.5px] text-ink-900 min-w-[180px]"
+            className="bg-surface-sunken border border-ink-200 rounded-lg px-2.5 py-1.5 text-[12px] text-ink-900 min-w-[180px]"
           >
             <option value="">Select to compare…</option>
             {CATEGORY_OPTIONS.map((c) => (
@@ -179,13 +179,13 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
       </div>
 
       {state === 'loading' && (
-        <div className="flex items-center gap-2 text-[12.5px] text-ink-500 mt-5">
+        <div className="flex items-center gap-2 text-[12px] text-ink-500 mt-5">
           <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Scoring…
         </div>
       )}
 
       {state === 'error' && (
-        <p className="text-[12.5px] text-ink-500 mt-5">
+        <p className="text-[12px] text-ink-500 mt-5">
           Could not reach the scorer. Nothing is being estimated in the meantime.
         </p>
       )}
@@ -194,10 +194,10 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
         <div className="mt-5 space-y-5">
           <div className="flex items-end gap-4 flex-wrap">
             <div>
-              <div className={`font-display text-[38px] font-bold leading-none ${tone}`}>
+              <div className={`font-display text-[40px] font-semibold leading-none ${tone}`}>
                 {data.score}
               </div>
-              <div className="text-[11.5px] text-ink-500 mt-1">
+              <div className="text-[12px] text-ink-500 mt-1">
                 {data.cell
                   ? `percentile within ${data.cell.split('|')[0]}, channels your size`
                   : 'percentile — no niche selected'}
@@ -207,7 +207,7 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
               <Badge variant="warning">Similar niche</Badge>
             )}
             {data.benchmark && (
-              <div className="text-[11.5px] text-ink-500">
+              <div className="text-[12px] text-ink-500">
                 {data.benchmark.cellSize.toLocaleString()} videos in this cell,{' '}
                 {data.benchmark.topSize.toLocaleString()} in its top decile.
               </div>
@@ -218,7 +218,7 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
               re-scoring the row with that one edit applied — not a guess about it. */}
           {data.suggestions && data.suggestions.length > 0 && (
             <div>
-              <h3 className="text-[12.5px] font-semibold text-ink-900 flex items-center gap-1.5 mb-2">
+              <h3 className="text-[12px] font-semibold text-ink-900 flex items-center gap-1.5 mb-2">
                 <TrendingUp className="w-3.5 h-3.5 text-grass-600" aria-hidden="true" />
                 Highest-impact changes
               </h3>
@@ -226,12 +226,12 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
                 {data.suggestions.map((s) => (
                   <li
                     key={s.key}
-                    className="flex items-start gap-3 rounded-xl border border-white/[0.05] bg-surface-sunken p-3"
+                    className="flex items-start gap-3 rounded-lg border border-ink-200 bg-surface-sunken p-3.5"
                   >
                     <span className="text-[12px] font-semibold text-grass-700 shrink-0 tabular-nums pt-px">
                       +{s.lift.toFixed(1)}
                     </span>
-                    <span className="text-[12.5px] text-ink-700">
+                    <span className="text-[12px] text-ink-700">
                       <span className="text-ink-900 font-medium">{s.label}.</span> {s.advice}
                     </span>
                   </li>
@@ -246,7 +246,7 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
           {data.suggestions &&
             data.suggestions.length === 0 &&
             (data.suggestionsConsidered ?? 0) > 0 && (
-              <p className="text-[12.5px] text-ink-500">
+              <p className="text-[12px] text-ink-500">
                 Tried {data.suggestionsConsidered} changes against this niche
                 {data.bestRejectedLift !== null && data.bestRejectedLift > 0
                   ? `; the best was worth ${data.bestRejectedLift.toFixed(1)} points, below the threshold we report.`
@@ -257,13 +257,13 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
 
           {data.benchmark && data.benchmark.gaps.length > 0 && (
             <div>
-              <h3 className="text-[12.5px] font-semibold text-ink-900 flex items-center gap-1.5 mb-2">
+              <h3 className="text-[12px] font-semibold text-ink-900 flex items-center gap-1.5 mb-2">
                 <Target className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
                 Where you sit outside the top decile&apos;s range
               </h3>
               <ul className="space-y-1.5">
                 {data.benchmark.gaps.map((g) => (
-                  <li key={g.feature} className="text-[12.5px] text-ink-600">
+                  <li key={g.feature} className="text-[12px] text-ink-600">
                     {g.sentence}
                   </li>
                 ))}
@@ -274,9 +274,9 @@ export const NicheBenchmark: React.FC<NicheBenchmarkProps> = ({
           {/* Provenance is not a footnote here, it is the difference between this
               number and the invented one it replaced. Always rendered. */}
           {data.provenance.length > 0 && (
-            <div className="flex items-start gap-2 pt-1 border-t border-white/[0.05] mt-1">
+            <div className="flex items-start gap-2 pt-1 border-t border-ink-200 mt-1">
               <Info className="w-3.5 h-3.5 text-ink-400 mt-2 shrink-0" aria-hidden="true" />
-              <ul className="text-[11.5px] text-ink-500 space-y-0.5 pt-1.5">
+              <ul className="text-[12px] text-ink-500 space-y-0.5 pt-1.5">
                 {data.provenance.map((line) => (
                   <li key={line}>{line}</li>
                 ))}

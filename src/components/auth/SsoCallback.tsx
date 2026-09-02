@@ -3,6 +3,7 @@
 import React from 'react';
 import { AuthenticateWithRedirectCallback } from '@clerk/nextjs';
 import { Loader2 } from 'lucide-react';
+import { Logo } from '@/components/ui/Logo';
 
 /**
  * Landing strip for the OAuth round trip. The provider redirects here with the
@@ -20,12 +21,13 @@ import { Loader2 } from 'lucide-react';
  * different flow — do not merge them.
  */
 export const SsoCallback: React.FC = () => (
-  <div className="flex min-h-svh items-center justify-center bg-white">
+  <div className="auth-page-root flex min-h-svh flex-col items-center justify-center gap-6 px-4">
+    <Logo />
     <AuthenticateWithRedirectCallback
       signInFallbackRedirectUrl="/dashboard"
       signUpFallbackRedirectUrl="/dashboard"
     />
-    <p className="flex items-center gap-2.5 text-[14.5px] text-gray-500">
+    <p className="flex items-center gap-2.5 text-[14px] text-ink-500">
       <Loader2 className="h-4 w-4 animate-spin" />
       Finishing sign-in…
     </p>

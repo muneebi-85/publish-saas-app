@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { LayoutGrid, ChevronDown, CheckCircle2, Minus } from 'lucide-react';
 import type { Scorecard } from '@/lib/types';
+import { scoreBand, SCORE_BAND_UI } from '@/lib/score-band';
 
 /**
  * The scorecard grid.
@@ -15,16 +16,12 @@ import type { Scorecard } from '@/lib/types';
 
 function scoreColor(value: number | null): string {
   if (value === null) return 'text-ink-400';
-  if (value >= 85) return 'text-grass-700';
-  if (value >= 65) return 'text-amber-700';
-  return 'text-crimson-700';
+  return SCORE_BAND_UI[scoreBand(value)].text;
 }
 
 function barColor(value: number | null): string {
   if (value === null) return 'bg-ink-200';
-  if (value >= 85) return 'bg-grass-500';
-  if (value >= 65) return 'bg-amber-500';
-  return 'bg-crimson-500';
+  return SCORE_BAND_UI[scoreBand(value)].bar;
 }
 
 const ScorecardRow: React.FC<{ card: Scorecard }> = ({ card }) => {
@@ -38,19 +35,19 @@ const ScorecardRow: React.FC<{ card: Scorecard }> = ({ card }) => {
   const panelId = `scorecard-${card.id}`;
 
   return (
-    <div className="rounded-xl bg-surface-canvas border border-ink-200 overflow-hidden">
+    <div className="rounded-lg bg-surface-canvas border border-ink-200 overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={!hasDetail}
         aria-expanded={hasDetail ? open : undefined}
         aria-controls={hasDetail ? panelId : undefined}
-        className="w-full text-left p-4 flex items-start gap-3 disabled:cursor-default hover:bg-white/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-inset"
+        className="w-full text-left p-4 flex items-start gap-3 disabled:cursor-default hover:bg-ink-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas focus-visible:ring-brand-600 focus-visible:ring-inset"
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-[13px] font-semibold text-ink-900">{card.label}</span>
-            <span className={`text-[17px] font-semibold tabular-nums shrink-0 ${scoreColor(card.value)}`}>
+            <span className={`text-[18px] font-semibold tabular-nums shrink-0 ${scoreColor(card.value)}`}>
               {card.value === null ? (
                 <span className="text-[12px] font-medium">Not evaluated</span>
               ) : (
@@ -62,9 +59,9 @@ const ScorecardRow: React.FC<{ card: Scorecard }> = ({ card }) => {
             </span>
           </div>
 
-          <div className="mt-2 h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+          <div className="mt-2 h-1.5 rounded-full bg-ink-100 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${barColor(card.value)}`}
+              className={`h-full rounded-full transition-all duration-500 ${barColor(card.value)}`}
               style={{ width: `${card.value ?? 0}%` }}
             />
           </div>
@@ -89,12 +86,12 @@ const ScorecardRow: React.FC<{ card: Scorecard }> = ({ card }) => {
         <div id={panelId} className="px-4 pb-4 space-y-3 border-t border-ink-200 pt-3">
           {card.evidence.length > 0 && (
             <div>
-              <h5 className="text-[11px] font-semibold text-ink-500 uppercase tracking-wide mb-1.5">
+              <h5 className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] mb-1.5">
                 Evidence
               </h5>
               <ul className="space-y-1">
                 {card.evidence.map((e, i) => (
-                  <li key={i} className="text-[12.5px] text-ink-700 leading-relaxed flex items-start gap-2">
+                  <li key={i} className="text-[12px] text-ink-700 leading-relaxed flex items-start gap-2">
                     <span className="text-ink-400 mt-0.5">•</span>
                     <span className="break-words">{e}</span>
                   </li>
@@ -105,12 +102,12 @@ const ScorecardRow: React.FC<{ card: Scorecard }> = ({ card }) => {
 
           {card.inconclusive.length > 0 && (
             <div>
-              <h5 className="text-[11px] font-semibold text-ink-500 uppercase tracking-wide mb-1.5">
+              <h5 className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] mb-1.5">
                 Inconclusive
               </h5>
               <ul className="space-y-1">
                 {card.inconclusive.map((e, i) => (
-                  <li key={i} className="text-[12.5px] text-ink-600 leading-relaxed flex items-start gap-2">
+                  <li key={i} className="text-[12px] text-ink-600 leading-relaxed flex items-start gap-2">
                     <Minus className="w-3.5 h-3.5 text-ink-400 shrink-0 mt-0.5" />
                     <span className="break-words">{e}</span>
                   </li>
@@ -121,12 +118,12 @@ const ScorecardRow: React.FC<{ card: Scorecard }> = ({ card }) => {
 
           {card.recommendations.length > 0 && (
             <div>
-              <h5 className="text-[11px] font-semibold text-brand-600 uppercase tracking-wide mb-1.5">
+              <h5 className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] mb-1.5">
                 Recommended improvements
               </h5>
               <ul className="space-y-1.5">
                 {card.recommendations.map((r, i) => (
-                  <li key={i} className="text-[12.5px] text-ink-700 leading-relaxed flex items-start gap-2">
+                  <li key={i} className="text-[12px] text-ink-700 leading-relaxed flex items-start gap-2">
                     <CheckCircle2 className="w-3.5 h-3.5 text-grass-700 shrink-0 mt-0.5" />
                     <span className="break-words">{r}</span>
                   </li>
@@ -137,10 +134,10 @@ const ScorecardRow: React.FC<{ card: Scorecard }> = ({ card }) => {
 
           {card.expectedImpact.trim().length > 0 && (
             <div>
-              <h5 className="text-[11px] font-semibold text-ink-500 uppercase tracking-wide mb-1.5">
+              <h5 className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] mb-1.5">
                 Expected impact
               </h5>
-              <p className="text-[12.5px] text-ink-700 leading-relaxed">{card.expectedImpact}</p>
+              <p className="text-[12px] text-ink-700 leading-relaxed">{card.expectedImpact}</p>
             </div>
           )}
         </div>
@@ -153,17 +150,17 @@ export const ScorecardGrid: React.FC<{ scorecards: Scorecard[] }> = ({ scorecard
   const evaluated = scorecards.filter((c) => c.value !== null).length;
 
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
+    <section className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-lg bg-ink-100 text-ink-900 flex items-center justify-center shrink-0 shadow-subtle">
             <LayoutGrid className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
               Scorecards
             </h2>
-            <p className="text-xs text-ink-500 mt-0.5">
+            <p className="text-[12px] text-ink-500 mt-0.5">
               Every layer with its score, confidence, evidence, and what to change.
             </p>
           </div>

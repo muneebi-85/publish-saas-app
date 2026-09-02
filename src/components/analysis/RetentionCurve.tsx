@@ -43,6 +43,30 @@ function toY(v: number) {
 }
 
 export const RetentionCurve: React.FC<{ hook: HookRetentionMetric }> = ({ hook }) => {
+  // No script/transcript means no anchors: the honest chart is no chart. A
+  // curve drawn from the 0/0/0 stand-in would show a 100%→0% cliff that no
+  // engine ever predicted.
+  if (hook.analyzed === false) {
+    return (
+      <section className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
+        <div className="px-6 py-5 border-b border-ink-200 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-ink-100 text-ink-900 flex items-center justify-center shrink-0 shadow-subtle">
+            <Activity className="w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
+              Predicted retention curve
+            </h2>
+            <p className="text-[12px] text-ink-500 mt-0.5">
+              Where viewers are expected to drop off across the first five minutes.
+            </p>
+          </div>
+        </div>
+        <div className="p-6 text-[13px] text-ink-600 leading-relaxed">{hook.hookDropoffReason}</div>
+      </section>
+    );
+  }
+
   const a = clamp(hook.first5SecRetention);
   const b = clamp(hook.first10SecRetention);
   const c = clamp(hook.first30SecRetention);
@@ -77,17 +101,17 @@ export const RetentionCurve: React.FC<{ hook: HookRetentionMetric }> = ({ hook }
   const hold = c >= 85 ? 'Excellent hold' : c >= 65 ? 'Solid hold' : 'Heavy drop-off';
 
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
+    <section className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-lg bg-ink-100 text-ink-900 flex items-center justify-center shrink-0 shadow-subtle">
             <Activity className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
               Predicted retention curve
             </h2>
-            <p className="text-xs text-ink-500 mt-0.5">
+            <p className="text-[12px] text-ink-500 mt-0.5">
               Where viewers are expected to drop off across the first five minutes.
             </p>
           </div>
@@ -101,8 +125,8 @@ export const RetentionCurve: React.FC<{ hook: HookRetentionMetric }> = ({ hook }
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Predicted retention curve">
           <defs>
             <linearGradient id="retentionFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#7CFF9A" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#7CFF9A" stopOpacity="0.02" />
+              <stop offset="0%" stopColor="rgb(var(--grass-500))" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="rgb(var(--grass-500))" stopOpacity="0.02" />
             </linearGradient>
           </defs>
 
@@ -114,10 +138,10 @@ export const RetentionCurve: React.FC<{ hook: HookRetentionMetric }> = ({ hook }
                 x2={W - PAD.right}
                 y1={toY(v)}
                 y2={toY(v)}
-                stroke="rgba(255,255,255,0.07)"
+                stroke="var(--ring)"
                 strokeWidth="1"
               />
-              <text x={PAD.left - 8} y={toY(v) + 4} textAnchor="end" fontSize="10" fill="#6B7278">
+              <text x={PAD.left - 8} y={toY(v) + 4} textAnchor="end" fontSize="10" fill="rgb(var(--ink-500))">
                 {v}%
               </text>
             </g>
@@ -131,7 +155,7 @@ export const RetentionCurve: React.FC<{ hook: HookRetentionMetric }> = ({ hook }
               y={H - 8}
               textAnchor={tick.t === 0 ? 'start' : tick.t === 300 ? 'end' : 'middle'}
               fontSize="10"
-              fill="#6B7278"
+              fill="rgb(var(--ink-500))"
             >
               {tick.label}
             </text>
@@ -139,22 +163,22 @@ export const RetentionCurve: React.FC<{ hook: HookRetentionMetric }> = ({ hook }
 
           {/* Measured area + line */}
           <path d={areaPath} fill="url(#retentionFill)" />
-          <path d={solidPath} fill="none" stroke="#7CFF9A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={solidPath} fill="none" style={{ stroke: 'rgb(var(--grass-500))' }} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
 
           {/* Modeled tail */}
-          <path d={tailPath} fill="none" stroke="#7CFF9A" strokeWidth="2" strokeDasharray="5 6" strokeLinecap="round" opacity="0.75" />
+          <path d={tailPath} fill="none" style={{ stroke: 'rgb(var(--grass-500))' }} strokeWidth="2" strokeDasharray="5 6" strokeLinecap="round" opacity="0.75" />
 
           {/* Anchor points */}
           {anchors.map((anchor) => (
             <g key={anchor.t}>
-              <circle cx={toX(anchor.t)} cy={toY(anchor.v)} r="4.5" fill="#070B0D" stroke="#7CFF9A" strokeWidth="2.5" />
+              <circle cx={toX(anchor.t)} cy={toY(anchor.v)} r="4.5" style={{ fill: 'rgb(var(--panel))', stroke: 'rgb(var(--grass-500))' }} strokeWidth="2.5" />
               <text
                 x={toX(anchor.t)}
                 y={toY(anchor.v) - 10}
                 textAnchor="middle"
                 fontSize="11"
                 fontWeight="700"
-                fill="#D7DCDA"
+                fill="rgb(var(--ink-500))"
               >
                 {anchor.v}%
               </text>
@@ -164,16 +188,17 @@ export const RetentionCurve: React.FC<{ hook: HookRetentionMetric }> = ({ hook }
 
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-4 text-[11px] text-ink-500">
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-4 h-0.5 rounded-full bg-grass-500" /> Predicted from the hook engine
+            <span className="w-4 h-0.5 rounded-full bg-grass-500" />{' '}
+            {hook.basis === 'heuristic' ? 'Predicted from a pattern check (model unavailable)' : 'Predicted from the hook engine'}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-4 h-0.5 rounded-full bg-grass-500 bg-[repeating-linear-gradient(90deg,#7CFF9A_0_4px,transparent_4px_8px)]" />
+            <span className="w-4 h-0.5 rounded-full bg-grass-500 bg-[repeating-linear-gradient(90deg,rgb(var(--grass-500))_0_4px,transparent_4px_8px)]" />
             Modeled estimate past 30s
           </span>
-          <span className="text-ink-400">{hook.hookDropoffReason}</span>
+          <span className="text-ink-600">{hook.hookDropoffReason}</span>
         </div>
 
-        <p className="text-[11px] text-ink-400 mt-3 leading-relaxed">
+        <p className="text-[11px] text-ink-500 mt-3 leading-relaxed">
           Anchored on the predicted 5s / 10s / 30s retention from your script&apos;s opening. Between
           checkpoints the curve interpolates; after 30 seconds it extends on a 90-second half-life
           model because the engine only predicts the opening. This is a prediction, not a

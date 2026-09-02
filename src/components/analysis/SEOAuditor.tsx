@@ -7,17 +7,17 @@ import { SEOMetric } from '@/lib/types';
 
 export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
+    <section className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
       <div className="px-6 py-5 border-b border-ink-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-9 h-9 rounded-lg bg-ink-100 text-ink-900 flex items-center justify-center shrink-0 shadow-subtle">
             <Search className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
               SEO &amp; metadata
             </h2>
-            <p className="text-xs text-ink-500 mt-0.5">
+            <p className="text-[12px] text-ink-500 mt-0.5">
               Title keywords, description indexing, and tag relevance.
             </p>
           </div>
@@ -28,18 +28,37 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
       </div>
 
       <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-2.5">
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Title score</div>
-          <div className="text-2xl font-semibold text-ink-900 tabular-nums tracking-tight mt-1">{seo.titleOptimizationScore}%</div>
-          <div className="text-[11.5px] text-grass-700 mt-1">Intent aligned</div>
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Title score</div>
+          <div className="font-display text-[24px] leading-[1.25] font-semibold text-ink-900 tabular-nums tracking-[-0.02em] mt-1">{seo.titleOptimizationScore}%</div>
+          {/* Derived from the score it sits under — the previous hardcoded
+              "Intent aligned" printed under failing titles too. */}
+          <div className={`text-[12px] mt-1 ${
+            seo.titleOptimizationScore >= 80 ? 'text-grass-700' : seo.titleOptimizationScore >= 60 ? 'text-ink-500' : 'text-amber-700'
+          }`}>
+            {seo.titleOptimizationScore >= 80 ? 'Strong keyword targeting' : seo.titleOptimizationScore >= 60 ? 'Partially targeted' : 'Weak keyword targeting'}
+          </div>
         </div>
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Keyword density</div>
-          <div className="text-[15px] font-semibold text-ink-900 mt-1">{seo.keywordDensity}</div>
-          <div className="text-[11.5px] text-grass-700 mt-1">Within optimal range</div>
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Keyword density</div>
+          <div className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900 mt-1">{seo.keywordDensity}</div>
+          {/* Reads the (Sparse/Balanced/Dense) band the density string carries,
+              so a "Dense" reading can no longer sit under the words "Within
+              optimal range". */}
+          <div className={`text-[12px] mt-1 ${
+            /balanced/i.test(seo.keywordDensity) ? 'text-grass-700' : /dense/i.test(seo.keywordDensity) ? 'text-amber-700' : 'text-ink-500'
+          }`}>
+            {/balanced/i.test(seo.keywordDensity)
+              ? 'In the balanced band'
+              : /dense/i.test(seo.keywordDensity)
+                ? 'Dense — trim repetition'
+                : /sparse/i.test(seo.keywordDensity)
+                  ? 'Sparse — name the topic more'
+                  : 'Add a script to measure'}
+          </div>
         </div>
-        <div className="rounded-xl bg-surface-canvas border border-ink-200 p-4">
-          <div className="text-[11px] font-medium text-ink-500">Competitor benchmark</div>
+        <div className="rounded-lg bg-surface-canvas border border-ink-200 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Competitor benchmark</div>
           <div className="text-[13px] font-medium text-ink-900 mt-1 leading-snug">{seo.competitorComparison}</div>
         </div>
       </div>
@@ -51,7 +70,7 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
           </div>
           <div className="flex flex-wrap gap-1.5">
             {seo.suggestedTags.map((tag, i) => (
-              <span key={i} className="inline-flex items-center px-2.5 py-1 bg-white/[0.08] hover:bg-white/[0.09] transition-colors text-ink-800 text-[12px] font-medium rounded-md cursor-default">
+              <span key={i} className="inline-flex items-center px-2.5 py-1 bg-ink-100 hover:bg-ink-200 transition-colors text-ink-800 text-[12px] font-medium rounded-md cursor-default">
                 {tag}
               </span>
             ))}
@@ -63,7 +82,7 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
           </div>
           <div className="flex flex-wrap gap-1.5">
             {seo.suggestedHashtags.map((ht, i) => (
-              <span key={i} className="inline-flex items-center px-2.5 py-1 bg-grass-50 border border-grass-100 text-grass-800 text-[12px] font-medium rounded-md cursor-default">
+              <span key={i} className="inline-flex items-center px-2.5 py-1 bg-grass-50 border border-grass-200 text-grass-800 text-[12px] font-medium rounded-md cursor-default">
                 {ht}
               </span>
             ))}
@@ -95,10 +114,14 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
 const CopyableText: React.FC<{ title: string; icon: React.ReactNode; text: string }> = ({ title, icon, text }) => {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // A refused clipboard permission must not flash a false "Copied".
+    }
   };
 
   return (
@@ -109,13 +132,13 @@ const CopyableText: React.FC<{ title: string; icon: React.ReactNode; text: strin
         </div>
         <button
           onClick={handleCopy}
-          className="text-[11px] font-medium text-ink-500 hover:text-white flex items-center gap-1 transition-colors"
+          className="text-[11px] font-medium text-ink-500 hover:text-ink-900 flex items-center gap-1 transition-colors"
         >
           {copied ? <Check className="w-3.5 h-3.5 text-grass-700" /> : <Copy className="w-3.5 h-3.5" />}
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <div className="bg-surface-canvas border border-ink-200 rounded-xl p-4 text-[13px] text-ink-800 whitespace-pre-wrap font-mono text-sm">
+      <div className="bg-surface-canvas border border-ink-200 rounded-lg p-3.5 text-[13px] leading-relaxed text-ink-800 whitespace-pre-wrap font-mono">
         {text}
       </div>
     </div>

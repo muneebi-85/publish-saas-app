@@ -30,8 +30,11 @@ export const dynamic = 'force-dynamic';
 /** Grace period between the request and irreversible erasure. */
 const GRACE_DAYS = 30;
 
-/** Subscription states that are still billable and must be cancelled. */
-const BILLABLE = new Set(['active', 'on_trial', 'past_due', 'unpaid']);
+/** Subscription states that are still billable and must be cancelled.
+ * 'paused' is included: Lemon Squeezy auto-resumes a paused subscription at its
+ * resume date and bills the card — erasure must cancel it while we still can.
+ */
+const BILLABLE = new Set(['active', 'on_trial', 'past_due', 'unpaid', 'paused']);
 
 export async function POST(req: Request) {
   // Guards sit outside the try so their responses can never be swallowed
@@ -174,12 +177,61 @@ export async function DELETE() {
   if (authCtx instanceof NextResponse) return authCtx;
 
   try {
+    // The sweep's point-of-no-return writes the epoch sentinel; while it
+    // holds, the erasure is genuinely underway and cancelling mid-flight would
+    // leave a half-erased account (Clerk identity gone, DB row alive). This is
+    // also what closes the sweep's check-then-delete window: the sentinel is
+    // only writable while the marker is still set, so a cancel that lands before
+    // the sentinel prevents it, and one that lands after is honestly refused.
+    const PURGING_SENTINEL = new Date(0);
+    const row = await prisma.user.findUnique({
+      where: { id: authCtx.dbUserId },
+      select: { deleteScheduledAt: true, email: true },
+    });
+    if (row?.deleteScheduledAt && row.deleteScheduledAt.getTime() === PURGING_SENTINEL.getTime()) {
+      return NextResponse.json(
+        {
+          error:
+            'The permanent deletion has already started and can no longer be cancelled. Contact privacy@genapps.online if you believe this is a mistake.',
+        },
+        { status: 409 },
+      );
+    }
+
+    // The clearing predicate EXCLUDES the epoch sentinel (`gt` epoch, not
+    // `not null`): epoch 0 satisfies `not null`, so the old predicate could
+    // clear the sentinel mid-erasure — a cancel whose findUnique read the
+    // marker just before the sweep locked it, but whose updateMany landed
+    // after, would return 200/changed while the sweep (holding its stale
+    // snapshot) still erased the Clerk identity and the DB row.
     const cleared = await prisma.user.updateMany({
-      where: { id: authCtx.dbUserId, deleteScheduledAt: { not: null } },
+      where: {
+        id: authCtx.dbUserId,
+        AND: [
+          { deleteScheduledAt: { not: null } },
+          { deleteScheduledAt: { gt: PURGING_SENTINEL } },
+        ],
+      },
       data: { deleteScheduledAt: null },
     });
 
     if (cleared.count === 0) {
+      // Either nothing was pending, or the sweep locked the sentinel between
+      // the read above and this write. Distinguish honestly: re-read and refuse
+      // if the sentinel now holds (the erasure is underway), success otherwise.
+      const now = await prisma.user.findUnique({
+        where: { id: authCtx.dbUserId },
+        select: { deleteScheduledAt: true },
+      });
+      if (now?.deleteScheduledAt && now.deleteScheduledAt.getTime() === PURGING_SENTINEL.getTime()) {
+        return NextResponse.json(
+          {
+            error:
+              'The permanent deletion has already started and can no longer be cancelled. Contact privacy@genapps.online if you believe this is a mistake.',
+          },
+          { status: 409 },
+        );
+      }
       // Nothing was pending. Report success — the desired end state holds.
       return NextResponse.json(
         { success: true, scheduledFor: null, changed: false },
@@ -189,12 +241,8 @@ export async function DELETE() {
 
     console.warn('[account/delete] cancelled', { userId: authCtx.dbUserId });
 
-    const user = await prisma.user.findUnique({
-      where: { id: authCtx.dbUserId },
-      select: { email: true },
-    });
-    if (hasEmail() && user?.email) {
-      const mail = await sendDeletionCancelled({ to: user.email });
+    if (hasEmail() && row?.email) {
+      const mail = await sendDeletionCancelled({ to: row.email });
       if (!mail.success) {
         console.error('[account/delete] cancellation email failed', mail.error);
       }

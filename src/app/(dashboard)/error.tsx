@@ -15,18 +15,18 @@ export default function DashboardError({
   useEffect(() => { reportClientError(error, 'dashboard error'); }, [error]);
 
   return (
-    <div className="rounded-2xl border border-amber-500/20 bg-amber-50/40 p-8 text-center animate-enter">
-      <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center mx-auto">
+    <div className="rounded-xl border border-crimson-200 bg-crimson-50 p-8 text-center animate-enter">
+      <div className="w-11 h-11 rounded-xl bg-crimson-100 text-crimson-700 flex items-center justify-center mx-auto">
         <AlertTriangle className="w-5 h-5" />
       </div>
-      <h2 className="font-display text-xl font-semibold text-ink-950 mt-5">
+      <h2 className="font-display text-[20px] leading-[1.3] font-semibold tracking-[-0.02em] text-ink-900 mt-5">
         This section couldn&apos;t load.
       </h2>
-      <p className="text-sm text-ink-600 mt-2 max-w-md mx-auto">
+      <p className="text-[13px] leading-relaxed text-ink-600 mt-2 max-w-sm mx-auto">
         Nothing was lost. The rest of your workspace is unaffected — try again, or open a different page.
       </p>
       {error.digest && (
-        <div className="mt-4 inline-block px-3 py-1.5 rounded-md bg-amber-50 border border-amber-500/20 text-[11px] font-mono text-ink-600">
+        <div className="mt-4 inline-block px-2.5 py-1 rounded-md bg-surface-panel border border-crimson-200 text-[11px] font-mono text-ink-600">
           Ref: {error.digest}
         </div>
       )}

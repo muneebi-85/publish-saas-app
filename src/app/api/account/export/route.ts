@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server';
 import { rateLimit, userKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 import { requireAuth } from '@/lib/api-guards';
 import { prisma } from '@/lib/db';
+import { countsToNumbers } from '@/lib/channels';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -120,7 +121,7 @@ export async function GET() {
       format: 'publish-export/v1',
       exportedAt: new Date().toISOString(),
       account,
-      channels,
+      channels: channels.map(countsToNumbers),
       projects,
       reviews: reports,
       reviewRuns: jobs,

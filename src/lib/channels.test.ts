@@ -12,6 +12,12 @@ import {
   fetchChannelCtr,
   normalizeTitle,
   titlesMatch,
+  parseYouTubeInput,
+  parseTikTokInput,
+  parseHumanCount,
+  parseYouTubeAboutHtml,
+  parseTikTokOembed,
+  fetchPublicChannelSnapshot,
   type ChannelPlatform,
 } from './channels';
 
@@ -374,5 +380,345 @@ describe('fetchChannelSnapshot', () => {
     };
     await fetchChannelSnapshot('YOUTUBE', 'secret-token', mockFetch);
     expect(sent).toBe('Bearer secret-token');
+  });
+});
+
+describe('parseYouTubeInput', () => {
+  it('accepts a bare @handle', () => {
+    expect(parseYouTubeInput('@myhandle')).toEqual({ ok: true, value: '@myhandle' });
+  });
+
+  it('accepts a full channel URL and strips sub-tabs and query', () => {
+    expect(parseYouTubeInput('https://www.youtube.com/@myhandle/videos?sub_confirmation=1')).toEqual({
+      ok: true,
+      value: '@myhandle',
+    });
+  });
+
+  it('accepts a channel-id URL', () => {
+    expect(parseYouTubeInput('https://youtube.com/channel/UCX6OQ3DkcsbYNE6H8uQQuVA/about')).toEqual({
+      ok: true,
+      value: 'channel/UCX6OQ3DkcsbYNE6H8uQQuVA',
+    });
+  });
+
+  it('accepts a bare channel id', () => {
+    expect(parseYouTubeInput('UCX6OQ3DkcsbYNE6H8uQQuVA')).toEqual({
+      ok: true,
+      value: 'channel/UCX6OQ3DkcsbYNE6H8uQQuVA',
+    });
+  });
+
+  it('rejects non-YouTube hosts', () => {
+    const res = parseYouTubeInput('https://vimeo.com/@myhandle');
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects legacy /c/ links with guidance', () => {
+    const res = parseYouTubeInput('https://www.youtube.com/c/OldName');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('@handle');
+  });
+
+  it('rejects empty and malformed input', () => {
+    expect(parseYouTubeInput('').ok).toBe(false);
+    expect(parseYouTubeInput('   ').ok).toBe(false);
+    expect(parseYouTubeInput('@ab').ok).toBe(false); // too short
+    expect(parseYouTubeInput(42).ok).toBe(false);
+  });
+});
+
+describe('parseTikTokInput', () => {
+  it('accepts a bare username and strips @', () => {
+    expect(parseTikTokInput('@khaby.lame')).toEqual({ ok: true, value: 'khaby.lame' });
+    expect(parseTikTokInput('khaby.lame')).toEqual({ ok: true, value: 'khaby.lame' });
+  });
+
+  it('accepts a profile URL with sub-path', () => {
+    expect(parseTikTokInput('https://www.tiktok.com/@tiktok?lang=en')).toEqual({
+      ok: true,
+      value: 'tiktok',
+    });
+  });
+
+  it('lowercases the username', () => {
+    expect(parseTikTokInput('@SomeUser')).toEqual({ ok: true, value: 'someuser' });
+  });
+
+  it('rejects non-TikTok hosts and video links', () => {
+    expect(parseTikTokInput('https://youtube.com/@tiktok').ok).toBe(false);
+    expect(parseTikTokInput('https://www.tiktok.com/@user/video/123').ok).toBe(true);
+  });
+
+  it('rejects invalid usernames', () => {
+    expect(parseTikTokInput('a').ok).toBe(false); // too short
+    expect(parseTikTokInput('has space').ok).toBe(false);
+    expect(parseTikTokInput('').ok).toBe(false);
+  });
+});
+
+describe('parseHumanCount', () => {
+  it('parses word suffixes', () => {
+    expect(parseHumanCount('30.3 million subscribers')).toBe(30300000);
+    expect(parseHumanCount('1.2K subscribers')).toBe(1200);
+    expect(parseHumanCount('4.56M subscribers')).toBe(4560000);
+    expect(parseHumanCount('2 thousand subscribers')).toBe(2000);
+  });
+
+  it('parses exact comma-separated numbers', () => {
+    expect(parseHumanCount('66,561,390 views')).toBe(66561390);
+    expect(parseHumanCount('71 videos')).toBe(71);
+  });
+
+  it('returns 0 for "No subscribers" and unknown shapes', () => {
+    expect(parseHumanCount('No subscribers')).toBe(0);
+    expect(parseHumanCount('')).toBe(0);
+    expect(parseHumanCount(undefined)).toBe(0);
+    expect(parseHumanCount('hidden')).toBe(0);
+  });
+});
+
+const YT_ABOUT_HTML = `<html><body><script>var ytInitialData = ${JSON.stringify({
+  metadata: {
+    channelMetadataRenderer: {
+      title: 'QA Channel',
+      externalId: 'UCX6OQ3DkcsbYNE6H8uQQuVA',
+      vanityChannelUrl: 'http://www.youtube.com/@qachannel',
+      avatar: { thumbnails: [{ url: 'https://yt3.example/lo.jpg' }, { url: 'https://yt3.example/hi.jpg' }] },
+    },
+  },
+  contents: {
+    tabs: [
+      {
+        tabRenderer: {
+          content: {
+            aboutChannelViewModel: {
+              subscriberCountText: {
+                accessibility: { accessibilityData: { label: '1.5 million subscribers' } },
+              },
+              videoCountText: { runs: [{ text: '71' }, { text: ' videos' }] },
+              viewCountText: { simpleText: '66,561,390 views' },
+            },
+          },
+        },
+      },
+    ],
+  },
+})};</script></body></html>`;
+
+describe('parseYouTubeAboutHtml', () => {
+  it('extracts identity and counters from the public about page', () => {
+    const snapshot = parseYouTubeAboutHtml(YT_ABOUT_HTML);
+    if ('error' in snapshot) throw new Error(snapshot.error);
+    expect(snapshot.channelId).toBe('UCX6OQ3DkcsbYNE6H8uQQuVA');
+    expect(snapshot.name).toBe('QA Channel');
+    expect(snapshot.url).toBe('https://www.youtube.com/@qachannel');
+    expect(snapshot.avatarUrl).toBe('https://yt3.example/hi.jpg');
+    expect(snapshot.subscribers).toBe(1500000);
+    expect(snapshot.videosCount).toBe(71);
+    expect(snapshot.viewsCount).toBe(66561390);
+  });
+
+  it('prefers the about-section node over look-alike counters', () => {
+    // The live about page embeds a featured video whose renderer carries its
+    // own viewCountText, and related-channel cards carrying another channel's
+    // subscriber/video counts, all before the real stats node in document
+    // order. The parser must still pick the channel's own about numbers.
+    const html = `<html><body><script>var ytInitialData = ${JSON.stringify({
+      metadata: {
+        channelMetadataRenderer: {
+          title: 'QA Channel',
+          externalId: 'UCX6OQ3DkcsbYNE6H8uQQuVA',
+          vanityChannelUrl: 'http://www.youtube.com/@qachannel',
+        },
+      },
+      contents: {
+        channelVideoPlayerRenderer: { viewCountText: { simpleText: '12,345 views' } },
+        relatedChannelRenderer: {
+          subscriberCountText: { simpleText: '59.5M subscribers' },
+          videoCountText: { simpleText: '179 videos' },
+        },
+        aboutChannelViewModel: {
+          subscriberCountText: { simpleText: '1.5M subscribers' },
+          videoCountText: { simpleText: '71 videos' },
+          viewCountText: { simpleText: '66,561,390 views' },
+        },
+      },
+    })};</script></body></html>`;
+    const snapshot = parseYouTubeAboutHtml(html);
+    if ('error' in snapshot) throw new Error(snapshot.error);
+    expect(snapshot.subscribers).toBe(1500000);
+    expect(snapshot.videosCount).toBe(71);
+    expect(snapshot.viewsCount).toBe(66561390);
+  });
+
+  it('falls back to ranked counters when there is no about panel', () => {
+    const html = `<html><body><script>var ytInitialData = ${JSON.stringify({
+      metadata: {
+        channelMetadataRenderer: { title: 'QA Channel', externalId: 'UCabc' },
+      },
+      contents: {
+        channelVideoPlayerRenderer: { viewCountText: { simpleText: '12,345 views' } },
+        headerRenderer: {
+          subscriberCountText: { simpleText: '2K subscribers' },
+          videoCountText: { simpleText: '9 videos' },
+          viewCountText: { simpleText: '50,000 views' },
+        },
+      },
+    })};</script></body></html>`;
+    const snapshot = parseYouTubeAboutHtml(html);
+    if ('error' in snapshot) throw new Error(snapshot.error);
+    expect(snapshot.subscribers).toBe(2000);
+    expect(snapshot.videosCount).toBe(9);
+    expect(snapshot.viewsCount).toBe(50000);
+  });
+
+  it('reads plain-string counters (newer about-panel variant)', () => {
+    const html = `<html><body><script>var ytInitialData = ${JSON.stringify({
+      metadata: {
+        channelMetadataRenderer: { title: 'QA Channel', externalId: 'UCown' },
+      },
+      onResponseReceivedEndpoints: [
+        {
+          showEngagementPanelEndpoint: {
+            engagementPanel: {
+              content: {
+                aboutChannelRenderer: {
+                  metadata: {
+                    aboutChannelViewModel: {
+                      channelId: 'UCown',
+                      subscriberCountText: '515M subscribers',
+                      videoCountText: '810 videos',
+                      viewCountText: '98,765,432,100 views',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+    })};</script></body></html>`;
+    const snapshot = parseYouTubeAboutHtml(html);
+    if ('error' in snapshot) throw new Error(snapshot.error);
+    expect(snapshot.subscribers).toBe(515000000);
+    expect(snapshot.videosCount).toBe(810);
+    expect(snapshot.viewsCount).toBe(98765432100);
+  });
+
+  it('ignores another channel\'s preloaded about panel', () => {
+    const html = `<html><body><script>var ytInitialData = ${JSON.stringify({
+      metadata: {
+        channelMetadataRenderer: { title: 'QA Channel', externalId: 'UCown' },
+      },
+      onResponseReceivedEndpoints: [
+        {
+          showEngagementPanelEndpoint: {
+            engagementPanel: {
+              content: {
+                aboutChannelRenderer: {
+                  metadata: {
+                    aboutChannelViewModel: {
+                      channelId: 'UCforeign',
+                      subscriberCountText: { simpleText: '59.5M subscribers' },
+                      videoCountText: { simpleText: '179 videos' },
+                      viewCountText: { simpleText: '1,000 views' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+    })};</script></body></html>`;
+    const snapshot = parseYouTubeAboutHtml(html);
+    if ('error' in snapshot) throw new Error(snapshot.error);
+    // The foreign panel's numbers must not leak in — nothing is measured.
+    expect(snapshot.subscribers).toBe(0);
+    expect(snapshot.videosCount).toBe(0);
+    expect(snapshot.viewsCount).toBe(0);
+  });
+
+  it('falls back to the channel-id URL when there is no vanity URL', () => {
+    const html = YT_ABOUT_HTML.replace(/"vanityChannelUrl":\s*"[^"]*",/, '');
+    const snapshot = parseYouTubeAboutHtml(html);
+    if ('error' in snapshot) throw new Error(snapshot.error);
+    expect(snapshot.url).toBe('https://www.youtube.com/channel/UCX6OQ3DkcsbYNE6H8uQQuVA');
+  });
+
+  it('errors when the page carries no channel metadata', () => {
+    expect('error' in parseYouTubeAboutHtml('<html>nothing</html>')).toBe(true);
+    expect('error' in parseYouTubeAboutHtml('var ytInitialData = {oops};</script>')).toBe(true);
+  });
+});
+
+describe('parseTikTokOembed', () => {
+  it('extracts identity from a profile oEmbed body', () => {
+    const meta = parseTikTokOembed({
+      author_name: 'Khabane lame',
+      author_url: 'https://www.tiktok.com/@khaby.lame',
+      title: "Khabane lame's Creator Profile",
+    });
+    if ('error' in meta) throw new Error(meta.error);
+    expect(meta.channelId).toBe('khaby.lame');
+    expect(meta.name).toBe('Khabane lame');
+    expect(meta.url).toBe('https://www.tiktok.com/@khaby.lame');
+  });
+
+  it('errors when the body has no profile', () => {
+    expect('error' in parseTikTokOembed({ message: 'Something went wrong' })).toBe(true);
+    expect('error' in parseTikTokOembed(null)).toBe(true);
+  });
+});
+
+describe('fetchPublicChannelSnapshot', () => {
+  it('resolves YouTube through the public about page', async () => {
+    const mockFetch: typeof fetch = async (url) => {
+      expect(String(url)).toBe('https://www.youtube.com/@qachannel/about');
+      return new Response(YT_ABOUT_HTML, { status: 200 });
+    };
+    const snapshot = await fetchPublicChannelSnapshot('YOUTUBE', 'youtube.com/@qachannel', mockFetch);
+    if ('error' in snapshot) throw new Error(snapshot.error);
+    expect(snapshot.channelId).toBe('UCX6OQ3DkcsbYNE6H8uQQuVA');
+    expect(snapshot.subscribers).toBe(1500000);
+  });
+
+  it('maps a YouTube 404 to a not-found message', async () => {
+    const mockFetch: typeof fetch = async () => new Response('', { status: 404 });
+    const snapshot = await fetchPublicChannelSnapshot('YOUTUBE', '@missing_xyz', mockFetch);
+    expect(snapshot).toEqual({ error: 'No YouTube channel found at that link.' });
+  });
+
+  it('returns the parse error for invalid input without fetching', async () => {
+    const mockFetch: typeof fetch = async () => {
+      throw new Error('should not fetch');
+    };
+    const snapshot = await fetchPublicChannelSnapshot('YOUTUBE', 'https://vimeo.com/x', mockFetch);
+    expect('error' in snapshot).toBe(true);
+  });
+
+  it('resolves TikTok through the oEmbed endpoint', async () => {
+    const mockFetch: typeof fetch = async (url) => {
+      expect(String(url)).toContain('tiktok.com/oembed');
+      expect(String(url)).toContain(encodeURIComponent('https://www.tiktok.com/@khaby.lame'));
+      return new Response(
+        JSON.stringify({ author_name: 'Khabane lame', author_url: 'https://www.tiktok.com/@khaby.lame' }),
+        { status: 200 },
+      );
+    };
+    const snapshot = await fetchPublicChannelSnapshot('TIKTOK', '@khaby.lame', mockFetch);
+    if ('error' in snapshot) throw new Error(snapshot.error);
+    expect(snapshot.channelId).toBe('khaby.lame');
+    expect(snapshot.name).toBe('Khabane lame');
+    expect(snapshot.url).toBe('https://www.tiktok.com/@khaby.lame');
+    expect(snapshot.subscribers).toBe(0); // oEmbed carries no counters
+  });
+
+  it('maps a TikTok rejection to a not-found message', async () => {
+    const mockFetch: typeof fetch = async () =>
+      new Response(JSON.stringify({ message: 'Something went wrong' }), { status: 400 });
+    const snapshot = await fetchPublicChannelSnapshot('TIKTOK', '@missing_xyz', mockFetch);
+    expect(snapshot).toEqual({ error: 'No TikTok account found at that link.' });
   });
 });

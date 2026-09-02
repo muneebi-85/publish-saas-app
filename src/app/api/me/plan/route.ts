@@ -57,6 +57,10 @@ export async function GET(req: Request) {
       plan: state.plan,
       auditsUsed: state.auditsUsed,
       auditsLimit: state.auditsLimit,
+      // Bonus reviews from referrals/challenges. Shown by the quota meter and
+      // already reflected in `canAnalyze` — a full meter with credits left is
+      // still open for business.
+      referralCredits: state.referralCredits,
       canAnalyze: state.canAnalyze,
       isNearLimit: state.isNearLimit,
       periodEnd: state.periodEnd,

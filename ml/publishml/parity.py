@@ -214,6 +214,80 @@ CASES: list[dict] = [
         "channel": {"subscribers": 340, "videoCount": 9, "publishedAt": "2025-12-30T00:00:00Z"},
         "thumb": None,
     },
+    {
+        # A NON-UTC OFFSET timestamp. Python's fromisoformat keeps the
+        # wall-clock fields as written (hour 9); a `new Date()` + getUTCHours()
+        # implementation reads the UTC-converted hour (4). This case exists so
+        # that divergence can never come back silently.
+        "name": "offset timestamp keeps wall-clock fields",
+        "video": {
+            "title": "offset timestamps and unicode digits Ⅷ",
+            "description": "٣ tips and ١٢:٣٤ arabic-indic digits\nhttps://x.example\n#٣x",
+            "tags": ["offset"],
+            "duration": "PT3M",
+            "publishedAt": "2026-03-04T09:15:00+05:00",
+            "definition": "hd",
+            "caption": False,
+        },
+        "channel": {"subscribers": 1200, "videoCount": 77},
+        "thumb": None,
+    },
+    {
+        # The `\b`-vs-word-class howto edge: "to" glued to a non-ASCII letter.
+        # Python's Unicode-aware `\b` does not see a boundary after "to" here;
+        # the explicit lookaround classes match on both sides.
+        "name": "howto with unicode-glued word and clickbaity roots",
+        "video": {
+            "title": "How toüntertake this — 7 joinery joints that clicked",
+            "description": "the following umbrella joins\n0:00",
+            "tags": [],
+            "duration": "PT2M1S",
+            "publishedAt": "2026-07-01T00:30:00-07:00",
+            "definition": "hd",
+            "caption": False,
+        },
+        "channel": {"subscribers": 10, "videoCount": 2},
+        "thumb": None,
+    },
+    {
+        # The digit-class edge the extractors used to drift on: Python's
+        # isdigit() accepted superscripts (100²) and circled digits (①), which
+        # a hand-enumerated Nd range list in TS missed, while full-width and
+        # Khmer Nd digits fell outside the ranges too. isdecimal()/\p{Nd} now
+        # agree exactly — this case pins that: superscripts must NOT count,
+        # full-width and Khmer digits must.
+        "name": "digit class edges: superscript no, fullwidth and khmer yes",
+        "video": {
+            "title": "100² growth and ① trick with ５ Khmer ៣",
+            "description": "the ① superscript ² must not count as a number",
+            "tags": [],
+            "duration": "PT5M",
+            "publishedAt": "2026-07-02T12:00:00Z",
+            "definition": "hd",
+            "caption": False,
+        },
+        "channel": {"subscribers": 500, "videoCount": 3},
+        "thumb": None,
+    },
+    {
+        # DATE-ONLY publishedAt: Python's fromisoformat accepts it (midnight,
+        # real weekday); the TS wallClock regex used to demand a time component
+        # and fell to the absent branch (dow pinned to Monday). 2026-03-04 is a
+        # WEDNESDAY — without agreement, publish_dow and publish_weekend drift
+        # on every date-only input.
+        "name": "date-only timestamp keeps the real weekday",
+        "video": {
+            "title": "date only",
+            "description": "",
+            "tags": [],
+            "duration": "PT4M",
+            "publishedAt": "2026-03-04",
+            "definition": "sd",
+            "caption": True,
+        },
+        "channel": {"subscribers": 800, "videoCount": 12},
+        "thumb": None,
+    },
 ]
 
 

@@ -15,16 +15,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { env } from '@/lib/env';
-import { reconcileExpiredPlans, refundAuditByUserId } from '@/lib/session';
+import { reconcileExpiredPlans, refundAuditInTx } from '@/lib/session';
+import { RUNNING_STALE_MS, QUEUED_STALE_MS, isClaimableJob } from '@/lib/jobs/sweep';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-/** A RUNNING job past this is dead: the worker's own ceiling is 300s. */
-const RUNNING_STALE_MS = 15 * 60 * 1000;
-/** A QUEUED job past this was never picked up — QStash gives up long before. */
-const QUEUED_STALE_MS = 30 * 60 * 1000;
 /** Completed/failed job rows past this are only noise. */
 const JOB_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -56,9 +53,25 @@ async function releaseStaleJobs(): Promise<{ failed: number; refunded: number }>
       OR: [
         { status: 'RUNNING', startedAt: { lt: new Date(now - RUNNING_STALE_MS) } },
         { status: 'QUEUED', createdAt: { lt: new Date(now - QUEUED_STALE_MS) } },
+        // A non-terminal worker failure stamps FAILED but KEEPS the charge,
+        // waiting for a QStash redelivery to resume. If that redelivery never
+        // comes — the exact "queues lose messages" case this sweep exists for —
+        // the row is stranded: invisible to the QUEUED/RUNNING scan above and
+        // never pruned (the retention cutoff needs a finishedAt it does not
+        // have). Without this arm, the creator's debit is gone forever.
+        // `updatedAt` (the failure stamp) anchors staleness, not createdAt: an
+        // old row that failed one attempt five minutes ago still has a live
+        // redelivery coming and must not be swept early.
+        {
+          status: 'FAILED',
+          quotaCharged: true,
+          updatedAt: { lt: new Date(now - QUEUED_STALE_MS) },
+        },
       ],
     },
-    select: { id: true, userId: true, quotaCharged: true },
+    // `paidWithCredits` says which pool the debit took, so the refund below
+    // restores the allowance or the credit exactly as it was paid.
+    select: { id: true, userId: true, quotaCharged: true, paidWithCredits: true, status: true, createdAt: true, updatedAt: true },
     take: 200,
   });
 
@@ -66,29 +79,51 @@ async function releaseStaleJobs(): Promise<{ failed: number; refunded: number }>
   let refunded = 0;
 
   for (const job of stale) {
-    const released = await prisma.analysisJob
-      .updateMany({
-        where: { id: job.id, status: { in: ['QUEUED', 'RUNNING'] } },
-        data: {
-          status: 'FAILED',
-          quotaCharged: false,
-          error:
-            'The review did not finish and was closed out automatically. Your allowance was refunded.',
-          finishedAt: new Date(),
-        },
-      })
-      .catch(() => ({ count: 0 }));
-
-    if (released.count === 0) continue; // someone else got there first
-    failed += 1;
-
-    if (job.quotaCharged) {
-      await refundAuditByUserId(job.userId)
-        .then(() => {
-          refunded += 1;
-        })
-        .catch((e) => console.error(`[cron] refund failed for job ${job.id}:`, e));
+    // The tested predicate in lib/jobs/sweep.ts, applied to the row as loaded
+    // (Prisma Dates normalized to the epoch-millis the predicate expects).
+    if (!isClaimableJob({
+      status: job.status,
+      quotaCharged: job.quotaCharged,
+      createdAt: job.createdAt.getTime(),
+      updatedAt: job.updatedAt.getTime(),
+    })) continue;
+    // Claim and refund in ONE transaction. The conditional `quotaCharged` flag
+    // IS the refund guard: whoever flips it owns the refund, so a concurrent
+    // sweep and a late worker retry cannot both credit the same slot. The
+    // claim admits any status EXCEPT COMPLETED (the SQL predicate mirrors
+    // isClaimableJob): a row may legitimately have moved QUEUED/RUNNING →
+    // FAILED between the scan and the claim (the resume arm above), while a
+    // COMPLETED row keeps quotaCharged: true by design — the debit was
+    // consumed by a real report and must never be refunded.
+    // Committing claim + refund atomically closes the loss window the split
+    // order left.
+    let claimed = false;
+    try {
+      await prisma.$transaction(async (tx) => {
+        const released = await tx.analysisJob.updateMany({
+          // `isClaimableJob` is the tested predicate: charged + not COMPLETED.
+          // COMPLETED rows keep quotaCharged: true by design (the debit was
+          // consumed by a real report) and must never be swept into a refund.
+          where: { id: job.id, quotaCharged: true, status: { not: 'COMPLETED' } },
+          data: {
+            status: 'FAILED',
+            quotaCharged: false,
+            error:
+              'The review did not finish and was closed out automatically. Your allowance was refunded.',
+            finishedAt: new Date(),
+          },
+        });
+        if (released.count === 1) {
+          await refundAuditInTx(tx, job.userId, job.paidWithCredits);
+          claimed = true;
+        }
+      });
+    } catch (e) {
+      console.error(`[cron] refund transaction failed for job ${job.id}:`, e);
+      continue; // row untouched, next sweep retries
     }
+    if (claimed) failed += 1;
+    if (claimed && job.quotaCharged) refunded += 1;
   }
 
   return { failed, refunded };

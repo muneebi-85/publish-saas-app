@@ -5,6 +5,7 @@ import { CheckCircle, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { planDisplayName } from '@/lib/plans';
 import Link from 'next/link';
 
 type State = 'idle' | 'loading' | 'found' | 'not_found' | 'error' | 'unauthenticated';
@@ -12,6 +13,10 @@ type State = 'idle' | 'loading' | 'found' | 'not_found' | 'error' | 'unauthentic
 export default function RestorePurchasePage() {
   const [state, setState] = useState<State>('idle');
   const [plan, setPlan] = useState('');
+  // The route supplies user-safe, actionable messages for some failures (e.g.
+  // the 409 "already linked to another account") — keep them instead of the
+  // generic error line.
+  const [serverMessage, setServerMessage] = useState('');
 
   const handleRestore = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,16 +28,21 @@ export default function RestorePurchasePage() {
         // No email in body — server uses the authenticated session email only.
         body: JSON.stringify({}),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.status === 401) { setState('unauthenticated'); return; }
-      if (res.ok && data.found) { setPlan(data.plan ?? 'Pro'); setState('found'); }
+      // The catalogue display name ("Creator"), never the raw id ("starter")
+      // or the fabricated default the raw fallback used to print.
+      if (res.ok && data.found) { setPlan(planDisplayName(String(data.plan ?? ''))); setState('found'); }
       else if (res.status === 404) setState('not_found');
-      else setState('error');
+      else {
+        setServerMessage(typeof data.error === 'string' ? data.error : '');
+        setState('error');
+      }
     } catch { setState('error'); }
   };
 
   return (
-    <div className="min-h-screen bg-surface-canvas flex flex-col items-center justify-center p-6">
+    <div className="restore-page-root min-h-screen bg-surface-canvas flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="flex justify-center mb-8">
           <Link href="/"><Logo /></Link>
@@ -82,8 +92,10 @@ export default function RestorePurchasePage() {
               )}
               {state === 'error' && (
                 <div className="rounded-xl bg-crimson-50 border border-crimson-500/15 p-3 text-[12.5px] text-crimson-800 text-left">
-                  Something went wrong. Please try again or email{' '}
-                  <a href="mailto:billing@genapps.online" className="underline">billing@genapps.online</a>.
+                  {serverMessage || (
+                    <>Something went wrong. Please try again or email{' '}
+                    <a href="mailto:billing@genapps.online" className="underline">billing@genapps.online</a>.</>
+                  )}
                 </div>
               )}
               <Button

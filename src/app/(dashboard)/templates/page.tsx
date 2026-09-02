@@ -144,12 +144,12 @@ export default function TemplatesPage() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search templates and formulas"
           aria-label="Search templates"
-          className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 pl-10 pr-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+          className="w-full bg-surface-panel border border-ink-300 rounded-lg h-9 pl-9 pr-3 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
         />
       </div>
 
       {/* Category tabs */}
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap items-center gap-0.5 rounded-lg bg-ink-100 p-0.5 w-fit mb-6">
         {TABS.map((tab) => {
           const isActive = active === tab;
           return (
@@ -158,8 +158,8 @@ export default function TemplatesPage() {
               onClick={() => setActive(tab)}
               className={
                 isActive
-                  ? 'h-9 px-4 rounded-xl text-[13px] font-semibold bg-brand-600 text-[#060606] transition-colors'
-                  : 'h-9 px-4 rounded-xl text-[13px] font-medium bg-white/[0.03] text-ink-600 border border-white/[0.08] hover:bg-white/[0.06] hover:text-white transition-colors'
+                  ? 'px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors bg-surface-panel text-ink-900 shadow-xs'
+                  : 'px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors text-ink-500 hover:text-ink-900'
               }
               aria-pressed={isActive}
             >
@@ -179,7 +179,7 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      <p className="text-[12px] text-ink-400 mt-6 max-w-2xl">
+      <p className="text-[12px] text-ink-500 mt-6 max-w-2xl">
         Templates are starting points, not guarantees. Adapt each formula to your voice and audience —
         results vary by niche, and any impact is an estimate.
       </p>
@@ -206,29 +206,29 @@ function TemplateCard({ template }: { template: Template }) {
     <Card hover className="flex flex-col h-full">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-            <Icon className="w-[18px] h-[18px]" />
+          <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 ring-1 ring-inset ring-brand-100 flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4" />
           </div>
-          <h3 className="font-display text-[15px] font-bold tracking-tight text-ink-900 truncate">
+          <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900 truncate">
             {template.name}
           </h3>
         </div>
         <button
           onClick={handleCopy}
-          className="shrink-0 w-8 h-8 rounded-lg border border-white/[0.06] bg-surface-panel flex items-center justify-center text-ink-500 hover:bg-white/[0.06] hover:text-ink-900 transition-colors"
+          className="shrink-0 w-8 h-8 rounded-lg border border-ink-200 bg-surface-panel flex items-center justify-center text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition-colors"
           aria-label={`Copy the ${template.name} formula`}
         >
           {copied ? <Check className="w-4 h-4 text-brand-600" /> : <Copy className="w-4 h-4" />}
         </button>
       </div>
 
-      <div className="mt-4 rounded-xl bg-surface-canvas border border-ink-100 px-3.5 py-3">
-        <p className="text-[13.5px] leading-relaxed text-ink-800">{template.example}</p>
+      <div className="mt-4 rounded-lg bg-surface-canvas border border-ink-200 px-3.5 py-3">
+        <p className="text-[13px] leading-relaxed text-ink-800">{template.example}</p>
       </div>
 
-      <p className="text-[12.5px] text-ink-500 mt-3 leading-relaxed flex-1">{template.why}</p>
+      <p className="text-[12px] text-ink-500 mt-3 leading-relaxed flex-1">{template.why}</p>
 
-      <div className="flex items-center justify-between mt-4 pt-4 border-t border-ink-100">
+      <div className="flex items-center justify-between mt-4 pt-4 border-t border-ink-200">
         <Badge variant={meta.badge} dot>{template.category}</Badge>
         <Button variant="secondary" size="sm" onClick={handleCopy} leftIcon={copied ? <Check className="w-3.5 h-3.5 text-brand-600" /> : <Copy className="w-3.5 h-3.5" />}>
           {copied ? 'Copied' : 'Use template'}
@@ -241,11 +241,11 @@ function TemplateCard({ template }: { template: Template }) {
 function NoMatches({ onClear }: { onClear: () => void }) {
   return (
     <Card className="text-center py-16">
-      <div className="w-14 h-14 rounded-full bg-white/[0.08] flex items-center justify-center mx-auto mb-5">
-        <LayoutTemplate className="w-6 h-6 text-ink-500" />
+      <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mx-auto mb-4">
+        <LayoutTemplate className="w-5 h-5" />
       </div>
-      <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">No templates match</h3>
-      <p className="text-[13px] text-ink-600 mt-2 max-w-md mx-auto">
+      <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">No templates match</h3>
+      <p className="text-[13px] leading-relaxed text-ink-600 mt-2 max-w-sm mx-auto">
         Try a different category or clear your search to see every formula in the library.
       </p>
       <div className="mt-6">

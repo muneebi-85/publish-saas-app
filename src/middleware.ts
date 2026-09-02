@@ -18,6 +18,12 @@ const isPublicRoute = createRouteMatcher([
   // refuses to run at all when that secret is unset.
   '/api/cron/(.*)',
   '/api/health',
+  // Plan/quota read for signed-out visitors. The route's own unauthenticated
+  // branch answers a lean {plan:'free', authenticated:false} shape keyed by
+  // IP-rate-limit; leaving it gated made that branch unreachable — every
+  // signed-out poll got the middleware's 401 instead of the designed graceful
+  // answer. It reads no user data and writes nothing.
+  '/api/me/plan',
   // Client crash beacon. Public by necessity: global-error.tsx renders for
   // errors that happen before sign-in (and for auth failures themselves), so
   // requiring a session here would silently drop the reports worth having. The

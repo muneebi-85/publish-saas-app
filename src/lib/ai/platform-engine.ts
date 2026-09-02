@@ -11,7 +11,7 @@
  */
 
 import { chatJSON } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore } from './guardrails';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore, fenceSafe } from './guardrails';
 import { PlatformReport } from '../types';
 import { PLATFORM_POLICIES } from './policies';
 import type { PlatformName } from './policies';
@@ -92,14 +92,14 @@ Return JSON:
       {
         role: 'user',
         content:
-`Title: ${input.title || '(none)'}
-Description: ${(input.description || '(none)').slice(0, 500)}
+`Title: """${fenceSafe(input.title || '(none)')}"""
+Description: """${fenceSafe((input.description || '(none)').slice(0, 500))}"""
 Duration: ${input.durationSeconds ? `${input.durationSeconds}s` : 'unknown'}
 AI voiceover used: ${input.hasAiVoiceover ? 'yes' : 'no'}
 Watermark present: ${input.hasWatermark ? 'yes' : 'no'}
 Vertical format: ${input.isVertical ? 'yes' : 'no'}
-Music source: ${input.musicSource || 'unspecified'}
-Script excerpt: """${(input.scriptText || '').slice(0, 2500)}"""`,
+Music source: """${fenceSafe(input.musicSource || 'unspecified')}"""
+Script excerpt: """${fenceSafe((input.scriptText || '').slice(0, 2500))}"""`,
       },
     ],
     { model: 'reasoning', temperature: 0.2, maxTokens: 1100 },
@@ -139,13 +139,25 @@ export function heuristicPlatform(
   input: Partial<PlatformAnalysisInput> = {},
 ): PlatformReportWithCitations {
   const policy = PLATFORM_POLICIES[platform];
-  const duration = input.durationSeconds ?? 300;
+  const duration = input.durationSeconds;
 
   // Apply the rules we can check deterministically.
   let score = 92;
   const recs: string[] = [];
 
-  if ((platform === 'TikTok' || platform === 'Facebook') && duration < 60) {
+  if (duration === undefined) {
+    // Duration unknown: the 60-second floor is UNEVALUATED, not passed. The
+    // previous `?? 300` default silently cleared the TikTok/Facebook
+    // disqualifier for a video whose length was never measured — an
+    // unmeasured-as-passing inversion the LLM path never makes.
+    if (platform === 'TikTok' || platform === 'Facebook') {
+      recs.push(
+        `Clip length is unknown, so the 60-second ${platform} ${
+          platform === 'TikTok' ? 'Creator Rewards' : 'in-stream ad'
+        } floor (D1) is unevaluated on this pass — attach the rendered file (the uploader reads the duration off the container) or state the length, and this check becomes a real pass/fail rather than a blank.`,
+      );
+    }
+  } else if ((platform === 'TikTok' || platform === 'Facebook') && duration < 60) {
     score -= 45;
     const floor = platform === 'TikTok' ? 'Creator Rewards' : 'in-stream ad';
     recs.push(
@@ -178,6 +190,12 @@ export function heuristicPlatform(
   if (recs.length === 0) {
     recs.push(
       `Nothing here trips a published ${platform} disqualifier: ${policy.monetizationName} eligibility looks clear against the ruleset as reviewed on ${policy.lastReviewed}. Treat this as a policy pass, not a performance forecast — it means the door is open, not that views or revenue are assured. Keep the source file and any music license on hand in case of a manual review.`,
+    );
+  } else if (duration === undefined && recs.every((r) => r.includes('unevaluated'))) {
+    // The only item is an unevaluated check — say so instead of implying a
+    // full pass.
+    recs.push(
+      `This pass is clear on every ${platform} disqualifier it could actually check; the one blank is duration, which is stated above. ${policy.monetizationName} eligibility cannot be called clear until that floor is measured.`,
     );
   }
 

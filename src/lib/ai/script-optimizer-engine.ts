@@ -56,9 +56,18 @@ const CTA_MARKERS = [
 ];
 const STORY_MARKERS = ['because', 'but', 'so', 'then', 'until', 'suddenly', 'that\'s when', 'here\'s why', 'the problem', 'the result', 'imagine'];
 // Advertiser-risk vocabulary (mild — flags ad-suitability, not a moderation call).
+// Root-matched with a bounded leading edge: "killing"/"deaths"/"suicidal" must
+// count as risk signals (a whole-word-only matcher let inflected forms pass and
+// score a violent script as ad-friendly), while the leading \b still keeps
+// mid-word false positives like "sex" in "Essex" out.
 const MONEY_RISK = ['kill', 'blood', 'gun', 'drug', 'sex', 'nsfw', 'gamble', 'suicide', 'weapon', 'died', 'death'];
-// Strong profanity roots — kept small and root-matched.
-const PROFANITY = ['fuck', 'shit', 'bitch', 'asshole', 'bastard', 'dick', 'cunt', 'motherf'];
+// Strong profanity roots — kept small and root-matched. "dick" is bounded on
+// both edges (only the whole word matches) so it cannot root-fire on
+// "Dickens"/"dickensian"; every other root keeps its unbounded tail so
+// inflections still count ("fucking" → "fuck").
+const PROFANITY = ['fuck', 'shit', 'bitch', 'asshole', 'bastard', 'cunt', 'motherf'];
+/** Whole-word-only profanity terms. */
+const PROFANITY_EXACT = ['dick', 'dicks'];
 
 const band = (score: number, goodAt = 80, warnAt = 60): SignalBand =>
   score >= goodAt ? 'good' : score >= warnAt ? 'warn' : 'risk';
@@ -67,7 +76,39 @@ const countMatches = (haystack: string, needles: string[]) => {
   let n = 0;
   const found: string[] = [];
   for (const term of needles) {
-    const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi');
+    // Bound both edges: a leading \b alone makes 'click' fire on "clickbait"
+    // and 'um' on "umbrella", inflating CTA/filler counts.
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const lead = /^\w/.test(term) ? '\\b' : '';
+    const tail = /\w$/.test(term) ? '\\b' : '';
+    const re = new RegExp(`${lead}${escaped}${tail}`, 'gi');
+    const m = haystack.match(re);
+    if (m) { n += m.length; found.push(term); }
+  }
+  return { n, found };
+};
+
+/**
+ * Root-matched count for the profanity lists: "fucking" must trip "fuck", so
+ * the ROOT terms deliberately keep an unbounded tail edge (leading edge still
+ * bounded so "scunthorpe"-style mid-word hits are avoided). Whole-word terms
+ * (`PROFANITY_EXACT`) go through the bounded matcher so "dick" cannot fire on
+ * "Dickens".
+ */
+function countProfanity(haystack: string): { n: number; found: string[] } {
+  const roots = countRoots(haystack, PROFANITY);
+  const exact = countMatches(haystack, PROFANITY_EXACT);
+  return {
+    n: roots.n + exact.n,
+    found: [...roots.found, ...exact.found],
+  };
+}
+const countRoots = (haystack: string, roots: string[]) => {
+  let n = 0;
+  const found: string[] = [];
+  for (const term of roots) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\b${escaped}`, 'gi');
     const m = haystack.match(re);
     if (m) { n += m.length; found.push(term); }
   }
@@ -187,8 +228,8 @@ export function analyzeScriptText(input: OptimizerInput): ScriptOptimizerReport 
       fix = inBand
         ? `Pace is dialed in. Vary it deliberately — slow down 10-15% on your single most important line so it stands out.`
         : wpm < 150
-        ? `Trim filler words and dead air, or tighten the script ~${Math.round((1 - wpm / 157) * -100)}% so delivery lands near 155 WPM.`
-        : `Add two or three deliberate pauses at your key points, or cut ~${Math.round((1 - 157 / wpm) * -100)}% of words so the audience can keep up.`;
+        ? `Trim filler words and dead air, or tighten the script ~${Math.round((1 - wpm / 157) * 100)}% so delivery lands near 155 WPM.`
+        : `Add two or three deliberate pauses at your key points, or cut ~${Math.round((1 - 157 / wpm) * 100)}% of words so the audience can keep up.`;
     } else {
       finding = `Read time is estimated at ~${estimatedReadSeconds}s at a 155 WPM narration pace (${wordCount} words). True pace needs the final render's duration.`;
       fix = `When you export, target 150-165 WPM — the band where narration is fast enough to hold attention but slow enough to follow. Attach the render to Publish to measure it exactly.`;
@@ -253,12 +294,16 @@ export function analyzeScriptText(input: OptimizerInput): ScriptOptimizerReport 
   // 9 ─ Call-to-Action Strength
   {
     const { n, found } = countMatches(lower, CTA_MARKERS);
-    const inLastQuarter = (() => {
+    // `slice(0.7)` covers the final 30% of the script, not the last 15% the
+    // fix text names. The window and the copy must agree, so the window is
+    // corrected to the final 30% AND the copy says 30% — a CTA landing at the
+    // 80% mark is "near the end" and should count.
+    const inLastStretch = (() => {
       const tail = lower.slice(Math.floor(lower.length * 0.7));
       return countMatches(tail, CTA_MARKERS).n > 0;
     })();
     let score = n === 0 ? 30 : Math.min(92, 55 + n * 10);
-    if (n > 0 && !inLastQuarter) score -= 12;
+    if (n > 0 && !inLastStretch) score -= 12;
     if (n > 4) score -= 10; // too many CTAs dilutes
     score = Math.max(25, score);
     signals.push({
@@ -268,11 +313,11 @@ export function analyzeScriptText(input: OptimizerInput): ScriptOptimizerReport 
         ? `No call-to-action found. A video with no ask converts viewers into nothing — no sub, no click, no next step.`
         : n > 4
         ? `${n} CTAs detected (${found.slice(0, 3).join(', ')}…) — that many asks compete with each other and each one lands softer.`
-        : `${n} CTA${n > 1 ? 's' : ''} present${inLastQuarter ? ', including one near the end where intent is highest.' : ', but none in the final stretch where the ready-to-act viewers are.'}`,
+        : `${n} CTA${n > 1 ? 's' : ''} present${inLastStretch ? ', including one in the final stretch where intent is highest.' : ', but none in the final 30% of the script where the ready-to-act viewers are.'}`,
       fix: n === 0
         ? `Add one specific ask tied to the payoff you just delivered: "If this fixed [problem], the next video breaks down [related] — subscribe so it finds you." One clear ask beats a vague "smash like".`
-        : !inLastQuarter
-        ? `Move your primary CTA to the last 15% of the script, right after you deliver the payoff — that's when the viewer is most willing to act.`
+        : !inLastStretch
+        ? `Move your primary CTA into the final 30% of the script, right after you deliver the payoff — that's when the viewer is most willing to act.`
         : `Cut to a single primary CTA. Pick the one action that matters most and let it stand alone.`,
     });
   }
@@ -280,8 +325,8 @@ export function analyzeScriptText(input: OptimizerInput): ScriptOptimizerReport 
   // 10 ─ Sponsor Readability
   {
     const proQuality = Math.max(0, 100 - (avgSentLen > 26 ? 20 : 0));
-    const profanity = countMatches(lower, PROFANITY).n;
-    const riskHits = countMatches(lower, MONEY_RISK).n;
+    const profanity = countProfanity(lower).n;
+    const riskHits = countRoots(lower, MONEY_RISK).n;
     const score = Math.max(30, Math.min(95, proQuality - profanity * 15 - riskHits * 6));
     signals.push({
       key: 'sponsor', label: 'Sponsor Readability', score, band: band(score, 80, 60),
@@ -297,9 +342,9 @@ export function analyzeScriptText(input: OptimizerInput): ScriptOptimizerReport 
 
   // 11 ─ Monetization Risk (ad-suitability of the language)
   {
-    const profanity = countMatches(lower, PROFANITY).n;
-    const riskHits = countMatches(lower, MONEY_RISK);
-    const earlyProfane = countMatches(lower.slice(0, 200), PROFANITY).n > 0;
+    const profanity = countProfanity(lower).n;
+    const riskHits = countRoots(lower, MONEY_RISK);
+    const earlyProfane = countProfanity(lower.slice(0, 200)).n > 0;
     let score = 95 - profanity * 14 - riskHits.n * 7;
     if (earlyProfane) score -= 12; // profanity in first 7s hits ad suitability hardest
     score = Math.max(20, Math.min(98, score));
@@ -319,8 +364,11 @@ export function analyzeScriptText(input: OptimizerInput): ScriptOptimizerReport 
 
   // 12 ─ Profanity Detection
   {
-    const { n, found } = countMatches(lower, PROFANITY);
-    const score = n === 0 ? 100 : Math.max(30, 100 - n * 18);
+    const { n, found } = countProfanity(lower);
+    // Capped at 96 like every other signal's clean ceiling: a text pass can
+    // miss delivery improvisation, so 100 would claim certainty this heuristic
+    // does not have.
+    const score = n === 0 ? 96 : Math.max(30, 100 - n * 18);
     signals.push({
       key: 'profanity', label: 'Profanity Detection', score, band: n === 0 ? 'good' : band(score, 90, 60),
       measured: true,

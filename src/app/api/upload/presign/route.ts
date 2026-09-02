@@ -1,21 +1,25 @@
 /**
- * POST /api/upload/presign — issue a short-lived presigned PUT for one asset.
+ * POST /api/upload/presign — issue a short-lived presigned POST for one asset.
  *
  * Security posture:
- *   - Content type is allowlisted per slot, and the signature pins ContentType +
- *     ContentLength, so the browser cannot swap in an HTML/SVG payload after the
- *     URL is issued (which would otherwise be a stored-XSS vector on the CDN).
- *   - The object key is server-generated and namespaced under the caller's own
- *     Clerk id, so one user can never overwrite or address another's upload.
- *   - Per-slot size ceilings are enforced at signing time, not just in the UI.
+ *   - Content type is allowlisted per slot, and the signed POST POLICY pins it
+ *     (`eq $Content-Type`) along with a `content-length-range` the provider
+ *     enforces on the wire — a presigned PUT could do neither, because the SDK
+ *     marks content-type unsignable and never signs content-length, which
+ *     left the door open to a stored `text/html` object on our own public
+ *     storage origin and to size-ceiling-free uploads. See
+ *     `src/lib/upload/post-policy.ts` for the full story.
+ *   - The object key is server-generated and pinned exactly in the policy, so
+ *     one user can never overwrite or address another's upload.
+ *   - Per-slot size ceilings are enforced at signing time AND by the provider
+ *     when the object lands.
  */
 
 import { NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '@/lib/api-guards';
 import { rateLimit, userKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 import { env, hasStorage } from '@/lib/env';
+import { buildPresignedPost } from '@/lib/upload/post-policy';
 import * as v from '@/lib/validate';
 
 export const runtime = 'nodejs';
@@ -72,22 +76,6 @@ const RULES: Record<Slot, { types: string[]; maxBytes: number; exts: string[] }>
   },
 };
 
-let _s3: S3Client | null = null;
-function client(): S3Client {
-  if (!_s3) {
-    _s3 = new S3Client({
-      region: env.S3_REGION || 'auto',
-      // Set for R2 / MinIO; empty for real AWS S3.
-      ...(env.S3_ENDPOINT ? { endpoint: env.S3_ENDPOINT, forcePathStyle: true } : {}),
-      credentials: {
-        accessKeyId: env.S3_ACCESS_KEY_ID,
-        secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-      },
-    });
-  }
-  return _s3;
-}
-
 /** Strip everything that could escape the key namespace or confuse a CDN. */
 function safeName(filename: string): { base: string; ext: string } {
   const cleaned = filename.replace(/\\/g, '/').split('/').pop() ?? 'file';
@@ -140,13 +128,22 @@ export async function POST(req: Request) {
 
   const rule = RULES[slot.value];
 
+  // A missing or non-integer size is a malformed request (400); only a size
+  // that IS an integer but sits outside the slot's bounds is "too large" (413)
+  // — answering 413 for a missing field mislabels the client's mistake.
   const size = v.integer(body.size, { min: 1, max: rule.maxBytes, field: 'size' });
   if (!size.ok) {
-    const mb = Math.floor(rule.maxBytes / (1024 * 1024));
-    return NextResponse.json(
-      { error: `${slot.value} must be between 1 byte and ${mb} MB.` },
-      { status: 413 },
-    );
+    if (body.size === undefined || body.size === null || typeof body.size === 'boolean') {
+      return NextResponse.json({ error: size.error }, { status: 400 });
+    }
+    if (typeof body.size === 'number' && Number.isFinite(body.size) && Number.isInteger(body.size)) {
+      const mb = Math.floor(rule.maxBytes / (1024 * 1024));
+      return NextResponse.json(
+        { error: `${slot.value} must be between 1 byte and ${mb} MB.` },
+        { status: 413 },
+      );
+    }
+    return NextResponse.json({ error: size.error }, { status: 400 });
   }
 
   // Normalize away any `; charset=` suffix before comparing to the allowlist.
@@ -170,35 +167,41 @@ export async function POST(req: Request) {
   // filename only ever contributes a sanitized display suffix.
   const key = `uploads/${authCtx.clerkId}/${slot.value}/${Date.now()}-${base}${ext ? `.${ext}` : ''}`;
 
+  // 15 minutes — long enough for a large video, short enough to matter.
+  const EXPIRES_IN = 900;
+
   try {
-    const signedUrl = await getSignedUrl(
-      client(),
-      new PutObjectCommand({
-        Bucket: env.S3_BUCKET,
-        Key: key,
-        // Both are signed, so the PUT is rejected unless the browser sends
-        // exactly the type and length we approved.
-        ContentType: declaredType,
-        ContentLength: size.value,
-        Metadata: { slot: slot.value, owner: authCtx.clerkId },
-      }),
-      { expiresIn: 900 }, // 15 minutes — long enough for a large video, short enough to matter
-    );
+    const post = buildPresignedPost({
+      bucket: env.S3_BUCKET,
+      key,
+      contentType: declaredType,
+      minBytes: 1,
+      maxBytes: rule.maxBytes,
+      expiresInSeconds: EXPIRES_IN,
+      accessKeyId: env.S3_ACCESS_KEY_ID,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+      region: env.S3_REGION || 'auto',
+      // Set for R2 / MinIO; empty for real AWS S3 (virtual-hosted URL).
+      endpoint: env.S3_ENDPOINT || undefined,
+      owner: authCtx.clerkId,
+      slot: slot.value,
+    });
 
     return NextResponse.json(
       {
-        signedUrl,
+        // The POST target + the signed form fields. The browser must POST a
+        // multipart form with these fields in this order, file appended last.
+        signedUrl: post.url,
+        fields: post.fields,
         key,
         // Only present when a public read origin is configured; otherwise the
         // caller must go through a signed read, and we don't hand out a guess.
         publicUrl: env.S3_PUBLIC_URL ? `${env.S3_PUBLIC_URL.replace(/\/+$/, '')}/${key}` : null,
-        requiredHeaders: { 'Content-Type': declaredType },
-        expiresInSeconds: 900,
+        expiresInSeconds: EXPIRES_IN,
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (err) {
-    // Never surface the SDK message — it can contain the bucket name and region.
     console.error('[POST /api/upload/presign]', err);
     return NextResponse.json(
       { error: 'Could not prepare the upload. Please try again.' },

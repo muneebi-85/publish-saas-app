@@ -27,13 +27,15 @@ const CATEGORIES = [
   { title: 'Support & contact',   term: 'support',       desc: 'How to reach us, and what you can expect back.', icon: ExternalLink },
 ];
 
+// Slug-keyed, not index-keyed: adding a question at the top of the FAQ used to
+// silently re-point every one of these links at a DIFFERENT answer.
 const POPULAR = [
-  { title: 'How long does a review take?',                   href: '#faq-0' },
-  { title: 'Can I re-run a review after fixing issues?',     href: '#faq-1' },
-  { title: 'Do you keep my files?',                          href: '#faq-2' },
-  { title: 'How do I export a PDF report?',                  href: '#faq-3' },
-  { title: 'What platforms does Publish check against?',     href: '#faq-4' },
-  { title: 'How do I delete my account and data?',           href: '#faq-5' },
+  { title: 'How long does a review take?',                   href: '#faq-review-time' },
+  { title: 'Can I re-run a review after fixing issues?',     href: '#faq-re-run-review' },
+  { title: 'Do you keep my files?',                          href: '#faq-file-retention' },
+  { title: 'How do I export a PDF report?',                  href: '#faq-export-pdf' },
+  { title: 'What platforms does Publish check against?',     href: '#faq-platforms-checked' },
+  { title: 'How do I delete my account and data?',           href: '#faq-delete-account' },
 ];
 
 const SHORTCUTS = [
@@ -42,15 +44,15 @@ const SHORTCUTS = [
 ];
 
 const FAQ = [
-  { q: 'How long does a review take?', a: 'Most reviews finish in under a minute. Uploading a video file adds time for processing, and every review runs six layers — script authenticity, hook retention, voice, thumbnail CTR, copyright exposure, and per-platform policy.' },
-  { q: 'Can I re-run a review after fixing issues?', a: 'Yes — re-reviewing after applying fixes is the fastest way to improve. Each review (new or re-run) counts once against your monthly quota, and the trend line shows your score progress across runs.' },
-  { q: 'Do you keep my files?', a: 'Yes, so you can revisit reports. Delete any project permanently from Settings → Data.' },
-  { q: 'How do I export a PDF report?', a: 'Open any analysis and use the Export button in the top-right corner of the report. A printer-friendly PDF downloads instantly, with your scores and issue list included.' },
-  { q: 'What platforms does Publish check against?', a: 'YouTube, TikTok, Instagram, Facebook, and LinkedIn — each with platform-specific rules for monetization, hook strength, retention, and SEO.' },
-  { q: 'How do I delete my account and data?', a: 'Go to Settings → Data → Delete account. Your reports and files are purged within 30 days, and if you had a paid plan it is cancelled at the same time.' },
-  { q: 'How does the free plan work?', a: 'The free plan includes one review per month. No credit card is required to sign up, and your first analysis is always free.' },
-  { q: 'How do I cancel my subscription?', a: 'From Settings → Billing & plan → Manage subscription. Cancelling stops the next renewal; your data stays accessible for 30 days after the paid period ends.' },
-  { q: 'Where can I get support?', a: 'Email support@genapps.online. Pro and Agency customers get a reply within 4 business hours; free and Creator plans are handled in the order they arrive.' },
+  { slug: 'review-time', q: 'How long does a review take?', a: 'Most reviews finish in under a minute. Uploading a video file adds time for processing, and every review runs six layers — script authenticity, hook retention, voice, thumbnail CTR, copyright exposure, and per-platform policy.' },
+  { slug: 're-run-review', q: 'Can I re-run a review after fixing issues?', a: 'Yes — re-reviewing after applying fixes is the fastest way to improve. Each review (new or re-run) counts once against your monthly quota, and the trend line shows your score progress across runs.' },
+  { slug: 'file-retention', q: 'Do you keep my files?', a: 'Yes, so you can revisit reports. Delete any project permanently from Settings → Data.' },
+  { slug: 'export-pdf', q: 'How do I export a PDF report?', a: 'Open any analysis and use the Export button in the top-right corner of the report. A printer-friendly PDF downloads instantly, with your scores and issue list included.' },
+  { slug: 'platforms-checked', q: 'What platforms does Publish check against?', a: 'YouTube, TikTok, Instagram, Facebook, and LinkedIn — each with platform-specific rules for monetization, hook strength, retention, and SEO.' },
+  { slug: 'delete-account', q: 'How do I delete my account and data?', a: 'Go to Settings → Data → Delete account. Your reports and files are purged within 30 days, and if you had a paid plan it is cancelled at the same time.' },
+  { slug: 'free-plan', q: 'How does the free plan work?', a: 'The free plan includes one review per month. No credit card is required to sign up, and your first analysis is always free.' },
+  { slug: 'cancel-subscription', q: 'How do I cancel my subscription?', a: 'From Settings → Billing & plan → Manage subscription. Cancelling stops the next renewal; your data stays accessible for 30 days after the paid period ends.' },
+  { slug: 'support', q: 'Where can I get support?', a: 'Email support@genapps.online. Paid plans get a reply within 4 business hours; the free plan is handled in the order it arrives.' },
 ];
 
 export default function HelpPage() {
@@ -91,7 +93,7 @@ export default function HelpPage() {
         showUtility
       />
 
-      <div className="space-y-8 max-w-4xl">
+      <div className="space-y-6 max-w-4xl">
         {/* Search */}
         <div className="relative">
           <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-ink-400" />
@@ -100,13 +102,13 @@ export default function HelpPage() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search the FAQ — try 'quota' or 'export'"
             aria-label="Search the FAQ"
-            className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl pl-11 pr-24 h-11 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+            className="w-full bg-surface-panel border border-ink-300 rounded-lg pl-10 pr-24 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
           />
           {isSearching && (
             <button
               type="button"
               onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-medium text-ink-500 hover:text-white px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-medium text-ink-500 hover:text-ink-900 px-2 py-1 rounded-md hover:bg-ink-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas focus-visible:ring-brand-600"
             >
               Clear
             </button>
@@ -116,7 +118,7 @@ export default function HelpPage() {
         {/* Category grid — hidden while searching so the results are the focus */}
         {!isSearching && (
           <div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900 mb-3">Browse topics</h2>
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900 mb-3">Browse topics</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {CATEGORIES.map((cat) => {
                 const Icon = cat.icon;
@@ -126,20 +128,20 @@ export default function HelpPage() {
                     key={cat.title}
                     type="button"
                     onClick={() => setQuery(cat.term)}
-                    className="text-left rounded-2xl border border-white/[0.06] bg-surface-panel p-5 group hover:border-white/[0.14] hover:shadow-card transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                    className="text-left rounded-xl shadow-xs border border-ink-200 bg-surface-panel p-5 group hover:border-ink-300 hover:shadow-card transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas focus-visible:ring-brand-600"
                   >
                     <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-full bg-white/[0.08] flex items-center justify-center shrink-0 group-hover:bg-brand-600 transition-colors">
-                        <Icon className="w-4 h-4 text-ink-600 group-hover:text-white transition-colors" />
+                      <div className="w-8 h-8 rounded-lg bg-ink-100 flex items-center justify-center shrink-0">
+                        <Icon className="w-4 h-4 text-ink-500 group-hover:text-ink-800 transition-colors" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-3">
                           <h3 className="text-[14px] font-semibold text-ink-900">{cat.title}</h3>
-                          <span className="text-[12px] text-ink-400 tabular-nums shrink-0">
+                          <span className="text-[12px] text-ink-500 tabular-nums shrink-0">
                             {count} {count === 1 ? 'answer' : 'answers'}
                           </span>
                         </div>
-                        <p className="text-[12.5px] text-ink-500 mt-0.5 leading-relaxed">{cat.desc}</p>
+                        <p className="text-[12px] text-ink-500 mt-0.5 leading-relaxed">{cat.desc}</p>
                       </div>
                     </div>
                   </button>
@@ -152,16 +154,16 @@ export default function HelpPage() {
         {/* Popular articles — anchors into the FAQ, so hide them while filtered */}
         {!isSearching && (
           <div>
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900 mb-3">Popular questions</h2>
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900 mb-3">Popular questions</h2>
             <Card padded={false}>
-              <div className="divide-y divide-ink-100">
+              <div className="divide-y divide-ink-200">
                 {POPULAR.map((article) => (
                   <Link
                     key={article.title}
                     href={article.href}
-                    className="flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.06] transition-colors group"
+                    className="flex items-center justify-between px-5 py-3.5 hover:bg-ink-50 transition-colors group"
                   >
-                    <span className="text-[13.5px] text-ink-900 group-hover:text-brand-600 transition-colors">{article.title}</span>
+                    <span className="text-[13px] text-ink-900 group-hover:text-brand-600 transition-colors">{article.title}</span>
                     <ChevronRight className="w-3.5 h-3.5 text-ink-400 group-hover:text-brand-600 transition-colors shrink-0" />
                   </Link>
                 ))}
@@ -173,7 +175,7 @@ export default function HelpPage() {
         {/* FAQ */}
         <div>
           <div className="flex items-baseline justify-between gap-3 mb-3">
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
               {isSearching ? 'Search results' : 'Common questions'}
             </h2>
             {isSearching && (
@@ -185,10 +187,10 @@ export default function HelpPage() {
 
           {results.length > 0 ? (
             <Card padded={false}>
-              <div className="divide-y divide-ink-100">
+              <div className="divide-y divide-ink-200">
                 {results.map((f) => (
-                  <div key={f.index} id={`faq-${f.index}`} className="p-5">
-                    <div className="text-[13.5px] font-semibold text-ink-900">{f.q}</div>
+                  <div key={f.slug} id={`faq-${f.slug}`} className="p-5">
+                    <div className="text-[13px] font-semibold text-ink-900">{f.q}</div>
                     <div className="text-[13px] text-ink-600 mt-1.5 leading-relaxed">{f.a}</div>
                   </div>
                 ))}
@@ -197,13 +199,13 @@ export default function HelpPage() {
           ) : (
             <Card>
               <div className="text-center py-6">
-                <div className="w-10 h-10 rounded-full bg-white/[0.08] flex items-center justify-center mx-auto mb-3">
-                  <Search className="w-4 h-4 text-ink-400" />
+                <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mx-auto mb-4">
+                  <Search className="w-5 h-5" />
                 </div>
-                <p className="text-[14px] font-semibold text-ink-900">
+                <p className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
                   No answers for &ldquo;{trimmed}&rdquo;
                 </p>
-                <p className="text-[13px] text-ink-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
+                <p className="text-[13px] leading-relaxed text-ink-600 mt-2 max-w-sm mx-auto">
                   This FAQ is short by design. If your question is not here, email
                   support and we will answer it directly.
                 </p>
@@ -212,7 +214,7 @@ export default function HelpPage() {
                     Clear search
                   </Button>
                   <Link href="mailto:support@genapps.online">
-                    <Button variant="dark" size="sm" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+                    <Button size="sm" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
                       Email support
                     </Button>
                   </Link>
@@ -226,17 +228,17 @@ export default function HelpPage() {
         <Card>
           <div className="flex items-center gap-2 mb-4">
             <Keyboard className="w-4 h-4 text-ink-500" />
-            <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">Keyboard shortcuts</h3>
+            <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">Keyboard shortcuts</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
             {SHORTCUTS.map((s) => (
-              <div key={s.desc} className="flex items-center justify-between py-2 border-b border-ink-100 last:border-b-0">
+              <div key={s.desc} className="flex items-center justify-between py-2 border-b border-ink-200 last:border-b-0">
                 <span className="text-[13px] text-ink-600">{s.desc}</span>
                 <div className="flex gap-1">
                   {s.keys.map((k) => (
                     <kbd
                       key={k}
-                      className="min-w-[22px] h-[22px] px-1.5 flex items-center justify-center bg-white/[0.08] border border-ink-200 rounded text-[10.5px] font-sans text-ink-700"
+                      className="min-w-5 h-5 px-1.5 inline-flex items-center justify-center gap-1 rounded-md border border-ink-200 bg-ink-100 font-mono text-[11px] font-medium text-ink-700"
                     >
                       {k}
                     </kbd>
@@ -248,25 +250,25 @@ export default function HelpPage() {
         </Card>
 
         {/* Contact support */}
-        <Card className="border-brand-100 bg-brand-50">
+        <Card className="border-brand-200 bg-brand-50">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-surface-panel text-brand-600 ring-1 ring-inset ring-brand-100 flex items-center justify-center shrink-0">
                 <Mail className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-[15px] font-bold text-ink-900">Still stuck?</h3>
+                <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">Still stuck?</h3>
                 <p className="text-[13px] text-ink-600 mt-1 max-w-md leading-relaxed">
                   Reach a human at{' '}
                   <a className="text-brand-600 underline underline-offset-4 hover:text-brand-700" href="mailto:support@genapps.online">
                     support@genapps.online
                   </a>{' '}
-                  — Pro and Agency customers get a reply within 4 business hours.
+                  — Paid plans get a reply within 4 business hours.
                 </p>
               </div>
             </div>
             <Link href="mailto:support@genapps.online">
-              <Button variant="dark" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+              <Button rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
                 Email support
               </Button>
             </Link>

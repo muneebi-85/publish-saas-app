@@ -15,6 +15,7 @@ import { rateLimit, userKey, tooManyRequests } from '@/lib/ratelimit';
 import { requireAuth } from '@/lib/api-guards';
 import { primaryEmailOf } from '@/lib/clerk-identity';
 import { hasBilling } from '@/lib/env';
+import { prisma } from '@/lib/db';
 import * as v from '@/lib/validate';
 
 export const runtime = 'nodejs';
@@ -50,6 +51,35 @@ export async function POST(req: Request) {
 
   const plan = v.enumOf<PlanId>(parsed.value.planId, PLAN_IDS, 'planId');
   if (!plan.ok) return NextResponse.json({ error: plan.error }, { status: 400 });
+
+  // A live subscription must be changed through the customer portal (it swaps
+  // the variant on the existing sub), never by opening a second checkout —
+  // that would bill the customer twice. The clients redirect to the portal on
+  // their own, but this route is reachable directly, so the rule has to hold
+  // server-side too.
+  //
+  // BLOCKING matches the app-wide BILLABLE set (account/delete, purge sweep):
+  // 'on_trial', 'past_due' and 'unpaid' subscriptions are still being charged
+  // or about to be, so a second checkout alongside them double-bills exactly
+  // like an 'active' one. `cancelled` and `expired` are deliberately NOT
+  // blocking — a customer who cancelled or lapsed and is re-subscribing is
+  // exactly who a fresh checkout is for.
+  const liveSubscription = await prisma.subscription.findFirst({
+    where: {
+      userId: authCtx.dbUserId,
+      status: { in: ['active', 'on_trial', 'past_due', 'unpaid', 'paused'] },
+    },
+    select: { lsSubscriptionId: true },
+  });
+  if (liveSubscription) {
+    return NextResponse.json(
+      {
+        error: 'You already have an active subscription. Use the billing portal to change plans.',
+        portalRequired: true,
+      },
+      { status: 409 },
+    );
+  }
 
   // Billing interval is optional and defaults to monthly. The variant selected
   // for checkout changes, but the plan and the entitlement are identical.

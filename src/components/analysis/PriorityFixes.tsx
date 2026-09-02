@@ -51,10 +51,13 @@ function deriveFixes(p: ProjectData): Fix[] {
     if (issue.estimatedMetricImpact) {
       gainParts.push(issue.estimatedMetricImpact);
     } else {
-      if (issue.viralityImpact === 'boost') gainParts.push('↑ virality');
+      // Fallback gains are mechanisms, never invented point estimates — the
+      // engines are forbidden from emitting "+12 pts" and the punch list must
+      // not be the one surface that does.
+      if (issue.viralityImpact === 'boost') gainParts.push('may improve reach');
       if (issue.monetizationImpact === 'demonetized') gainParts.push('avoids demonetization');
-      else if (issue.monetizationImpact === 'demoted') gainParts.push('restores CPM');
-      if (gainParts.length === 0) gainParts.push(issue.type === 'weak-hook' ? '+12 pts hook' : '+6 pts authenticity');
+      else if (issue.monetizationImpact === 'demoted') gainParts.push('may restore CPM');
+      else gainParts.push(issue.type === 'weak-hook' ? 'may improve early retention' : 'may read more authentic');
     }
 
     fixes.push({
@@ -69,7 +72,9 @@ function deriveFixes(p: ProjectData): Fix[] {
     });
   });
 
-  if (p.hookAnalysis.first30SecRetention < 70) {
+  // `analyzed === false` = no script/transcript; there is no retention number
+  // to fix, so no hook item is manufactured.
+  if (p.hookAnalysis.analyzed !== false && p.hookAnalysis.first30SecRetention < 70) {
     fixes.push({
       id: 'hook-retention',
       impact: 'high',
@@ -77,7 +82,9 @@ function deriveFixes(p: ProjectData): Fix[] {
       icon: Flame,
       problem: p.hookAnalysis.hookDropoffReason,
       action: p.hookAnalysis.recommendedHooks[0] ?? 'Open with the payoff, then explain.',
-      gain: `+${Math.max(8, 78 - p.hookAnalysis.first30SecRetention)} pts retention`,
+      // Mechanism, not a fabricated point estimate: the retention curve is a
+      // prediction, so the gain is what fixing a weak open is known to move.
+      gain: 'may improve early retention',
     });
   }
 
@@ -91,7 +98,7 @@ function deriveFixes(p: ProjectData): Fix[] {
         ? 'Delivery reads as monotone, which correlates with early drop-off.'
         : 'Synthetic voice artifacts detected — may trigger AI-disclosure review.',
       action: p.voiceAnalysis.recommendations[0] ?? 'Re-record with wider pitch variation.',
-      gain: '+9 pts authenticity',
+      gain: 'may read more authentic',
     });
   }
 
@@ -113,9 +120,15 @@ function deriveFixes(p: ProjectData): Fix[] {
       impact: 'medium',
       area: 'Thumbnail',
       icon: ImageIcon,
-      problem: `Predicted CTR is ${p.thumbnailAnalysis.ctrPredictionScore}% — below the ${p.folder} benchmark.`,
+      // The 80 bar is the product's own "strong" threshold — the same one the
+      // thumbnail engine and the scorecards use. The previous copy cited a
+      // `${folder}` benchmark that never existed (folder is the project's
+      // folder NAME, so it read "below the General benchmark").
+      problem: `Predicted CTR is ${p.thumbnailAnalysis.ctrPredictionScore}% — below the 80 that the review treats as strong.`,
       action: p.thumbnailAnalysis.recommendations[0] ?? 'Add a human face with a clear expression.',
-      gain: '+14% est. CTR',
+      // Mechanism, not a percentage: the engine is forbidden from emitting a
+      // "+14% CTR" style claim and the punch list must not fabricate one.
+      gain: 'may improve click-through',
     });
   }
 
@@ -145,13 +158,13 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
 
   if (fixes.length === 0) {
     return (
-      <div className="rounded-2xl border border-grass-100 bg-grass-50/50 p-6 flex items-start gap-4">
-        <div className="w-9 h-9 rounded-xl bg-grass-500 text-white flex items-center justify-center shrink-0">
+      <div className="rounded-xl border border-grass-200 bg-grass-50 p-6 flex items-start gap-4">
+        <div className="w-9 h-9 rounded-lg bg-grass-600 text-grass-50 flex items-center justify-center shrink-0">
           <Check className="w-4 h-4" strokeWidth={3} />
         </div>
         <div>
-          <h2 className="font-display text-lg font-bold text-ink-900">Nothing to fix</h2>
-          <p className="text-sm text-ink-700 mt-1.5 max-w-xl leading-relaxed">
+          <h2 className="font-display text-[16px] leading-[1.35] font-semibold text-ink-900">Nothing to fix</h2>
+          <p className="text-[13px] text-ink-700 mt-1.5 max-w-xl leading-relaxed">
             Every layer passed without a recommended change. That is rare — ship it.
           </p>
         </div>
@@ -160,18 +173,18 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
   }
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden">
+    <div className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden">
       {/* Header */}
       <div className="p-6 border-b border-ink-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shrink-0 shadow-subtle">
+          <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 ring-1 ring-inset ring-brand-100 flex items-center justify-center shrink-0">
             <ListChecks className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-display text-xl font-bold tracking-tight text-ink-900">
+            <h2 className="font-display text-[20px] leading-[1.3] font-semibold tracking-[-0.02em] text-ink-900">
               Fix these first
             </h2>
-            <p className="text-sm text-ink-500 mt-1 max-w-xl">
+            <p className="text-[13px] leading-relaxed text-ink-600 mt-1 max-w-xl">
               Ranked by impact on monetization and reach. Work top-down — you can stop when the
               remaining items stop mattering to you.
             </p>
@@ -186,7 +199,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
       </div>
 
       {/* Progress */}
-      <div className="h-1 bg-white/[0.08]">
+      <div className="h-1 bg-ink-100">
         <div
           className="h-full bg-brand-600 transition-all duration-500"
           style={{ width: `${(done.length / fixes.length) * 100}%` }}
@@ -194,7 +207,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
       </div>
 
       {/* Fix list */}
-      <ol className="divide-y divide-ink-100">
+      <ol className="divide-y divide-ink-200">
         {fixes.map((fix, i) => {
           const Icon = fix.icon;
           const isDone = done.includes(fix.id);
@@ -205,7 +218,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
               key={fix.id}
               className={clsx(
                 'p-5 sm:p-6 transition-colors',
-                isDone ? 'bg-white/[0.03]' : 'hover:bg-white/[0.06]/40',
+                isDone ? 'bg-ink-50' : 'hover:bg-ink-100/40',
               )}
             >
               <div className="flex items-start gap-4">
@@ -214,26 +227,26 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
                   onClick={() => toggle(fix.id)}
                   aria-label={isDone ? 'Mark as not done' : 'Mark as done'}
                   className={clsx(
-                    'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition-all',
+                    'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition-colors duration-150',
                     isDone
-                      ? 'bg-brand-600 border-brand-600 text-[#060606]'
-                      : 'border-white/[0.16] hover:border-brand-600 bg-white/[0.04]',
+                      ? 'bg-brand-600 border-brand-600 text-on-brand'
+                      : 'border-ink-300 hover:border-brand-600 bg-ink-100',
                   )}
                 >
-                  {isDone && <Check className="w-3 h-3" strokeWidth={3.5} />}
+                  {isDone && <Check className="w-3 h-3" strokeWidth={3} />}
                 </button>
 
                 <div className={clsx('flex-1 min-w-0', isDone && 'opacity-55')}>
                   {/* Meta row */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="w-5 h-5 rounded-md bg-white/[0.06] text-white flex items-center justify-center text-[11px] font-bold shrink-0">
+                    <span className="w-5 h-5 rounded-md bg-ink-100 text-ink-900 flex items-center justify-center text-[11px] font-bold shrink-0">
                       {i + 1}
                     </span>
                     <Badge variant={style.badge}>{style.label}</Badge>
-                    <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-ink-600">
+                    <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-600">
                       <Icon className="w-3 h-3" /> {fix.area}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-grass-700 ml-auto">
+                    <span className="inline-flex items-center gap-1 text-[12px] font-medium text-grass-700 ml-auto">
                       <TrendingUp className="w-3 h-3" /> {fix.gain} <span className="text-ink-400 font-normal">(estimated)</span>
                     </span>
                   </div>
@@ -257,8 +270,8 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
                   )}
 
                   {/* Action */}
-                  <div className="mt-3 rounded-xl border border-ink-200 bg-surface-canvas p-3.5">
-                    <div className="text-[11px] font-semibold text-ink-500 mb-1.5">
+                  <div className="mt-3 rounded-lg border border-ink-200 bg-surface-canvas p-3.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 mb-1.5">
                       How
                     </div>
                     <p className="text-[13px] text-ink-700 leading-relaxed">{fix.action}</p>
@@ -272,7 +285,7 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
 
       {/* Footer */}
       <div className="p-5 border-t border-ink-200 bg-surface-canvas flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="text-[12.5px] text-ink-600 flex items-center gap-2">
+        <div className="text-[12px] text-ink-600 flex items-center gap-2">
           {remaining === 0 ? (
             <>
               <Check className="w-3.5 h-3.5 text-grass-700" />
@@ -281,15 +294,15 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
           ) : (
             <>
               <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
-              Applying all {remaining} would raise your overall score to roughly{' '}
+              Applying the remaining fixes could raise your overall score to around{' '}
               <span className="font-semibold text-ink-900 tabular-nums">
-                {project.insights?.scorePotential ?? Math.min(99, project.scores.overall + remaining * 3)}
+                {project.insights?.scorePotential ?? 'a higher band'}
               </span>.
             </>
           )}
         </div>
         <Button size="sm" variant="secondary" rightIcon={<ArrowRight className="w-3.5 h-3.5" />} onClick={rerun}>
-          Re-run review
+          Re-run
         </Button>
       </div>
     </div>

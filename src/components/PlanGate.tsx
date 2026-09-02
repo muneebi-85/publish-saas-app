@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { useQuota, Plan } from '@/hooks/useQuota';
 import { UpgradeWall } from './UpgradeWall';
 import { PlanId } from '@/lib/billing/lemonsqueezy';
+import { planRank } from '@/lib/plans';
 
 interface PlanGateProps {
   feature: string;
@@ -13,8 +14,11 @@ interface PlanGateProps {
   children: React.ReactNode;
 }
 
-// Plan hierarchy — a higher tier satisfies the gate for any lower required tier.
-const RANK: Record<Plan, number> = { free: 0, starter: 1, pro: 2, agency: 3 };
+// Plan hierarchy — a higher tier satisfies the gate for any lower required
+// tier. `planRank` is the catalogue's price ladder (free < pro < starter <
+// agency); the ids alone sort the wrong way, which is why this used to be a
+// local `{ free: 0, starter: 1, pro: 2, agency: 3 }` map that let a Pro
+// ($19) account through a Creator ($49) gate.
 
 /**
  * Client-side plan gate.
@@ -35,7 +39,7 @@ export const PlanGate: React.FC<PlanGateProps> = ({ feature, requiredPlan, descr
     );
   }
 
-  if (RANK[plan] < RANK[requiredPlan as Plan]) {
+  if (planRank(plan) < planRank(requiredPlan as Plan)) {
     return <UpgradeWall feature={feature} requiredPlan={requiredPlan} description={description} />;
   }
   return <>{children}</>;

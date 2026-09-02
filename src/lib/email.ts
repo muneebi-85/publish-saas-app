@@ -12,7 +12,13 @@
  */
 
 import { env } from './env';
+import { LEGAL } from './legal/config';
 import { Resend } from 'resend';
+
+// Single source for the brand name in mail copy — every page and policy reads
+// LEGAL.productName (NEXT_PUBLIC_APP_NAME), and drifted hardcodes here told
+// white-label users to contact the template author's mailbox.
+const APP_NAME = LEGAL.productName;
 
 type SendResult = { success: boolean; error?: string };
 
@@ -59,7 +65,7 @@ function shell(opts: {
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;background:#ffffff;">
         <tr>
           <td style="padding:0 0 24px 0;font-size:18px;font-weight:600;letter-spacing:-0.01em;color:#000000;">
-            Publish
+            ${escapeHtml(APP_NAME)}
           </td>
         </tr>
         <tr>
@@ -83,7 +89,7 @@ function shell(opts: {
         <tr>
           <td style="border-top:1px solid #000000;padding:16px 0 0 0;font-size:12px;line-height:1.5;color:#000000;">
             ${footNote ? escapeHtml(footNote) + '<br/>' : ''}
-            You are receiving this email because you have an account with Publish.
+            You are receiving this email because you have an account with ${escapeHtml(APP_NAME)}.
           </td>
         </tr>
       </table>
@@ -124,7 +130,7 @@ export async function sendReportReady(args: {
   criticalIssues: number;
 }): Promise<SendResult> {
   const { to, projectTitle, reportUrl, monetizationScore, criticalIssues } = args;
-  const subject = `Your Publish report for ${projectTitle} is ready`;
+  const subject = `Your ${APP_NAME} report for ${projectTitle} is ready`;
   const body = `
     <p style="margin:0 0 12px 0;">Your analysis of <strong>${escapeHtml(projectTitle)}</strong> has finished.</p>
     <p style="margin:0 0 12px 0;">Summary of findings:</p>
@@ -180,7 +186,7 @@ export async function sendPlanActivated(args: {
   const { to, plan, dashboardUrl } = args;
   const subject = `Your ${plan} plan is active`;
   const body = `
-    <p style="margin:0 0 12px 0;">Your <strong>${escapeHtml(plan)}</strong> plan is now active on your Publish account.</p>
+    <p style="margin:0 0 12px 0;">Your <strong>${escapeHtml(plan)}</strong> plan is now active on your ${escapeHtml(APP_NAME)} account.</p>
     <p style="margin:0 0 12px 0;">Plan features and limits are listed on the pricing page and reflected in your dashboard.</p>
     <p style="margin:0;">You can review invoices and change your plan at any time from account settings.</p>
   `;
@@ -188,7 +194,7 @@ export async function sendPlanActivated(args: {
     to,
     subject,
     shell({
-      preheader: `${plan} plan activated on your Publish account.`,
+      preheader: `${plan} plan activated on your ${APP_NAME} account.`,
       heading: 'Plan activated',
       bodyHtml: body,
       ctaLabel: 'Open dashboard',
@@ -219,7 +225,7 @@ export async function sendQuotaWarning(args: {
       heading: 'Quota usage notice',
       bodyHtml: body,
       ctaLabel: 'View your usage',
-      ctaUrl: `${env.APP_URL}/settings#billing`,
+      ctaUrl: `${env.APP_URL}/settings?tab=billing`,
     })
   );
 }
@@ -235,9 +241,9 @@ export async function sendDeletionScheduled(args: {
 }): Promise<SendResult> {
   const { to, scheduledFor } = args;
   const when = scheduledFor.toUTCString();
-  const subject = 'Your Publish account is scheduled for deletion';
+  const subject = `Your ${APP_NAME} account is scheduled for deletion`;
   const body = `
-    <p style="margin:0 0 12px 0;">We received a request to delete your Publish account. Nothing has been erased yet.</p>
+    <p style="margin:0 0 12px 0;">We received a request to delete your ${escapeHtml(APP_NAME)} account. Nothing has been erased yet.</p>
     <p style="margin:0 0 12px 0;">Scheduled deletion: <strong>${escapeHtml(when)}</strong>.</p>
     <p style="margin:0 0 12px 0;">Until then your account stays open and you can sign in as usual. Your subscription has been cancelled, so there will be no further charges.</p>
     <p style="margin:0 0 12px 0;">To keep your account, open Settings &rarr; Data &amp; privacy and choose <strong>Keep my account</strong>. That cancels the deletion immediately.</p>
@@ -251,7 +257,7 @@ export async function sendDeletionScheduled(args: {
       heading: 'Deletion scheduled',
       bodyHtml: body,
       ctaLabel: 'Cancel deletion',
-      ctaUrl: `${env.APP_URL}/settings#privacy`,
+      ctaUrl: `${env.APP_URL}/settings?tab=privacy`,
       footNote: 'If you did not request this, cancel it from Settings and change your password.',
     })
   );
@@ -260,9 +266,9 @@ export async function sendDeletionScheduled(args: {
 /** Account deletion cancelled — confirms the account is no longer queued for erasure. */
 export async function sendDeletionCancelled(args: { to: string }): Promise<SendResult> {
   const { to } = args;
-  const subject = 'Your Publish account deletion was cancelled';
+  const subject = `Your ${APP_NAME} account deletion was cancelled`;
   const body = `
-    <p style="margin:0 0 12px 0;">The scheduled deletion of your Publish account has been cancelled. Your account and data remain intact.</p>
+    <p style="margin:0 0 12px 0;">The scheduled deletion of your ${escapeHtml(APP_NAME)} account has been cancelled. Your account and data remain intact.</p>
     <p style="margin:0;">If you had a paid plan, it was cancelled when deletion was requested and was not reinstated. You can subscribe again from the pricing page whenever you want.</p>
   `;
   return send(
@@ -274,7 +280,11 @@ export async function sendDeletionCancelled(args: { to: string }): Promise<SendR
       bodyHtml: body,
       ctaLabel: 'Open dashboard',
       ctaUrl: `${env.APP_URL}/dashboard`,
-      footNote: 'If you did not do this, contact privacy@genapps.online and change your password.',
+      // The configured privacy address (NEXT_PUBLIC_PRIVACY_EMAIL), not a
+      // hardcoded mailbox: a white-label deployment shows this same address on
+      // every legal page, and account-takeover reports ("I did not do this")
+      // must reach the operator's inbox, not the template author's.
+      footNote: `If you did not do this, contact ${LEGAL.privacyEmail} and change your password.`,
     })
   );
 }

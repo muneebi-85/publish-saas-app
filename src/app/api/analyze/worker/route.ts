@@ -54,17 +54,24 @@ async function handler(req: Request): Promise<Response> {
 // lazily so `next build` page-data collection does not need the signing keys at
 // module-load time — they are read only when a request actually arrives.
 export async function POST(req: Request): Promise<Response> {
+  let verified: (req: Request) => Promise<Response>;
   try {
-    const verified = verifySignatureAppRouter(handler);
-    return await verified(req);
+    // Raised when QStash signing keys are unset at request time — a deployment
+    // configuration problem, answered with 503 like the other unconfigured
+    // endpoints.
+    verified = verifySignatureAppRouter(handler);
   } catch (err) {
-    // Raised when QStash signing keys are unset at request time. A raw throw
-    // would surface as a 500; this deployment simply cannot verify queue
-    // messages yet, so answer 503 like the other unconfigured endpoints.
     console.error('[POST /api/analyze/worker] queue verification unavailable:', err);
     return NextResponse.json(
       { error: 'Queue verification is not configured on this deployment.' },
       { status: 503 },
     );
   }
+
+  // A handler throw (a retryable pipeline failure rethrown by runReviewJob)
+  // must propagate as a 500 — that is exactly the signal QStash needs in order
+  // to redeliver. Swallowing it into the 503 above would misclassify every
+  // pipeline outage as a configuration problem in both the status code and
+  // the logs.
+  return verified(req);
 }

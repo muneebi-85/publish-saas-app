@@ -15,7 +15,7 @@ import { analyzeScript, heuristicScriptAnalysis } from './script-engine';
 import { analyzeHook, heuristicHook } from './hook-engine';
 import { analyzeVoice, heuristicVoice, VoiceAnalysisInput } from './voice-engine';
 import { analyzeThumbnail, unmeasuredThumbnail } from './thumbnail-engine';
-import { analyzeCopyright, heuristicCopyright, CopyrightInput } from './copyright-engine';
+import { analyzeCopyright, heuristicCopyright, copyrightCompositeScore, CopyrightInput } from './copyright-engine';
 import { generateSEOAnalysis, heuristicSEO } from './seo-engine';
 import { analyzeAllPlatforms, heuristicPlatform, PlatformName } from './platform-engine';
 import { riskBand, conservativeScore } from './guardrails';
@@ -39,11 +39,19 @@ function estimateStockFootagePercent(opts: {
 }): number | null {
   let score = 0;
   let signals = 0;
+  // The UI's "Stock / royalty-free" declaration is evidence for this estimate,
+  // not a contradiction: choosing a stock library is a proxy that stock footage
+  // is in the edit, which is exactly what the signal measures.
   if (opts.aiGenerated) { score += 25; signals++; }
   if (opts.hasWatermark) { score += 10; signals++; }
-  if (opts.musicSource?.toLowerCase().includes('stock')) { score += 15; signals++; }
+  if (opts.musicSource === 'stock') { score += 15; signals++; }
   return signals > 0 ? Math.min(100, score) : null;
 }
+
+/**
+ * Copyright composite — moved to `copyright-engine.ts` (`copyrightCompositeScore`)
+ * so the headline score and the scorecard card import the one implementation.
+ */
 
 const STOPWORDS = new Set([
   'a','an','the','and','or','but','in','on','at','to','for','of','with','by',
@@ -107,6 +115,40 @@ async function safeCall<T>(name: string, fn: () => Promise<T>, fallback: () => T
   }
 }
 
+/**
+ * The headline's null-aware weighted blend. When the hook layer did not run
+ * (no script/transcript), its 15% is redistributed across the remaining layers
+ * proportionally rather than blended in as a zero — a missing layer must
+ * neither drag the score down (as 0 would) nor hand out a free 88 (as a
+ * fabricated hook would). The divisor is the sum of the coefficients actually
+ * used in the numerator: 1.00 when the hook is measured (its 0.15 joins the
+ * other five), 0.85 when it is not (the five remaining layers are rescaled to
+ * fill the whole range). Swapping those two divisors was the historical bug:
+ * it inflated every fully-measured score by ~18% and capped every hookless
+ * one at 85.
+ */
+export function headlineWeightedScore(layers: {
+  monetization: number;
+  copyright: number;
+  hook: number | null;
+  authenticity: number;
+  seo: number;
+  brandSafety: number;
+}): number {
+  const hookWeight = layers.hook !== null ? 0.15 : 0;
+  const weightSum = 0.85 + hookWeight;
+  return Math.round(
+    (
+      (layers.monetization * 0.30) +
+      (layers.copyright    * 0.20) +
+      (layers.hook !== null ? layers.hook * hookWeight : 0) +
+      (layers.authenticity * 0.15) +
+      (layers.seo          * 0.10) +
+      (layers.brandSafety  * 0.10)
+    ) / weightSum,
+  );
+}
+
 export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
   const platform = input.targetPlatform ?? 'YouTube';
 
@@ -120,15 +162,32 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
 
   // The creator's written script wins when present; otherwise the real
   // transcript becomes the script (audio-only uploads now analyzed for real).
-  const script = input.scriptText ?? transcribed?.transcript ?? '';
+  // The route always sends a STRING scriptText (empty when the creator wrote
+  // none), so `??` would never fall through — emptiness must be the trigger.
+  const providedScript = input.scriptText?.trim();
+  const script = providedScript || transcribed?.transcript || '';
   const opening = script.slice(0, 800);
+
+  // ── Duration resolution (one source of truth) ─────────────────────
+  // Measured sources outrank self-report: the browser frame decode read the
+  // duration off the container itself, the transcript infers it from the last
+  // word it heard (short on any video that ends in silence), and the typed
+  // value is an estimate. Every engine and the display read this same value,
+  // so a video that measured 45s can no longer skate past the TikTok 60s
+  // floor while a real measurement sat unused in the input.
+  const durationSeconds =
+    input.videoFrames?.durationSeconds ?? transcribed?.durationSeconds ?? input.durationSeconds;
 
   const voiceInput: VoiceAnalysisInput = {
     transcript: script,
-    wordCount: input.scriptText
+    // The script actually being analyzed is the word source — which may be the
+    // transcript, so this must test `script`, not the raw (always-string)
+    // `input.scriptText`. An empty script falls back to the transcript's own
+    // count, and to undefined when neither exists.
+    wordCount: script
       ? script.split(/\s+/).filter(Boolean).length
       : transcribed?.wordCount,
-    durationSeconds: input.durationSeconds ?? transcribed?.durationSeconds,
+    durationSeconds,
     aiGenerated: input.aiGenerated,
     voiceSourceLabel: input.aiGenerated ? 'AI-generated' : undefined,
     measured: transcribed
@@ -160,16 +219,20 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
 
   // Authenticity input. `audioMeasured` is true only when a real transcription
   // ran, which is what lets the engine label voice signals measured vs inferred.
+  // `videoFramesMeasured` tells it whether the frame layer ran, so its
+  // inconclusive/limitations copy stops claiming frame analysis "does not
+  // exist" on reviews where the same report's video panel shows it did.
   const authenticityInput: AuthenticityInput = {
     title: input.title,
     description: input.description,
     scriptText: script,
     tags: input.tags,
-    durationSeconds: input.durationSeconds ?? transcribed?.durationSeconds,
+    durationSeconds,
     aiGenerated: input.aiGenerated,
     hasWatermark: input.hasWatermark,
     hasThumbnail: Boolean(input.thumbnailUrl),
     audioMeasured: Boolean(transcribed),
+    videoFramesMeasured: Boolean(input.videoFrames),
     measuredVoice: transcribed
       ? {
           speakingPaceWpm: transcribed.speakingPaceWpm,
@@ -201,21 +264,21 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       () => unmeasuredThumbnail(),
     ),
     safeCall('copyright', () => analyzeCopyright(copyrightInput), () => heuristicCopyright(copyrightInput)),
-    safeCall('seo',       () => generateSEOAnalysis(input.title, platform), () => heuristicSEO(input.title, platform)),
+    safeCall('seo',       () => generateSEOAnalysis(input.title, platform, input.description), () => heuristicSEO(input.title, platform)),
     safeCall('platforms', () => analyzeAllPlatforms({
       title: input.title,
       description: input.description,
       scriptText: script,
-      durationSeconds: input.durationSeconds,
+      durationSeconds,
       hasAiVoiceover: input.aiGenerated,
       hasWatermark: input.hasWatermark,
       isVertical: input.isVertical,
       musicSource: input.musicSource,
     }), () => ([
-      heuristicPlatform('YouTube',   { durationSeconds: input.durationSeconds, hasAiVoiceover: input.aiGenerated, hasWatermark: input.hasWatermark }),
-      heuristicPlatform('TikTok',    { durationSeconds: input.durationSeconds, hasWatermark: input.hasWatermark }),
+      heuristicPlatform('YouTube',   { durationSeconds, hasAiVoiceover: input.aiGenerated, hasWatermark: input.hasWatermark }),
+      heuristicPlatform('TikTok',    { durationSeconds, hasWatermark: input.hasWatermark }),
       heuristicPlatform('Instagram', { hasWatermark: input.hasWatermark, isVertical: input.isVertical }),
-      heuristicPlatform('Facebook',  { durationSeconds: input.durationSeconds }),
+      heuristicPlatform('Facebook',  { durationSeconds }),
       heuristicPlatform('LinkedIn',  {}),
     ])),
     safeCall('authenticity',
@@ -227,7 +290,7 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     // score as its stand-in, and that is not known until the batch resolves.
     safeCall<VideoMetric | null>('videoFrames',
       () => input.videoFrames
-        ? analyzeVideoFrames(input.videoFrames, platform, input.aiGenerated === true)
+        ? analyzeVideoFrames(input.videoFrames, platform)
         : Promise.resolve(null),
       () => null,
     ),
@@ -244,7 +307,10 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
   );
 
   const seo = seoResult.seoScore;
-  const hook = hookResult.first10SecRetention;
+  // Null when there was no script/transcript to read — the hook layer reports
+  // `analyzed: false` and must not push a fabricated retention number into the
+  // headline blend.
+  const hook = hookResult.analyzed === false ? null : hookResult.first10SecRetention;
   // Authenticity now comes from the dedicated authenticity engine, which reasons
   // over named signals with locations, confidence, and false-positive caveats
   // rather than the previous ad-hoc blend of gptProbability and voice naturalness.
@@ -254,9 +320,7 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
   const authenticity = conservativeScore(Math.round(
     (authenticityResult.humanAuthenticityScore * 0.7) + ((100 - scriptResult.gptProbability) * 0.3),
   ));
-  const copyright = conservativeScore(
-    copyrightResult.musicMatchRisk === 'Low' ? 96 : copyrightResult.musicMatchRisk === 'Medium' ? 75 : 45,
-  );
+  const copyright = conservativeScore(copyrightCompositeScore(copyrightResult));
   // brandSafety is derived independently from policy compliance, copyright, and authenticity.
   // The prior implementation aliased it to monetization, which was misleading — a video can be
   // "monetizable" and still fail brand-safety checks (e.g. borderline profanity in a policy-safe topic).
@@ -273,20 +337,20 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
   const videoResult = framesResult
     ?? unmeasuredVideo(platform, input.aiGenerated === true, thumbnailResult.compositionScore);
 
-  // `scores.editing` prefers the frame-derived pacing figure and falls back to
-  // thumbnail composition, which is what this field has always been. Both live in
-  // `videoResult.editingPacingScore` already, so there is one source for the number
-  // and `videoResult.basis` is what tells the reader which of the two it is.
+  // `scores.editing` passes the video layer's honest value through, null when
+  // unmeasured. The previous `?? 0` coerced "never measured" into a
+  // measured-looking 0/100 — the exact conflation the unmeasured state exists
+  // to prevent. `videoResult.basis` tells the reader which of the two
+  // legitimate sources (frame pacing or thumbnail composition) produced it.
   const editing = videoResult.editingPacingScore;
+  // Frames genuinely decoded — distinct from the unmeasured stand-in below,
+  // and what the scorecards' editing card keys on.
+  const framesMeasured = Boolean(input.videoFrames) && framesResult !== null;
 
-  const overall = conservativeScore(Math.round(
-    (monetization * 0.30) +
-    (copyright    * 0.20) +
-    (hook         * 0.15) +
-    (authenticity * 0.15) +
-    (seo          * 0.10) +
-    (brandSafety  * 0.10),
-  ));
+  // Weighted headline — see headlineWeightedScore for the redistribution rule.
+  const overall = conservativeScore(headlineWeightedScore({
+    monetization, copyright, hook, authenticity, seo, brandSafety,
+  }));
 
   const risk: RiskLevel = riskBand(overall);
 
@@ -303,12 +367,14 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
 
   const scorecards = buildScorecards({
     authenticity: authenticityResult,
+    authenticityComposite: authenticity,
     monetizationRisk,
     textSignals: detectTextSignals(script, input.aiGenerated),
     voice: voiceResult,
     thumbnail: thumbnailResult,
     copyright: copyrightResult,
     platformReports: platformResults,
+    video: framesMeasured ? videoResult : undefined,
     title: input.title,
     description: input.description,
     tags: input.tags,
@@ -316,7 +382,9 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     hasWatermark: input.hasWatermark,
     hasThumbnail: Boolean(input.thumbnailUrl),
     audioMeasured: Boolean(transcribed),
+    videoFramesMeasured: framesMeasured,
     scriptText: script,
+    durationSeconds,
   });
 
   // ── Creator-value insights ─────────────────────────────
@@ -329,7 +397,8 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     (i) => i.monetizationImpact === 'demonetized' || i.reviewSeverity === 'critical',
   );
   const copyrightFixable = copyrightResult.musicMatchRisk !== 'Low';
-  const hookFixable = hookResult.first30SecRetention < 70;
+  // Unmeasured hook (no script) is not "fixable" — nothing was read.
+  const hookFixable = hookResult.analyzed !== false && hookResult.first30SecRetention < 70;
   const voiceFixable = voiceResult.syntheticArtifactRisk !== 'Low' || voiceResult.isMonotone === true;
   // Unmeasured thumbnail (null) is not "fixable" — we don't manufacture a fix for
   // a layer that never ran. Only a measured, sub-80 CTR counts.
@@ -355,14 +424,17 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     (thumbnailFixable ? 1 : 0);
 
   const lift = (s: number, fixable: boolean) => (fixable && s < 88 ? 88 : s);
-  const scorePotential = Math.max(overall, Math.min(97, Math.round(
-    (lift(monetization, monetizationFixable) * 0.30) +
-    (lift(copyright,    copyrightFixable)    * 0.20) +
-    (lift(hook,         hookFixable)         * 0.15) +
-    (lift(authenticity, authenticityFixable) * 0.15) +
-    (seo          * 0.10) +
-    (brandSafety  * 0.10),
-  )));
+  // Same null-aware weighting as `overall` (headlineWeightedScore) so the
+  // projection stays auditable against the headline: an unrun layer contributes
+  // neither weight nor a fabricated 88 from `lift`.
+  const scorePotential = Math.max(overall, Math.min(97, headlineWeightedScore({
+    monetization: lift(monetization, monetizationFixable),
+    copyright: lift(copyright, copyrightFixable),
+    hook: hook !== null ? lift(hook, hookFixable) : null,
+    authenticity: lift(authenticity, authenticityFixable),
+    seo,
+    brandSafety,
+  })));
 
   return {
     id: input.projectId,
@@ -375,13 +447,15 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     createdAt: new Date().toISOString(),
     assets: {
       thumbnailUrl: input.thumbnailUrl,
-      scriptText: input.scriptText ?? transcribed?.transcript,
-      // Frame decode outranks the transcript: it read the duration off the container
-      // itself, where the transcript infers it from the last word it heard and comes
-      // up short on any video that ends in silence.
-      videoDuration: durationDisplay(
-        input.durationSeconds ?? input.videoFrames?.durationSeconds ?? transcribed?.durationSeconds,
-      ),
+      // The same resolution the engines used: the written script when there is
+      // one, else the transcript. `input.scriptText ?? …` is dead because the
+      // route always sends a string.
+      scriptText: providedScript || transcribed?.transcript,
+      // Every policy check in this report read `durationSeconds` above, where
+      // the measured frame decode outranks the transcript outranks the typed
+      // estimate. The badge must show the same number, or a video that measured
+      // 62s can pass the TikTok floor on a 60s display and contradict itself.
+      videoDuration: durationDisplay(durationSeconds),
       metaTitle: input.title,
       metaDescription: input.description,
       metaTags: input.tags,
@@ -395,7 +469,7 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       copyright,
       seo,
       hook,
-      editing: editing ?? 0,
+      editing,
     },
     scriptIssues:      scriptResult.issues,
     scriptAnalysis: {
@@ -409,6 +483,9 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
     thumbnailAnalysis: thumbnailResult,
     seoAnalysis: {
       titleOptimizationScore: seoResult.seoScore,
+      // Honest label: this is the keyword-targeting quality of the
+      // title+description the engine saw, not a separate description metric
+      // the engine never computes.
       descriptionScore: seoResult.keywordScore,
       keywordDensity: computeKeywordDensity(input.title, input.description ?? '', script),
       rankingOpportunity: seoResult.seoScore >= 80 ? 'High' : seoResult.seoScore >= 65 ? 'Medium' : 'Low',
@@ -417,6 +494,8 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       suggestedTags: seoResult.tags.slice(0, 4),
       suggestedHashtags: seoResult.tags.slice(4, 7).map((t) => `#${t.replace(/\s+/g, '')}`),
       generatedDescription: seoResult.description,
+      // Only kept when the engine actually saw the creator's description —
+      // see generateSEOAnalysis; heuristicSEO always returns [] here.
       timestamps: seoResult.timestamps,
     },
     copyrightAnalysis: copyrightResult,

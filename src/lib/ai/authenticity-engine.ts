@@ -28,7 +28,9 @@ import {
   TRUST_SYSTEM_PREAMBLE,
   scrubForbidden,
   conservativeScore,
+  fenceSafe,
 } from './guardrails';
+import { copyrightCompositeScore } from './copyright-engine';
 import type {
   AuthenticityAssessment,
   AuthenticityEvidence,
@@ -38,6 +40,7 @@ import type {
   MonetizationRiskItem,
   Scorecard,
   VoiceMetric,
+  VideoMetric,
   ThumbnailMetric,
   CopyrightMetric,
   PlatformReport,
@@ -55,6 +58,14 @@ export interface AuthenticityInput {
   hasThumbnail?: boolean;
   /** True when a real transcription ran, so voice signals are measured not inferred. */
   audioMeasured?: boolean;
+  /**
+   * True when the uploader's browser actually decoded frames out of the video
+   * file. The video layer (cut rate, static pairs, sampled stills) exists in
+   * the product — this flag is what stops the inconclusive/limitations copy
+   * from claiming frame analysis "does not exist on every review" for a
+   * review where it demonstrably ran (the same report's video panel).
+   */
+  videoFramesMeasured?: boolean;
   measuredVoice?: {
     speakingPaceWpm: number | null;
     pauseRatio: number | null;
@@ -143,10 +154,15 @@ function inconclusiveSignals(input: AuthenticityInput): string[] {
     );
   }
 
-  // We are honest that frame-level analysis simply does not exist in the product
-  // yet, rather than quietly omitting the category.
+  // Frame-level signals. The video layer (sampled stills, cut rate) runs in
+  // the browser when a render is attached — but per-frame generative-artifact
+  // and lip-sync analysis still does not exist anywhere in the product, on
+  // any review. Copy is gated on the flag so a review that DID decode frames
+  // is not told it did not.
   out.push(
-    'Frame-level visual signals (lip-sync drift, scene-transition regularity, per-frame generative artifacts, embedded AI watermarks) — Publish does not decode the video track, so these are unevaluated on every review, not just this one.',
+    input.videoFramesMeasured
+      ? 'Per-frame generative-artifact analysis (lip-sync drift, frame-to-frame consistency, embedded AI watermarks) — this review sampled stills for pacing and composition, but the deep per-frame signal set was not evaluated. The sampled-sheet reading is in the video panel.'
+      : 'Frame-level visual signals (lip-sync drift, scene-transition regularity, per-frame generative artifacts, embedded AI watermarks) — no video frames were decoded for this review, so these are unevaluated. Attach the render so the browser can decode and measure it.',
   );
   out.push(
     'Provenance metadata (C2PA / Content Credentials, camera EXIF, editor fingerprints) — not read from the uploaded file, so a cryptographically signed capture history could neither confirm nor clear this content.',
@@ -191,10 +207,12 @@ function falsePositiveReasons(input: AuthenticityInput, evidence: AuthenticityEv
 }
 
 /** Structural limits of this analysis, stated plainly rather than buried. */
-function analysisLimitations(): string[] {
+function analysisLimitations(videoFramesMeasured?: boolean): string[] {
   return [
     'No AI-origin detector is reliable enough to be treated as proof, including this one. Treat the risk band as a prompt to review, never as a finding about you or as something a platform has decided.',
-    'Publish reads the text, metadata, and any thumbnail or audio you attach. It does not decode video frames, and it does not query any platform for a monetization or policy decision.',
+    videoFramesMeasured
+      ? 'Publish reads the text, metadata, and any thumbnail, audio, or decoded video frames you attach. It does not query any platform for a monetization or policy decision, and the frame layer reads a sampled contact sheet, not every frame.'
+      : 'Publish reads the text, metadata, and any thumbnail or audio you attach. It does not decode video frames (no render was attached to this review), and it does not query any platform for a monetization or policy decision.',
     'Platform policies change without notice and are enforced by systems we cannot inspect. A Low risk band here does not mean a platform has cleared the content, and no result here can guarantee monetization, detection, or approval.',
   ];
 }
@@ -241,6 +259,10 @@ const HEDGING =
   /\b(essentially|basically|in essence|in summary|to summarize|when it comes to|in the world of|in the realm of|at the end of the day|the bottom line is)\b/gi;
 
 function clampScore(n: number): number {
+  // Non-finite (a model returned a string/object) maps to the neutral 50
+  // rather than NaN, which would serialize as null and break the number
+  // contract on every downstream consumer.
+  if (!Number.isFinite(n)) return 50;
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
@@ -719,13 +741,16 @@ export function analyzeMonetizationRisk(
       fix: 'Re-export from your editor without the watermark, or crop it out if the composition allows. Save natively rather than downloading from the other platform.',
     });
   }
-  if (ctx.thumbnail?.measured && ctx.thumbnail.clickbaitRisk !== 'Low') {
+  // Measured thumbnails only: an unmeasured clickbaitRisk is null and cannot
+  // back a monetization item, so the guard covers both `measured` and null.
+  if (ctx.thumbnail?.measured && ctx.thumbnail.clickbaitRisk && ctx.thumbnail.clickbaitRisk !== 'Low') {
+    const clickbait = ctx.thumbnail.clickbaitRisk;
     items.push({
       category: 'Misleading thumbnail',
-      risk: ctx.thumbnail.clickbaitRisk,
+      risk: clickbait,
       confidence: 60,
       location: 'thumbnail image',
-      why: `The vision layer rated thumbnail clickbait risk ${ctx.thumbnail.clickbaitRisk}. The penalty is indirect: a thumbnail promising more than the video delivers drives early exits, and it is that retention drop that suppresses distribution.`,
+      why: `The vision layer rated thumbnail clickbait risk ${clickbait}. The penalty is indirect: a thumbnail promising more than the video delivers drives early exits, and it is that retention drop that suppresses distribution.`,
       fix: 'Change the thumbnail so its claim is one the first 30 seconds actually pays off. Keep the visual tension, remove the part the video does not deliver.',
     });
   }
@@ -770,11 +795,15 @@ export function analyzeMonetizationRisk(
     inconclusive.push('Copyright fingerprinting — the copyright layer did not return a result for this review.');
   }
   inconclusive.push(
-    'On-screen text, graphic imagery, and gesture-level content — Publish does not decode video frames, so anything visual that is not in the thumbnail is unevaluated on every review.',
+    input.videoFramesMeasured
+      ? 'Comment-section and community-signal risk — evaluated by platforms after publishing and not visible to any pre-publish check.'
+      : 'On-screen text, graphic imagery, and gesture-level content — no video frames were decoded for this review (no render attached, or the browser could not decode it), so anything visual that is not in the thumbnail is unevaluated. Attach the render to turn this blank into a measured pass.',
   );
-  inconclusive.push(
-    'Comment-section and community-signal risk — evaluated by platforms after publishing and not visible to any pre-publish check.',
-  );
+  if (!input.videoFramesMeasured) {
+    inconclusive.push(
+      'Comment-section and community-signal risk — evaluated by platforms after publishing and not visible to any pre-publish check.',
+    );
+  }
 
   const risk: AuthenticityRisk = items.some((i) => i.risk === 'High')
     ? 'High'
@@ -898,7 +927,7 @@ export function heuristicAuthenticity(
     evidence,
     inconclusive: inconclusiveSignals(input),
     falsePositiveReasons: falsePositiveReasons(input, evidence),
-    limitations: analysisLimitations(),
+    limitations: analysisLimitations(input.videoFramesMeasured),
     recommendations: buildRecommendations(input, evidence),
   };
 }
@@ -912,12 +941,16 @@ export function heuristicAuthenticity(
 
 export interface ScorecardContext {
   authenticity?: AuthenticityAssessment;
+  /** The orchestrator's headline authenticity composite (0.7·humanAuth + 0.3·(100−gptProbability)) — what `scores.authenticity` prints. The brand-safety card must use the same number, not the raw engine score, or the card and the score header disagree for one review. */
+  authenticityComposite?: number;
   monetizationRisk?: MonetizationRiskAnalysis;
   textSignals: { evidence: AuthenticityEvidence[]; score: number };
   voice?: VoiceMetric;
   thumbnail?: ThumbnailMetric;
   copyright?: CopyrightMetric;
   platformReports?: PlatformReport[];
+  /** The video layer's result when the browser decoded frames; absent otherwise. */
+  video?: VideoMetric;
   title: string;
   description?: string;
   tags?: string[];
@@ -925,7 +958,11 @@ export interface ScorecardContext {
   hasWatermark?: boolean;
   hasThumbnail?: boolean;
   audioMeasured?: boolean;
+  /** True when frame decode ran — lets the editing card report measured values. */
+  videoFramesMeasured?: boolean;
   scriptText?: string;
+  /** Resolved media duration — feeds the coverage math behind card confidence. */
+  durationSeconds?: number;
 }
 
 /**
@@ -962,6 +999,7 @@ export function buildScorecards(ctx: ScorecardContext): Scorecard[] {
       description: ctx.description,
       tags: ctx.tags,
       scriptText: ctx.scriptText,
+      durationSeconds: ctx.durationSeconds,
       audioMeasured: ctx.audioMeasured,
       hasThumbnail: ctx.hasThumbnail,
       aiGenerated: ctx.aiGenerated,
@@ -980,16 +1018,20 @@ export function buildScorecards(ctx: ScorecardContext): Scorecard[] {
   cards.push({
     id: 'brand-safety',
     label: 'Brand Safety',
-    value: ctx.platformReports
-      ? conservativeScore(
-          Math.round(
-            (ctx.platformReports.reduce(
-              (sum, p) => sum + (p.policyStatus === 'Compliant' ? 100 : p.policyStatus === 'Review Suggested' ? 60 : 20),
-              0,
-            ) / ctx.platformReports.length) * 0.7 +
-              (ctx.authenticity?.humanAuthenticityScore ?? 50) * 0.3,
-          ),
-        )
+    // Mirrors the orchestrator's headline `scores.brandSafety` exactly
+    // (policy 0.4 / music-exposure 0.3 / authenticity 0.3), so the card and
+    // the score header cannot print two different "Brand Safety" numbers for
+    // the same review. The music term reads the composite's own exposure
+    // mapping, not the raw band string.
+    value: ctx.platformReports && ctx.copyright && ctx.authenticity
+      ? conservativeScore(Math.round(
+          (ctx.platformReports.reduce(
+            (sum, p) => sum + (p.policyStatus === 'Compliant' ? 100 : p.policyStatus === 'Review Suggested' ? 60 : 20),
+            0,
+          ) / ctx.platformReports.length) * 0.4 +
+          (100 - (ctx.copyright.musicMatchRisk === 'High' ? 70 : ctx.copyright.musicMatchRisk === 'Medium' ? 35 : 5)) * 0.3 +
+          (ctx.authenticityComposite ?? ctx.authenticity.humanAuthenticityScore ?? 50) * 0.3,
+        ))
       : null,
     confidence: 60,
     evidence: ctx.platformReports?.map((p) => `${p.platform}: ${p.policyStatus}`) ?? [],
@@ -1038,9 +1080,7 @@ export function buildScorecards(ctx: ScorecardContext): Scorecard[] {
     id: 'copyright-risk',
     label: 'Copyright Risk',
     value: ctx.copyright
-      ? conservativeScore(
-          ctx.copyright.musicMatchRisk === 'Low' ? 96 : ctx.copyright.musicMatchRisk === 'Medium' ? 75 : 45,
-        )
+      ? conservativeScore(copyrightCompositeScore(ctx.copyright))
       : null,
     confidence: 60,
     evidence: [
@@ -1061,10 +1101,10 @@ export function buildScorecards(ctx: ScorecardContext): Scorecard[] {
   cards.push({
     id: 'voice-naturalness',
     label: 'Voice Naturalness',
-    value: voice?.measured === true ? voice.naturalness : voice?.naturalness ?? null,
+    value: voice?.naturalness ?? null,
     confidence: ctx.audioMeasured ? 72 : 40,
     evidence: [
-      ...(voice?.measured === true ? ['Pitch/pause DSP ran on the actual track'] : []),
+      ...(ctx.audioMeasured ? ['Pitch/pause DSP ran on the actual track'] : []),
       ...(voice?.syntheticArtifactRisk ? [`Synthetic-artifact risk: ${voice.syntheticArtifactRisk}`] : []),
     ],
     inconclusive: [
@@ -1077,21 +1117,37 @@ export function buildScorecards(ctx: ScorecardContext): Scorecard[] {
     expectedImpact: 'Voice fixes act on the delivery markers that drive mid-video drop-off; the recoverable amount is unmeasured without your retention data.',
   });
 
+  // The editing-authenticity card. When the browser decoded frames, the video
+  // layer produced real editing signals — cut density, static pairs, pacing —
+  // and the card reports them at a measured confidence. Only the no-decode
+  // review renders as unevaluated, which previously happened on EVERY review
+  // and contradicted the measured video panel next to it.
+  const framesMeasured = ctx.videoFramesMeasured === true;
+  const video = ctx.video;
   cards.push({
     id: 'editing-authenticity',
     label: 'Editing Authenticity',
-    value: null,
-    confidence: 20,
-    evidence: ctx.hasWatermark
-      ? ['External platform watermark present — recycled-content signal']
-      : ['No editing-level signals available from the supplied inputs'],
-    inconclusive: ['Scene-transition regularity, cut density, and per-frame generative artifacts require video decoding, which Publish does not perform on any review.'],
-    recommendations: [],
-    // No recommendations exist for a layer that never ran, but the card still
-    // has to say what applying nothing would do — an empty string renders as a
-    // blank line in the report and reads as an omission rather than an answer.
-    expectedImpact:
-      'Nothing here is actionable yet: Publish does not decode the video track, so this layer reports as unevaluated on every review rather than producing a score to improve.',
+    value: framesMeasured && typeof video?.editingPacingScore === 'number'
+      ? video.editingPacingScore
+      : null,
+    confidence: framesMeasured ? 55 : 20,
+    evidence: [
+      ...(ctx.hasWatermark ? ['External platform watermark present — recycled-content signal'] : []),
+      ...(framesMeasured && video
+        ? [
+            `Cut density over the probed windows: ${video.sceneTransitionRate}`,
+            `Static-frame pairs in the sample: ${video.frameRepetitionCount ?? 0}`,
+          ]
+        : []),
+      ...(!framesMeasured ? ['No editing-level signals available — no video frames were decoded for this review'] : []),
+    ],
+    inconclusive: framesMeasured
+      ? ['Per-frame generative artifacts and lip-sync drift are not part of the sampled-sheet pass; the values above come from a sampled decode, not every frame.']
+      : ['Scene-transition regularity, cut density, and per-frame generative artifacts require video decoding, which did not run on this review. Attach the render to measure them.'],
+    recommendations: framesMeasured ? (video?.recommendations ?? []) : [],
+    expectedImpact: framesMeasured
+      ? 'Pacing and cut-density fixes act on the first-30-second retention cliff; the recoverable amount is unmeasured without your retention data.'
+      : 'Nothing here is actionable yet: no video frames were decoded for this review, so this layer reports as unevaluated rather than producing a score to improve.',
   });
 
   const thumb = ctx.thumbnail;
@@ -1175,13 +1231,18 @@ export function buildScorecards(ctx: ScorecardContext): Scorecard[] {
   });
 
   const scored = cards.filter((c) => c.value !== null);
+  // This is NOT the report's headline score. `scores.overall` (see the
+  // orchestrator) weights the layers by how much each actually drives the
+  // outcome; this card is the plain average of everything that scored. The
+  // label says so, because two different numbers both called "Overall" on one
+  // report is a contradiction the reader cannot resolve.
   cards.push({
     id: 'overall-publish-score',
-    label: 'Overall Publish Score',
+    label: 'Average of Scored Layers',
     value: scored.length > 0 ? conservativeScore(Math.round(scored.reduce((sum, c) => sum + (c.value ?? 0), 0) / scored.length)) : null,
     confidence: scored.length > 0 ? Math.round(scored.reduce((sum, c) => sum + c.confidence, 0) / scored.length) : 0,
     evidence: scored.map((c) => `${c.label}: ${c.value}/100`),
-    inconclusive: scored.length === 0 ? ['No layer produced a score, so no overall score exists.'] : [],
+    inconclusive: scored.length === 0 ? ['No layer produced a score, so no average exists.'] : ['An unweighted mean — the weighted headline score at the top of this report weights layers by impact, so the two legitimately differ.'],
     recommendations: cards.flatMap((c) => c.recommendations).slice(0, 4),
     expectedImpact: 'Averaged across the layers that produced scores; layers that could not be evaluated are excluded, so this can overstate confidence when few layers ran.',
   });
@@ -1321,9 +1382,9 @@ export async function analyzeAuthenticity(input: AuthenticityInput): Promise<Aut
       { role: 'system', content: SYSTEM },
       {
         role: 'user',
-        content: `Title: ${input.title}
-Description: ${input.description || '(none)'}
-Tags: ${input.tags?.join(', ') || '(none)'}
+        content: `Title: """${fenceSafe(input.title)}"""
+Description: """${fenceSafe(input.description || '(none)')}"""
+Tags: """${fenceSafe(input.tags?.join(', ') || '(none)')}"""
 Duration: ${input.durationSeconds ? `${input.durationSeconds}s` : 'unknown'}
 Word count: ${wordCount(script)}
 Creator declared AI generation: ${input.aiGenerated ? 'yes' : 'no'}
@@ -1341,7 +1402,7 @@ Deterministic signals already detected (incorporate these, do not contradict the
 ${floor.evidence.map((e) => `- [${e.direction}, ${e.weight}] ${e.signal} @ ${e.location}: ${e.detail}`).join('\n') || '- none'}
 
 Script:
-"""${script.slice(0, 7000)}"""`,
+"""${fenceSafe(script.slice(0, 7000))}"""`,
       },
     ],
     { model: 'reasoning', temperature: 0.25, maxTokens: 1600 },
@@ -1406,7 +1467,7 @@ Script:
       ...floor.falsePositiveReasons,
       ...(raw.falsePositiveReasons ?? []).slice(0, 3).map((s) => scrubCertainty(String(s))),
     ],
-    limitations: analysisLimitations(),
+    limitations: analysisLimitations(input.videoFramesMeasured),
     recommendations,
   };
 }

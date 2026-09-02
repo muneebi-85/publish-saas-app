@@ -19,14 +19,19 @@ import { rateLimit, userKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 import * as v from '@/lib/validate';
 import { PlatformName } from '@/lib/ai/platform-engine';
 import { requireAuth } from '@/lib/api-guards';
-import { incrementAuditsInTx, refundAudit, QuotaExceededError } from '@/lib/session';
+import { incrementAuditsInTx, refundAudit, refundAuditInTx, QuotaExceededError } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { env, hasJobQueue } from '@/lib/env';
 import { runReviewJob } from '@/lib/jobs/run-review';
 import type { VideoFrameInput } from '@/lib/ai/video-engine';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Matches the worker's 300s: without QStash configured this route runs the
+// whole six-engine pipeline inline, and the 60s it used to declare let Vercel
+// kill the function mid-review — after the debit, before the report, with no
+// catch handler running. The reconcile sweep does eventually refund such rows,
+// but only if CRON_SECRET is set; this cap is the primary defense.
+export const maxDuration = 300;
 
 const PLATFORMS = ['YouTube', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn'] as const;
 const MUSIC_SOURCES = ['none', 'original', 'licensed', 'stock', 'popular', 'unknown'] as const;
@@ -218,7 +223,12 @@ export async function POST(req: Request) {
   };
 
   // ── 2. Debit the allowance atomically, before any work is queued ──────────
-  let quota: { plan: string; auditsUsed: number; auditsLimit: number };
+  let quota: {
+    plan: string;
+    auditsUsed: number;
+    auditsLimit: number;
+    usedReferralCredit: boolean;
+  };
   try {
     quota = await incrementAuditsInTx(authCtx.clerkId);
   } catch (err) {
@@ -241,7 +251,8 @@ export async function POST(req: Request) {
     );
   }
 
-  // From here on, one audit is spent. Every failure path must refund it.
+  // From here on, one review is spent — from the allowance or from a bonus
+  // credit. Every failure path must refund the pool it was paid from.
   let jobId: string | null = null;
   try {
     // ── 3. The job row: the client's handle and the worker's idempotency key ──
@@ -255,6 +266,8 @@ export async function POST(req: Request) {
         input: payload as unknown as object,
         status: 'QUEUED',
         quotaCharged: true,
+        // The terminal-failure refund reads this to restore the right pool.
+        paidWithCredits: quota.usedReferralCredit,
       },
       select: { id: true, projectId: true },
     });
@@ -312,31 +325,37 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error('[POST /api/analyze] enqueue failed:', err);
 
-    // Refund the slot so the creator is not charged for a review that never ran.
-    // Clearing `quotaCharged` conditionally is what makes this safe: the inline
-    // runner may already have refunded and cleared the flag, and updateMany
-    // returning 0 tells us not to refund a second time.
+    // Refund the slot so the creator is not charged for a review that never
+    // ran — restoring the pool the debit actually took (allowance or credit).
+    // The claim and the refund run in ONE transaction with the conditional
+    // `quotaCharged: true` predicate as the exactly-once guard: the inline
+    // runner may already have refunded and cleared the flag, and a 0-row claim
+    // tells us not to refund a second time. Committing both atomically closes
+    // the loss window the split order left (a crash or swallowed DB error
+    // between claim and refund dropped the slot with no retry path).
     if (jobId) {
-      const released = await prisma.analysisJob
-        .updateMany({
-          where: { id: jobId, quotaCharged: true },
-          data: {
-            status: 'FAILED',
-            quotaCharged: false,
-            error: 'The review could not be started. Your allowance was refunded.',
-            finishedAt: new Date(),
-          },
-        })
-        .catch(() => ({ count: 0 }));
-
-      if (released.count === 1) {
-        await refundAudit(authCtx.clerkId).catch((e) =>
-          console.error('[POST /api/analyze] refund failed:', e),
-        );
+      const rowId = jobId; // const so the null-narrowing holds inside the callback
+      try {
+        await prisma.$transaction(async (tx) => {
+          const released = await tx.analysisJob.updateMany({
+            where: { id: rowId, quotaCharged: true },
+            data: {
+              status: 'FAILED',
+              quotaCharged: false,
+              error: 'The review could not be started. Your allowance was refunded.',
+              finishedAt: new Date(),
+            },
+          });
+          if (released.count === 1) {
+            await refundAuditInTx(tx, authCtx.dbUserId, quota.usedReferralCredit);
+          }
+        });
+      } catch (e) {
+        console.error('[POST /api/analyze] refund transaction failed:', e);
       }
     } else {
       // The job row was never created, so nothing holds the flag — refund directly.
-      await refundAudit(authCtx.clerkId).catch((e) =>
+      await refundAudit(authCtx.clerkId, quota.usedReferralCredit).catch((e) =>
         console.error('[POST /api/analyze] refund failed:', e),
       );
     }

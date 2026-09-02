@@ -19,10 +19,9 @@ import { MonetizationRiskPanel } from '@/components/analysis/MonetizationRiskPan
 import { ScorecardGrid } from '@/components/analysis/ScorecardGrid';
 import { MethodologyCard } from '@/components/ui/MethodologyCard';
 import { LockedInsights } from '@/components/analysis/LockedInsights';
-import { ExportReportButton } from '@/components/analysis/ExportReportButton';
 import { RetentionCurve } from '@/components/analysis/RetentionCurve';
 import { PlatformName } from '@/lib/ai/platform-engine';
-import { toDisplayString } from '@/lib/ai/guardrails';
+import { normalizeReport } from '@/lib/normalize-report';
 import { ProjectData } from '@/lib/types';
 import { getUserPlanState } from '@/lib/session';
 import { ChallengeCompare } from '@/components/challenge/ChallengeCompare';
@@ -30,147 +29,6 @@ import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
-
-/**
- * Normalize a persisted report for rendering.
- *
- * The LLM occasionally returns objects inside fields typed as `string[]`
- * (e.g. a hook as `{ why, hook, expectedImpact }` instead of a string). The
- * engines now coerce these at write time, but reports persisted before that
- * fix still contain the objects — and rendering one crashes React with
- * "Objects are not valid as a React child". Every string-typed field the UI
- * renders is coerced here so legacy rows render instead of throwing.
- */
-type JsonObject = Record<string, unknown>;
-
-/** Read an unknown value as a JSON object (never throws). */
-function asJsonObject(v: unknown): JsonObject {
-  return v !== null && typeof v === 'object' ? (v as JsonObject) : {};
-}
-
-function normalizeReport(row: { report: unknown; id: string; createdAt: Date }): ProjectData {
-  const raw = asJsonObject(row.report);
-  const str = (v: unknown) => toDisplayString(v);
-  const strArr = (v: unknown): string[] =>
-    Array.isArray(v) ? v.map((x) => toDisplayString(x)) : [];
-  const field = (obj: unknown, key: string): unknown => asJsonObject(obj)[key];
-
-  const hookAnalysis = {
-    ...asJsonObject(field(raw, 'hookAnalysis')),
-    recommendedHooks: strArr(field(field(raw, 'hookAnalysis'), 'recommendedHooks')),
-    hookDropoffReason: str(field(field(raw, 'hookAnalysis'), 'hookDropoffReason')),
-  };
-
-  const rawScriptIssues = raw.scriptIssues;
-  const scriptIssues = Array.isArray(rawScriptIssues)
-    ? rawScriptIssues.map((entry) => {
-        const issue = asJsonObject(entry);
-        return {
-          ...issue,
-          text: str(issue.text),
-          suggestion: str(issue.suggestion),
-          specific_fix: issue.specific_fix == null ? undefined : str(issue.specific_fix),
-          reasoning: issue.reasoning == null ? undefined : str(issue.reasoning),
-          estimatedMetricImpact:
-            issue.estimatedMetricImpact == null ? undefined : str(issue.estimatedMetricImpact),
-        };
-      })
-    : [];
-
-  // Persisted JSON is untyped; the coercion below is intentionally structural.
-  // The final cast is the contract boundary between the DB row and the typed
-  // render model — after normalization the shape matches ProjectData.
-  return {
-    ...(raw as unknown as ProjectData),
-    id: row.id,
-    createdAt: row.createdAt.toISOString(),
-    hookAnalysis,
-    scriptIssues,
-    voiceAnalysis: {
-      ...asJsonObject(field(raw, 'voiceAnalysis')),
-      recommendations: strArr(field(field(raw, 'voiceAnalysis'), 'recommendations')),
-    },
-    videoAnalysis: {
-      ...asJsonObject(field(raw, 'videoAnalysis')),
-      recommendations: strArr(field(field(raw, 'videoAnalysis'), 'recommendations')),
-    },
-    thumbnailAnalysis: {
-      ...asJsonObject(field(raw, 'thumbnailAnalysis')),
-      recommendations: strArr(field(field(raw, 'thumbnailAnalysis'), 'recommendations')),
-    },
-    copyrightAnalysis: {
-      ...asJsonObject(field(raw, 'copyrightAnalysis')),
-      recommendations: strArr(field(field(raw, 'copyrightAnalysis'), 'recommendations')),
-    },
-    seoAnalysis: {
-      ...asJsonObject(field(raw, 'seoAnalysis')),
-      suggestedTags: strArr(field(field(raw, 'seoAnalysis'), 'suggestedTags')),
-      suggestedHashtags: strArr(field(field(raw, 'seoAnalysis'), 'suggestedHashtags')),
-      timestamps: strArr(field(field(raw, 'seoAnalysis'), 'timestamps')),
-    },
-    platformReports: Array.isArray(raw.platformReports)
-      ? raw.platformReports.map((entry) => {
-          const p = asJsonObject(entry);
-          return {
-            ...p,
-            specificRecommendations: strArr(p.specificRecommendations),
-          };
-        })
-      : [],
-    authenticity: raw.authenticity != null
-      ? {
-          ...asJsonObject(raw.authenticity),
-          evidence: Array.isArray(field(raw.authenticity, 'evidence'))
-            ? (field(raw.authenticity, 'evidence') as unknown[]).map((entry) => {
-                const e = asJsonObject(entry);
-                return {
-                  ...e,
-                  signal: str(e.signal),
-                  location: str(e.location),
-                  detail: str(e.detail),
-                };
-              })
-            : [],
-          inconclusive: strArr(field(raw.authenticity, 'inconclusive')),
-          falsePositiveReasons: strArr(field(raw.authenticity, 'falsePositiveReasons')),
-          limitations: strArr(field(raw.authenticity, 'limitations')),
-          recommendations: strArr(field(raw.authenticity, 'recommendations')),
-        }
-      : undefined,
-    monetizationRisk: raw.monetizationRisk != null
-      ? {
-          ...asJsonObject(raw.monetizationRisk),
-          items: Array.isArray(field(raw.monetizationRisk, 'items'))
-            ? (field(raw.monetizationRisk, 'items') as unknown[]).map((entry) => {
-                const item = asJsonObject(entry);
-                return {
-                  ...item,
-                  category: str(item.category),
-                  location: str(item.location),
-                  why: str(item.why),
-                  fix: str(item.fix),
-                };
-              })
-            : [],
-          inconclusive: strArr(field(raw.monetizationRisk, 'inconclusive')),
-          limitations: strArr(field(raw.monetizationRisk, 'limitations')),
-        }
-      : undefined,
-    scorecards: Array.isArray(raw.scorecards)
-      ? raw.scorecards.map((entry) => {
-          const card = asJsonObject(entry);
-          return {
-            ...card,
-            label: str(card.label),
-            evidence: strArr(card.evidence),
-            inconclusive: strArr(card.inconclusive),
-            recommendations: strArr(card.recommendations),
-            expectedImpact: str(card.expectedImpact),
-          };
-        })
-      : undefined,
-  } as ProjectData;
-}
 
 /**
  * `"11:04"` or `"1:02:30"` to seconds; 0 when it is neither.
@@ -241,16 +99,14 @@ export default async function AnalysisPage({
   const inChallenge = challengeId && /^[a-z0-9_-]{8,64}$/i.test(challengeId) ? challengeId : null;
 
   return (
-    <div className="space-y-8 animate-enter">
-      <div className="flex justify-end">
-        <ExportReportButton />
-      </div>
-
+    <div className="space-y-6 animate-enter">
+      {/* Export lives once, in the ScoreHeader action row — this page-level
+          copy rendered a second button for the same window.print(). */}
       {inChallenge && (
         <ChallengeCompare targetReportId={inChallenge} myReportId={row.id} myTitle={row.title} />
       )}
 
-      <ScoreHeader project={project} />
+      <ScoreHeader project={project} shared={row.sharedAt !== null} />
 
       <PriorityFixes project={project} />
 
@@ -260,8 +116,8 @@ export default async function AnalysisPage({
           description={project.assets.metaDescription || project.description}
           tags={project.assets.metaTags ?? project.tags}
           durationSeconds={displayDurationToSeconds(project.assets.videoDuration)}
-          subscribers={channel?.subscribers ?? 0}
-          videoCount={channel?.videosCount ?? 0}
+          subscribers={Number(channel?.subscribers ?? 0)}
+          videoCount={Number(channel?.videosCount ?? 0)}
         />
       )}
 
@@ -277,7 +133,7 @@ export default async function AnalysisPage({
         <ScorecardGrid scorecards={project.scorecards} />
       )}
 
-      <div className="space-y-5">
+      <div className="space-y-6">
         {project.authenticity && <AuthenticityPanel authenticity={project.authenticity} />}
         {project.monetizationRisk && <MonetizationRiskPanel analysis={project.monetizationRisk} />}
         <ScriptAnalyzer issues={project.scriptIssues} scriptAnalysis={project.scriptAnalysis} scriptText={project.assets.scriptText} scores={project.scores} />
@@ -295,20 +151,20 @@ export default async function AnalysisPage({
       {/* Grounded coaching: ask the AI Coach about THIS report's scores. */}
       <Link
         href={`/ai-coach?report=${row.id}`}
-        className="flex items-center justify-between gap-3 rounded-2xl border border-brand-600/20 bg-brand-600/[0.05] px-5 py-4 hover:border-brand-600/40 transition-colors"
+        className="flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4 hover:border-brand-300 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-brand-600 text-[#060606] flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-surface-panel text-brand-600 ring-1 ring-inset ring-brand-100 flex items-center justify-center shrink-0">
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-[13.5px] font-semibold text-ink-900">Ask the AI Coach about this report</div>
+            <div className="text-[13px] font-semibold text-ink-900">Ask the AI Coach about this report</div>
             <div className="text-[12px] text-ink-500 mt-0.5">
               Get advice grounded in these exact scores and top fixes — not generic tips.
             </div>
           </div>
         </div>
-        <span className="text-[12.5px] font-semibold text-brand-600 shrink-0">Open coach →</span>
+        <span className="text-[12px] font-semibold text-brand-600 shrink-0">Open coach →</span>
       </Link>
     </div>
   );

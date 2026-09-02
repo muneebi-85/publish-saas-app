@@ -73,9 +73,20 @@ export async function DELETE(
     const id = v.id(params.id, 'id');
     if (!id.ok) return NextResponse.json({ error: id.error }, { status: 400 });
 
-    const deleted = await prisma.analysisReport.deleteMany({
-      where: OWNED(id.value, authCtx.dbUserId),
-    });
+    // The report and its terminal job rows go together. `AnalysisJob.reportId`
+    // is a plain string with no cascade, so deleting only the report left
+    // COMPLETED jobs behind whose activity-feed "Review complete" entry then
+    // linked to a 404 for as long as the feed shows them. These jobs are
+    // terminal (their report exists nowhere else), so removing them erases the
+    // deleted project's trace coherently instead of leaving dead links.
+    const [, deleted] = await prisma.$transaction([
+      prisma.analysisJob.deleteMany({
+        where: { userId: authCtx.dbUserId, reportId: id.value },
+      }),
+      prisma.analysisReport.deleteMany({
+        where: OWNED(id.value, authCtx.dbUserId),
+      }),
+    ]);
     if (deleted.count === 0) {
       return NextResponse.json({ error: 'Project not found or unauthorized' }, { status: 404 });
     }

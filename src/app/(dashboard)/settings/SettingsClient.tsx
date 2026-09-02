@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/Badge';
 import { DataPrivacyPanel } from '@/components/settings/DataPrivacyPanel';
 import { useConnectChannel } from '@/components/channels/useConnectChannel';
 import { ReferralPanel } from '@/components/referral/ReferralPanel';
+import { PLANS, planDisplayName } from '@/lib/plans';
 
 export interface SettingsUser {
   name: string;
@@ -56,16 +57,21 @@ const SECTIONS = [
   { id: 'channels',      label: 'Channels',       icon: Youtube },
   { id: 'referrals',     label: 'Referrals',      icon: Gift },
   { id: 'notifications', label: 'Notifications',  icon: Bell },
+  // The leaderboard card sits between Notifications and Security; giving it a
+  // nav entry also makes ?tab=community resolve like every other section.
+  { id: 'community',     label: 'Community',      icon: Trophy },
   { id: 'security',      label: 'Security',       icon: Lock },
   { id: 'privacy',       label: 'Data & privacy', icon: Shield },
 ];
 
-const PLAN_FEATURES: Record<string, string[]> = {
-  free:    ['1 analysis per month', 'Single channel', 'Core algorithm checks', 'Community support'],
-  starter: ['25 analyses per month', 'Up to 3 channels', 'Priority queue', 'Email support'],
-  pro:     ['100 analyses per month', 'Unlimited channels', 'Creator Script Optimizer', 'Priority support'],
-  agency:  ['500 analyses per month', 'Unlimited channels & seats', 'White-label reports', 'Dedicated support'],
-};
+// The included-features list IS the catalogue (PLANS[plan].features) rather
+// than a local copy. This file used to carry its own invented list — "single
+// channel", "priority queue", channel-count caps nothing enforces — which
+// disagreed with both the server and the pricing page, exactly the drift
+// `plans.ts` exists to make impossible.
+const featuresFor = (plan: string): string[] =>
+  (PLANS as Record<string, { features: string[] } | undefined>)[plan]?.features ??
+  PLANS.free.features;
 
 export default function SettingsClient({
   user,
@@ -82,9 +88,16 @@ export default function SettingsClient({
   // Deep links (e.g. /settings?tab=billing from notifications, the pricing
   // footer, and the billing portal redirect) must land on the right section —
   // and the portal's ?error= reason must be surfaced, not silently dropped.
+  // Every section renders in one scrollable column, so "landing on" a section
+  // means scrolling to it, not merely highlighting its nav entry: without the
+  // scroll, ?tab=privacy highlighted a nav item the user never saw.
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab && SECTIONS.some((s) => s.id === tab)) setActiveSection(tab);
+    if (tab && SECTIONS.some((s) => s.id === tab)) {
+      setActiveSection(tab);
+      // Native anchor scrolling covers the #hash form of the same link.
+      document.getElementById(tab)?.scrollIntoView({ block: 'start' });
+    }
 
     const reason = searchParams.get('error');
     if (reason) {
@@ -101,6 +114,10 @@ export default function SettingsClient({
 
   // Profile
   const [name, setName] = useState(user.name);
+  // The last value the server confirmed, so the save button can disable on
+  // "no pending change" even though the `user.name` prop never updates after
+  // a save (it is a server component's snapshot).
+  const [savedName, setSavedName] = useState(user.name);
   const [savingName, setSavingName] = useState(false);
   const [nameStatus, setNameStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
@@ -118,6 +135,7 @@ export default function SettingsClient({
   const [channelsList, setChannelsList] = useState<SettingsChannel[]>(initialChannels);
   const [isConnecting, setIsConnecting] = useState(false);
   const [newPlatform, setNewPlatform] = useState('YOUTUBE');
+  const [newChannelLink, setNewChannelLink] = useState('');
   const { pending, error: connectError, notice, connect, disconnect } = useConnectChannel(
     '/settings?tab=channels',
     (channel) => setChannelsList((prev) => [channel, ...prev.filter((c) => c.id !== channel.id)]),
@@ -127,8 +145,9 @@ export default function SettingsClient({
   const auditsUsed = user.auditsUsed ?? 0;
   const auditsLimit = user.auditsLimit ?? 1;
   const usagePct = Math.min(100, Math.round((auditsUsed / Math.max(1, auditsLimit)) * 100));
-  const features = PLAN_FEATURES[plan] || PLAN_FEATURES.free;
-  const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const features = featuresFor(plan);
+  // The catalogue display name ("Creator"), not the capitalized id.
+  const planLabel = planDisplayName(plan);
 
   // The display name can legitimately be empty — fall back to the email local
   // part rather than inventing one.
@@ -159,7 +178,9 @@ export default function SettingsClient({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not save your profile.');
-      setName(data.name ?? name);
+      const confirmed = data.name ?? name;
+      setName(confirmed);
+      setSavedName(confirmed);
       setNameStatus({ kind: 'ok', text: 'Saved.' });
     } catch (err) {
       setNameStatus({ kind: 'error', text: err instanceof Error ? err.message : 'Could not save your profile.' });
@@ -216,10 +237,15 @@ export default function SettingsClient({
 
   const handleConnectChannel = async (e: React.FormEvent) => {
     e.preventDefault();
-    // No handle is sent: the server reads the channel identity and its counts
-    // from the platform's own API using the OAuth token, so anything typed
-    // here would be an unverified claim about someone else's channel.
-    if (await connect(newPlatform)) setIsConnecting(false);
+    const link = newChannelLink.trim();
+    if (!link) return;
+    // The server resolves the pasted link through the platform's own public
+    // endpoints, so the name and counts are read from the platform itself —
+    // nothing here is an unverified claim about someone else's channel.
+    if (await connect(newPlatform, { url: link, allowOAuth: false })) {
+      setIsConnecting(false);
+      setNewChannelLink('');
+    }
   };
 
   const handleDeleteChannel = async (id: string) => {
@@ -238,7 +264,7 @@ export default function SettingsClient({
       />
 
       {portalError && (
-        <div className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+        <div className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-900">
           <span className="inline-flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             {portalError}
@@ -254,7 +280,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[220px,1fr] gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-8">
         {/* Nav */}
         <nav className="lg:sticky lg:top-6 h-fit flex lg:flex-col overflow-x-auto lg:overflow-visible gap-1 border-b lg:border-b-0 lg:border-r border-ink-200 pb-2 lg:pb-0 lg:pr-6">
           {SECTIONS.map((s) => {
@@ -264,11 +290,26 @@ export default function SettingsClient({
               <a
                 key={s.id}
                 href={`#${s.id}`}
-                onClick={() => setActiveSection(s.id)}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13.5px] font-medium whitespace-nowrap transition-colors ${
+                onClick={(e) => {
+                  e.preventDefault();
+                  setActiveSection(s.id);
+                  // All sections live in one scrollable column, so selecting a
+                  // section means scrolling to it. The URL keeps the selection
+                  // via replaceState (no re-render), so refresh/back/forward
+                  // land where the user was — not back on Profile.
+                  document.getElementById(s.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                  try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('tab', s.id);
+                    window.history.replaceState(null, '', url);
+                  } catch {
+                    // History is a nicety here; never break the click.
+                  }
+                }}
+                className={`flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[13px] whitespace-nowrap transition-colors ${
                   active
-                    ? 'bg-brand-50 text-brand-700'
-                    : 'text-ink-600 hover:text-ink-900 hover:bg-white/[0.06]'
+                    ? 'bg-ink-100 text-ink-900 font-semibold'
+                    : 'text-ink-600 font-medium hover:text-ink-900 hover:bg-ink-50'
                 }`}
               >
                 <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-brand-600' : 'text-ink-400'}`} />
@@ -283,17 +324,17 @@ export default function SettingsClient({
           {/* Profile */}
           <Card>
             <SectionHead id="profile" title="Profile" desc="How you appear inside your workspace." />
-            <div className="flex items-center gap-4 pb-5 mb-5 border-b border-ink-100">
+            <div className="flex items-center gap-4 pb-5 mb-5 border-b border-ink-200">
               {user.avatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={user.avatar}
                   alt=""
-                  className="w-12 h-12 rounded-full object-cover bg-white/[0.08]"
+                  className="w-12 h-12 rounded-full object-cover bg-ink-100"
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div className="w-12 h-12 rounded-full bg-brand-600 text-white flex items-center justify-center font-semibold text-[15px]">
+                <div className="w-12 h-12 rounded-full bg-brand-600 text-on-brand flex items-center justify-center font-semibold text-[16px]">
                   {initial}
                 </div>
               )}
@@ -318,7 +359,7 @@ export default function SettingsClient({
                     onChange={(e) => setName(e.target.value)}
                     maxLength={80}
                     placeholder={fallbackName}
-                    className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                    className="w-full bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
                   />
                 </div>
                 <div>
@@ -331,20 +372,20 @@ export default function SettingsClient({
                     value={user.email}
                     readOnly
                     disabled
-                    className="w-full bg-surface-canvas border border-ink-200 rounded-xl h-11 px-3.5 text-[14px] text-ink-500 cursor-not-allowed"
+                    className="w-full bg-surface-canvas border border-ink-200 rounded-lg h-9 px-3 text-[13px] text-ink-500 cursor-not-allowed"
                   />
-                  <p className="text-[11.5px] text-ink-500 mt-1.5">
+                  <p className="text-[12px] text-ink-500 mt-1.5">
                     Managed by your sign-in method. Change it under Security.
                   </p>
                 </div>
               </div>
               <div className="flex items-center justify-end gap-3 mt-5">
                 {nameStatus && (
-                  <span className={`text-[12.5px] font-medium ${nameStatus.kind === 'ok' ? 'text-grass-700' : 'text-crimson-700'}`}>
+                  <span className={`text-[12px] font-medium ${nameStatus.kind === 'ok' ? 'text-grass-700' : 'text-crimson-700'}`}>
                     {nameStatus.text}
                   </span>
                 )}
-                <Button type="submit" size="sm" isLoading={savingName} disabled={name === user.name && !nameStatus}>
+                <Button type="submit" size="sm" isLoading={savingName} disabled={name === savedName && !nameStatus}>
                   Save changes
                 </Button>
               </div>
@@ -355,33 +396,33 @@ export default function SettingsClient({
           <Card>
             <SectionHead id="billing" title="Billing & plan" desc="Your subscription, usage, and included features." />
 
-            <div className="rounded-2xl border border-ink-200 bg-surface-canvas p-5">
+            <div className="rounded-lg border border-ink-200 bg-surface-canvas p-4">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-brand-600" />
-                    <span className="text-[15px] font-semibold text-ink-900">{planLabel} plan</span>
+                    <span className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">{planLabel} plan</span>
                     {plan !== 'free'
                       ? <Badge variant="success" size="sm">Active</Badge>
                       : <Badge variant="outline" size="sm">Free tier</Badge>}
                   </div>
-                  <p className="text-[12.5px] text-ink-500 mt-1">
+                  <p className="text-[12px] text-ink-500 mt-1">
                     {plan === 'free'
                       ? 'Upgrade to unlock more analyses and advanced insights.'
                       : 'Your subscription is billed securely via Lemon Squeezy.'}
                     {user.periodEnd && (
-                      <> Renews {new Date(user.periodEnd).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.</>
+                      <> Renews {new Date(user.periodEnd).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}.</>
                     )}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   {plan === 'free' ? (
                     <Link href="/pricing">
-                      <Button variant="dark" size="sm">Upgrade</Button>
+                      <Button size="sm">Upgrade</Button>
                     </Link>
                   ) : (
                     <Link href="/pricing">
-                      <Button variant="dark" size="sm">Change plan</Button>
+                      <Button size="sm">Change plan</Button>
                     </Link>
                   )}
                   {/* prefetch={false}: this href is an API route that calls Lemon
@@ -398,35 +439,38 @@ export default function SettingsClient({
               </div>
 
               {/* Usage meter */}
-              <div className="mt-5 pt-5 border-t border-ink-100">
+              <div className="mt-5 pt-5 border-t border-ink-200">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[12.5px] font-medium text-ink-700">Analyses this period</span>
-                  <span className="text-[12.5px] font-semibold text-ink-900 tabular-nums">
+                  <span className="text-[12px] font-medium text-ink-700">Analyses this period</span>
+                  <span className="text-[12px] font-semibold text-ink-900 tabular-nums">
                     {auditsUsed} / {auditsLimit}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-white/[0.08] overflow-hidden">
+                <div className="h-2 rounded-full bg-ink-100 overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${usagePct >= 100 ? 'bg-crimson-500' : usagePct >= 80 ? 'bg-amber-500' : 'bg-brand-600'}`}
+                    className={`h-full rounded-full transition-all duration-500 ${usagePct >= 100 ? 'bg-crimson-600' : usagePct >= 80 ? 'bg-amber-600' : 'bg-brand-600'}`}
                     style={{ width: `${usagePct}%` }}
                     role="progressbar"
-                    aria-valuenow={auditsUsed}
+                    // Clamped: referral credits can push usage past the plan's
+                    // monthly allowance (they extend the wall), and
+                    // aria-valuenow > aria-valuemax is an invalid ARIA state.
+                    aria-valuenow={Math.min(auditsUsed, auditsLimit)}
                     aria-valuemin={0}
                     aria-valuemax={auditsLimit}
                     aria-label="Analyses used this period"
                   />
                 </div>
-                <p className="text-[11.5px] text-ink-500 mt-2">
+                <p className="text-[12px] text-ink-500 mt-2">
                   {Math.max(0, auditsLimit - auditsUsed)} analyses remaining.{' '}
                   {user.periodEnd
-                    ? <>Resets {new Date(user.periodEnd).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.</>
+                    ? <>Resets {new Date(user.periodEnd).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}.</>
                     : <>Resets at the start of your next billing period.</>}
                 </p>
               </div>
 
               {/* Features */}
-              <div className="mt-5 pt-5 border-t border-ink-100">
-                <div className="text-[12px] font-semibold text-brand-600 mb-3">Included in your plan</div>
+              <div className="mt-5 pt-5 border-t border-ink-200">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 mb-3">Included in your plan</div>
                 <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {features.map((f) => (
                     <li key={f} className="flex items-center gap-2 text-[13px] text-ink-700">
@@ -454,41 +498,58 @@ export default function SettingsClient({
               </Button>
             </div>
 
+            {/* The connect error is surfaced here (outside the connect form)
+                too: a failed DISCONNECT also routes through this state, and
+                with the form closed it would otherwise fail silently. */}
+            {connectError && (
+              <p className="text-[12px] text-crimson-700 font-medium mb-4" role="alert">{connectError}</p>
+            )}
+
             {isConnecting && (
-              <form onSubmit={handleConnectChannel} className="space-y-4 p-4 border border-ink-200 rounded-xl bg-surface-canvas mb-4">
+              <form onSubmit={handleConnectChannel} className="space-y-4 p-4 border border-ink-200 rounded-lg bg-surface-canvas mb-4">
                 <div>
                   <label htmlFor="new-platform" className="text-[13px] font-medium text-ink-700 block mb-1.5">Platform</label>
                   <select
                     id="new-platform"
                     value={newPlatform}
                     onChange={(e) => setNewPlatform(e.target.value)}
-                    className="w-full sm:max-w-xs bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                    className="w-full sm:max-w-xs bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
                   >
                     <option value="YOUTUBE">YouTube</option>
                     <option value="TIKTOK">TikTok</option>
                   </select>
+                </div>
+                <div>
+                  <label htmlFor="new-channel-link" className="text-[13px] font-medium text-ink-700 block mb-1.5">Channel link</label>
+                  <input
+                    id="new-channel-link"
+                    type="text"
+                    value={newChannelLink}
+                    onChange={(e) => setNewChannelLink(e.target.value)}
+                    placeholder={newPlatform === 'YOUTUBE' ? 'youtube.com/@yourname' : 'tiktok.com/@yourname'}
+                    className="w-full sm:max-w-xs bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
+                  />
                   <p className="text-[12px] text-ink-500 mt-2 leading-relaxed">
-                    We read your channel name and public counts directly from the platform using
-                    the account you authorized — there is nothing to type in. Connect the matching
-                    account first if you have not already.
+                    Paste your channel link or @handle. We read the channel name and public
+                    counts directly from the platform — nothing else is needed.
                   </p>
                 </div>
                 {connectError && <p className="text-[12px] text-crimson-700 font-medium">{connectError}</p>}
                 {notice && <p className="text-[12px] text-grass-700 font-medium">{notice}</p>}
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="secondary" size="sm" onClick={() => setIsConnecting(false)}>Cancel</Button>
-                  <Button type="submit" size="sm" isLoading={pending === newPlatform}>Connect</Button>
+                  <Button type="submit" size="sm" isLoading={pending === newPlatform} disabled={!newChannelLink.trim()}>Connect</Button>
                 </div>
               </form>
             )}
 
             {channelsList.length === 0 ? (
               <div className="flex flex-col items-center text-center py-10">
-                <div className="w-12 h-12 rounded-full bg-white/[0.08] flex items-center justify-center mb-3">
-                  <Youtube className="w-5 h-5 text-ink-400" />
+                <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mb-4">
+                  <Youtube className="w-5 h-5" />
                 </div>
-                <h4 className="font-display text-[15px] font-bold text-ink-900">No channels connected</h4>
-                <p className="text-[13px] text-ink-500 mt-1 max-w-xs">
+                <h4 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">No channels connected</h4>
+                <p className="text-[13px] leading-relaxed text-ink-600 mt-2 max-w-sm">
                   Connect a social profile to track algorithm health and get tailored recommendations.
                 </p>
                 <div className="mt-4">
@@ -498,18 +559,18 @@ export default function SettingsClient({
                 </div>
               </div>
             ) : (
-              <div className="divide-y divide-ink-100">
+              <div className="divide-y divide-ink-200">
                 {channelsList.map((c) => {
                   const PlatformIcon = getPlatformIcon(c.platform);
                   return (
                     <div key={c.id} className="py-3 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-white/[0.08] text-ink-700 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 flex items-center justify-center">
                           <PlatformIcon className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="text-[13.5px] font-medium text-ink-900">{c.name}</div>
-                          <div className="text-[11.5px] text-ink-500 capitalize">
+                          <div className="text-[13px] font-medium text-ink-900">{c.name}</div>
+                          <div className="text-[12px] text-ink-500 capitalize">
                             {c.platform}
                             {c.subscribers > 0 && <> · {c.subscribers.toLocaleString()} subscribers</>}
                           </div>
@@ -534,7 +595,7 @@ export default function SettingsClient({
               onChange={handleToggleProductEmails}
             />
             {prefsError && <p className="text-[12px] text-crimson-700 font-medium mt-3">{prefsError}</p>}
-            <p className="text-[11.5px] text-ink-500 mt-4 leading-relaxed border-t border-ink-100 pt-4">
+            <p className="text-[12px] text-ink-500 mt-4 leading-relaxed border-t border-ink-200 pt-4">
               Billing and security email — failed payments, plan changes, deletion notices — is always sent.
               Suppressing it would leave you unable to act on a lapsed subscription or a change to your account.
             </p>
@@ -555,8 +616,8 @@ export default function SettingsClient({
               onChange={handleToggleLeaderboard}
             />
             {leaderboardError && <p className="text-[12px] text-crimson-700 font-medium mt-3">{leaderboardError}</p>}
-            <div className="mt-4 flex items-start gap-2 rounded-xl border border-white/[0.06] bg-surface-canvas p-3.5">
-              <Trophy className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-ink-200 bg-surface-canvas p-3.5">
+              <Trophy className="w-4 h-4 text-ink-400 shrink-0 mt-0.5" />
               <p className="text-[12px] text-ink-600 leading-relaxed">
                 Only the title, score, platform, and a link to your public score card are shown — never
                 your script, fixes, or email. You can turn this off any time.
@@ -572,28 +633,28 @@ export default function SettingsClient({
               desc="Password, two-factor authentication, and signed-in devices."
             />
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-ink-200 bg-surface-canvas">
+              <div className="flex items-center justify-between gap-3 p-3.5 rounded-lg border border-ink-200 bg-surface-canvas">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-brand-50 border border-brand-100 text-brand-700 flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 ring-1 ring-inset ring-brand-100 flex items-center justify-center shrink-0">
                     <Shield className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[13.5px] font-medium text-ink-900">Account security</div>
-                    <div className="text-[11.5px] text-ink-500">
+                    <div className="text-[13px] font-medium text-ink-900">Account security</div>
+                    <div className="text-[12px] text-ink-500">
                       Email, password, two-factor, and active devices.
                     </div>
                   </div>
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => openUserProfile()}>Manage</Button>
               </div>
-              <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-ink-200 bg-surface-canvas">
+              <div className="flex items-center justify-between gap-3 p-3.5 rounded-lg border border-ink-200 bg-surface-canvas">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-white/[0.08] text-ink-700 flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 flex items-center justify-center shrink-0">
                     <LogOut className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[13.5px] font-medium text-ink-900">Sign out</div>
-                    <div className="text-[11.5px] text-ink-500">Ends every session on this browser.</div>
+                    <div className="text-[13px] font-medium text-ink-900">Sign out</div>
+                    <div className="text-[12px] text-ink-500">Ends every session on this browser.</div>
                   </div>
                 </div>
                 <Button
@@ -622,8 +683,8 @@ const SectionHead: React.FC<{ id?: string; title: string; desc: string; inline?:
   id, title, desc, inline = false,
 }) => (
   <div id={id} className={inline ? '' : 'mb-5'}>
-    <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">{title}</h3>
-    <p className="text-[12.5px] text-ink-500 mt-0.5">{desc}</p>
+    <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">{title}</h3>
+    <p className="text-[13px] leading-relaxed text-ink-600 mt-1">{desc}</p>
   </div>
 );
 
@@ -636,8 +697,8 @@ const Toggle: React.FC<{
 }> = ({ label, desc, on, disabled = false, onChange }) => (
   <div className="flex items-center justify-between gap-4">
     <div>
-      <div className="text-[13.5px] font-medium text-ink-900">{label}</div>
-      <div className="text-[11.5px] text-ink-500 mt-0.5">{desc}</div>
+      <div className="text-[13px] font-medium text-ink-900">{label}</div>
+      <div className="text-[12px] text-ink-500 mt-0.5">{desc}</div>
     </div>
     <button
       type="button"
@@ -648,7 +709,7 @@ const Toggle: React.FC<{
       aria-checked={on}
       aria-label={label}
     >
-      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-subtle transition-all duration-200 ${on ? 'left-[18px]' : 'left-0.5'}`} />
+      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-subtle transition-all duration-150 ${on ? 'left-[18px]' : 'left-0.5'}`} />
     </button>
   </div>
 );

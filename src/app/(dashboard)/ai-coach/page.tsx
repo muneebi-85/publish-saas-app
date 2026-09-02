@@ -34,8 +34,8 @@ export default function AICoachPage() {
   return (
     <PlanGate
       feature="AI Coach"
-      requiredPlan="starter"
-      description="Get tailored, transparent guidance on hooks, titles, retention, and scripts. Included on Starter, Pro, and Agency plans."
+      requiredPlan="pro"
+      description="Get tailored, transparent guidance on hooks, titles, retention, and scripts. Included on every paid plan."
     >
       <CoachChat />
     </PlanGate>
@@ -127,11 +127,12 @@ function CoachChat() {
     e.stopPropagation();
     if (!confirm('Delete this conversation?')) return;
     try {
-      await fetch(`/api/coach/${threadId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/coach/${threadId}`, { method: 'DELETE' });
+      if (!res.ok) return; // keep the row listed — the server still has it
       setThreads((prev) => prev.filter((t) => t.id !== threadId));
       if (activeThread === threadId) startNew();
     } catch {
-      /* ignore */
+      /* network error — nothing to remove locally either */
     }
   }, [activeThread, startNew]);
 
@@ -212,10 +213,10 @@ function CoachChat() {
         showUtility
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[260px,1fr] gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6 items-start">
         {/* Thread sidebar */}
         <Card padded={false} className="lg:sticky lg:top-6">
-          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-ink-100">
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-ink-200">
             <span className="text-[12px] font-semibold text-ink-900">Conversations</span>
             <button
               type="button"
@@ -236,35 +237,36 @@ function CoachChat() {
               </p>
             ) : (
               threads.map((t) => (
-                <button
+                <div
                   key={t.id}
-                  type="button"
-                  onClick={() => openThread(t.id)}
                   className={clsx(
-                    'w-full flex items-start gap-2.5 px-4 py-3 text-left transition-colors border-b border-ink-100 last:border-b-0',
-                    activeThread === t.id ? 'bg-brand-50' : 'hover:bg-white/[0.04]',
+                    'group flex items-start gap-2.5 pl-4 pr-2 py-3 transition-colors border-b border-ink-200 last:border-b-0',
+                    activeThread === t.id ? 'bg-ink-100' : 'hover:bg-ink-50',
                   )}
                 >
                   <MessageSquare className="w-3.5 h-3.5 mt-0.5 text-ink-400 shrink-0" />
-                  <span className="min-w-0 flex-1">
-                    <span className={clsx('block text-[12.5px] truncate', activeThread === t.id ? 'text-brand-700 font-semibold' : 'text-ink-700')}>
+                  <button
+                    type="button"
+                    onClick={() => openThread(t.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className={clsx('block text-[12px] truncate', activeThread === t.id ? 'text-ink-900 font-semibold' : 'text-ink-700')}>
                       {t.title}
                     </span>
-                    <span className="block text-[10.5px] text-ink-400 mt-0.5">
+                    <span className="block text-[11px] text-ink-500 mt-0.5">
                       {t.reportId ? 'Grounded in a report' : 'General'} ·{' '}
                       {new Date(t.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
-                  </span>
-                  <span
-                    role="button"
-                    tabIndex={0}
+                  </button>
+                  <button
+                    type="button"
                     aria-label="Delete conversation"
                     onClick={(e) => deleteThread(t.id, e)}
-                    className="text-ink-300 hover:text-crimson-700 transition-colors shrink-0"
+                    className="w-6 h-6 -mt-0.5 rounded-md flex items-center justify-center text-ink-500 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-ink-200 hover:text-crimson-700 transition-opacity shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas focus-visible:ring-brand-600"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                  </span>
-                </button>
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -273,7 +275,7 @@ function CoachChat() {
         {/* Chat */}
         <Card padded={false} className="flex flex-col">
           {grounded && (
-            <div className="flex items-center gap-2 border-b border-brand-600/20 bg-brand-600/[0.05] px-5 py-2.5 text-[12px] text-brand-700">
+            <div className="flex items-center gap-2 border-b border-brand-200 bg-brand-50 px-5 py-2.5 text-[12px] text-brand-700">
               <FileText className="w-3.5 h-3.5 shrink-0" />
               This conversation is grounded in your report — the coach references its actual scores and fixes.
             </div>
@@ -282,16 +284,16 @@ function CoachChat() {
           <div className="flex-1 min-h-[500px] max-h-[620px] overflow-y-auto p-5 sm:p-6 space-y-5">
             {messages.length === 0 && !sending && (
               <div className="h-full min-h-[440px] flex flex-col items-center justify-center text-center">
-                <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mb-4">
-                  <Sparkles className="w-6 h-6" />
+                <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mb-4">
+                  <Sparkles className="w-5 h-5" />
                 </div>
-                <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">
+                <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
                   {grounded ? 'Ask about this report' : 'Ask about your content'}
                 </h3>
-                <p className="text-[13px] text-ink-600 mt-1.5 max-w-sm leading-relaxed">
+                <p className="text-[13px] leading-relaxed text-ink-600 mt-2 max-w-sm">
                   {grounded
                     ? 'Your report\'s scores and top fixes are loaded — ask why a layer scored the way it did, or what to fix first.'
-                    : 'Hooks, titles, retention, scripts — anything pre-publish. Pick a suggested prompt above or type your own question.'}
+                    : 'Hooks, titles, retention, scripts — anything pre-publish. Pick a suggested prompt below, or type your own question.'}
                 </p>
               </div>
             )}
@@ -299,16 +301,16 @@ function CoachChat() {
             {messages.map((msg) =>
               msg.role === 'user' ? (
                 <div key={msg.id} className="flex justify-end">
-                  <div className="max-w-[80%] rounded-2xl rounded-br-md bg-brand-600 text-[#060606] px-4 py-3 text-[14px] leading-relaxed">
+                  <div className="max-w-[80%] rounded-xl rounded-br-md bg-ink-900 text-surface-canvas px-4 py-3 text-[14px] leading-relaxed">
                     {msg.content}
                   </div>
                 </div>
               ) : (
                 <div key={msg.id} className="flex justify-start gap-3">
-                  <div className="w-8 h-8 shrink-0 rounded-full bg-brand-100 flex items-center justify-center">
+                  <div className="w-8 h-8 shrink-0 rounded-full bg-brand-50 ring-1 ring-inset ring-brand-100 flex items-center justify-center">
                     <Sparkles className="w-4 h-4 text-brand-600" />
                   </div>
-                  <div className="max-w-[80%] rounded-2xl rounded-tl-md bg-white/[0.05] text-ink-700 px-4 py-3 text-[14px] leading-relaxed">
+                  <div className="max-w-[80%] rounded-xl rounded-tl-md bg-ink-100 text-ink-700 px-4 py-3 text-[14px] leading-relaxed">
                     {msg.content}
                   </div>
                 </div>
@@ -317,10 +319,10 @@ function CoachChat() {
 
             {sending && (
               <div className="flex justify-start gap-3">
-                <div className="w-8 h-8 shrink-0 rounded-full bg-brand-100 flex items-center justify-center">
+                <div className="w-8 h-8 shrink-0 rounded-full bg-brand-50 ring-1 ring-inset ring-brand-100 flex items-center justify-center">
                   <Sparkles className="w-4 h-4 text-brand-600" />
                 </div>
-                <div className="max-w-[80%] rounded-2xl rounded-tl-md bg-white/[0.05] text-ink-700 px-4 py-3 text-[14px] leading-relaxed inline-flex items-center gap-2">
+                <div className="max-w-[80%] rounded-xl rounded-tl-md bg-ink-100 text-ink-700 px-4 py-3 text-[14px] leading-relaxed inline-flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-brand-600" />
                   Thinking…
                 </div>
@@ -330,7 +332,7 @@ function CoachChat() {
           </div>
 
           {/* Input row */}
-          <div className="border-t border-ink-100 p-4">
+          <div className="border-t border-ink-200 p-4">
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -339,10 +341,10 @@ function CoachChat() {
                 onKeyDown={handleKeyDown}
                 placeholder="Ask about your hook, title, retention, or script…"
                 aria-label="Message the AI Coach"
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
               />
               <Button
-                size="lg"
+                size="md"
                 onClick={handleSend}
                 disabled={!input.trim() || sending}
                 isLoading={sending}
@@ -360,8 +362,8 @@ function CoachChat() {
       </div>
 
       {/* Suggested prompt chips */}
-      <div className="flex flex-wrap items-center gap-2 mt-6">
-        <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-brand-600">
+      <div className="flex flex-wrap items-center gap-1.5 mt-6">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">
           <Lightbulb className="w-3.5 h-3.5" />
           Suggested prompts
         </span>
@@ -370,7 +372,7 @@ function CoachChat() {
             key={prompt}
             type="button"
             onClick={() => setInput(prompt)}
-            className="rounded-full border border-white/[0.06] bg-surface-panel px-3.5 py-1.5 text-[13px] font-medium text-ink-700 hover:border-brand-600 hover:text-brand-700 hover:bg-brand-50 transition-colors"
+            className="h-8 rounded-lg border border-ink-200 bg-surface-panel px-2.5 text-[12px] font-medium text-ink-700 hover:bg-ink-50 hover:text-ink-900 transition-colors"
           >
             {prompt}
           </button>

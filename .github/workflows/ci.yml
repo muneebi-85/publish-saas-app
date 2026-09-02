@@ -8,8 +8,12 @@
 #   test      → the honesty invariants: no AI-origin assertions, no guaranteed
 #               monetization, no silent plan downgrades on an unmapped variant
 #   build     → the app actually compiles for production
-#   prisma    → the schema is valid and the migration list is coherent
+#   prisma    → the schema is valid and the client generates from it
 #
+# (Migration replay — proving the migration list builds the schema — needs a
+# shadow database this workflow deliberately does not have, so it is not a gate
+# here. Run `prisma migrate dev` locally against a scratch database before
+# committing a schema change.)
 # No database, no API keys, and no network calls to any vendor are needed: the
 # suite covers pure logic only, and `env.ts` degrades instead of throwing when
 # NODE_ENV is not production.

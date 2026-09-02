@@ -3,52 +3,192 @@
 @import 'tailwindcss/utilities';
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/font.css');
 
-/* ─────────────────────────────
-   Design tokens — premium dark editorial
-   ───────────────────────────── */
+/* ─────────────────
+   Design tokens
+
+   The product UI is LIGHT by default so it reads as one product with the
+   marketing site: white panels on a soft grey canvas, near-black ink, and
+   the landing page's red as the single accent. `.dark` re-maps the same
+   token names, so the sidebar's theme toggle keeps working without a
+   single component needing a `dark:` variant.
+
+   Every scale is ordered the same way in both themes: 50 is the faintest
+   fill, 200 is the hairline, 500-600 is body-adjacent, 900 is primary ink.
+   Components only ever name tokens, never literal colours.
+   ───────────────── */
 :root {
-  /* Premium dark palette */
-  --canvas:      #060606;
-  --panel:       #0D0D0D;
-  --surface:     #0F0F10;
-  --sunken:      #000000;
-  --muted:       #1B1B1B;
+  color-scheme: light;
 
-  /* Light theme (for dashboard) */
-  --canvas-light: #FAFAFA;
-  --panel-light:  #FFFFFF;
+  /* Surfaces — canvas is a hair off-white so white panels read as raised. */
+  --canvas:  247 248 250;
+  --panel:   255 255 255;
+  --surface: 255 255 255;
+  --sunken:  241 243 246;
+  --muted:   238 240 244;
 
-  /* Text colors for dark */
-  --ink-950: #FFFFFF;
-  --ink-900: #FFFFFF;
-  --ink-800: #F5F5F5;
-  --ink-700: #ECECEC;
-  --ink-600: #A1A1AA;
-  --ink-500: #71717A;
-  --ink-400: #52525B;
-  --ink-300: #3D3D3D;
-  --ink-200: #1B1B1B;
-  --ink-150: #141414;
-  --ink-100: #0D0D0D;
-  --ink-50:  #060606;
+  /* Ink ramp. 900 body text on --panel is 15.4:1; 600 is 5.9:1 (AA at any
+     size); 500 is 4.6:1 and is the floor for anything that carries meaning.
+     400 and below are decorative only — icons, dividers, disabled states. */
+  --ink-950: 11 13 16;
+  --ink-900: 22 24 29;
+  --ink-800: 36 39 46;
+  --ink-700: 58 63 73;
+  --ink-600: 86 93 106;
+  --ink-500: 110 118 132;
+  --ink-400: 154 162 177;
+  --ink-300: 198 204 214;
+  --ink-200: 228 231 237;
+  --ink-150: 237 239 243;
+  --ink-100: 244 245 248;
+  --ink-50:  250 251 252;
 
-  /* Accent - Premium lime green */
-  --brand-600: #7CFF9A;
-  --brand-700: #5FE07D;
-  --brand-500: #7CFF9A;
-  --brand-400: #9CFFB0;
+  /* Accent — the landing page red. 600 is the fill and the link colour:
+     white on it is 4.6:1 and it on white is 4.6:1, so one value serves both.
+     500 is the pure mark, used for the logo and decorative dots only. */
+  --brand-400: 255 90 90;
+  --brand-500: 255 0 0;
+  --brand-600: 224 0 0;
+  --brand-700: 184 0 0;
 
-  /* Semantic colors */
-  --grass-500: #7CFF9A;
-  --grass-600: #5FE07D;
-  --amber-500: #F59E0B;
-  --crimson-500: #EF4444;
+  /* Semantics. Success is green on purpose: the accent is red, so a red
+     "good" state would be unreadable as a signal. */
+  --grass-500: 21 163 74;
+  --grass-600: 18 128 64;
+  --amber-500: 194 116 11;
+  --crimson-500: 217 45 32;
 
-  --ring: rgba(255,255,255,0.08);
-  --ring-strong: rgba(255,255,255,0.14);
+
+  /* Full semantic ramps. Every step is a token so `.dark` can re-map the
+     whole system without any component naming a literal colour. Rule of
+     thumb: 50/100 = tint fill + hairline, 200/300 = decorative, 400/500/600
+     = solid fills, 700/800/900 = text that clears AA on a tint. */
+  --brand-50:  255 242 242;
+  --brand-100: 255 220 220;
+  --brand-200: 255 194 194;
+  --brand-300: 255 148 148;
+  --brand-800: 154 0 0;
+  --brand-900: 122 0 0;
+
+  --grass-50:  236 253 243;
+  --grass-100: 209 250 223;
+  --grass-200: 166 244 197;
+  --grass-300: 108 233 166;
+  --grass-400: 50 213 131;
+  --grass-700: 14 107 54;
+  --grass-800: 10 84 41;
+  --grass-900: 8 67 31;
+
+  --amber-50:  255 250 235;
+  --amber-100: 254 240 199;
+  --amber-200: 254 223 137;
+  --amber-300: 254 200 75;
+  --amber-400: 232 152 6;
+  --amber-600: 168 92 8;
+  --amber-700: 140 74 8;
+  --amber-800: 113 59 12;
+  --amber-900: 92 48 14;
+
+  --crimson-50:  254 243 242;
+  --crimson-100: 254 228 226;
+  --crimson-200: 254 205 202;
+  --crimson-300: 253 162 155;
+  --crimson-400: 240 68 56;
+  --crimson-600: 190 35 24;
+  --crimson-700: 161 28 19;
+  --crimson-800: 132 26 19;
+  --crimson-900: 107 23 16;
+
+  --ring:        rgba(22,24,29,0.09);
+  --ring-strong: rgba(22,24,29,0.16);
+  /* Scrims: overlays that sit above panels or user imagery. Needs a real
+     per-theme value because Tailwind cannot inject alpha into a var() colour. */
+  --scrim:        rgba(255,255,255,0.72);
+  --scrim-strong: rgba(255,255,255,0.92);
+  --scroll-thumb:       rgba(22,24,29,0.18);
+  --scroll-thumb-hover: rgba(22,24,29,0.30);
+  --on-brand: 255 255 255;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --canvas:  8 9 11;
+  --panel:   16 18 21;
+  --surface: 22 24 28;
+  --sunken:  0 0 0;
+  --muted:   28 31 36;
+
+  --ink-950: 255 255 255;
+  --ink-900: 247 248 250;
+  --ink-800: 231 233 237;
+  --ink-700: 210 214 221;
+  --ink-600: 155 163 176;
+  --ink-500: 123 131 145;
+  --ink-400: 90 97 109;
+  --ink-300: 58 63 73;
+  --ink-200: 38 42 49;
+  --ink-150: 30 33 38;
+  --ink-100: 23 26 31;
+  --ink-50:  18 20 24;
+
+  /* Red saturates hard on black, so the dark accent steps lighter to keep
+     white-on-red and red-on-panel both legible. */
+  --brand-400: 255 138 138;
+  --brand-500: 255 77 77;
+  --brand-600: 255 59 59;
+  --brand-700: 255 107 107;
+
+  --grass-500: 61 214 140;
+  --grass-600: 74 222 128;
+  --amber-500: 251 191 36;
+  --crimson-500: 248 113 113;
+
+
+  --brand-50:  38 21 24;
+  --brand-100: 61 26 30;
+  --brand-200: 92 26 26;
+  --brand-300: 122 32 32;
+  --brand-800: 255 165 165;
+  --brand-900: 255 201 201;
+
+  --grass-50:  19 33 28;
+  --grass-100: 25 48 39;
+  --grass-200: 20 81 47;
+  --grass-300: 26 107 63;
+  --grass-400: 53 199 126;
+  --grass-700: 110 231 165;
+  --grass-800: 167 243 201;
+  --grass-900: 209 250 229;
+
+  --amber-50:  38 33 22;
+  --amber-100: 56 45 24;
+  --amber-200: 83 58 8;
+  --amber-300: 107 74 10;
+  --amber-400: 229 168 43;
+  --amber-600: 252 211 77;
+  --amber-700: 253 230 138;
+  --amber-800: 254 240 199;
+  --amber-900: 254 247 224;
+
+  --crimson-50:  38 24 25;
+  --crimson-100: 55 30 31;
+  --crimson-200: 90 30 27;
+  --crimson-300: 116 37 31;
+  --crimson-400: 239 107 98;
+  --crimson-600: 252 165 165;
+  --crimson-700: 252 184 184;
+  --crimson-800: 254 205 202;
+  --crimson-900: 254 228 226;
+
+  --ring:        rgba(255,255,255,0.09);
+  --ring-strong: rgba(255,255,255,0.16);
+  --scrim:        rgba(16,18,21,0.72);
+  --scrim-strong: rgba(16,18,21,0.92);
+  --scroll-thumb:       rgba(255,255,255,0.16);
+  --scroll-thumb-hover: rgba(255,255,255,0.28);
+  --on-brand: 11 13 16;
 }
 
 * { -webkit-tap-highlight-color: transparent; }
@@ -59,8 +199,8 @@ html {
 }
 
 body {
-  color: var(--ink-900);
-  background: var(--canvas);
+  color: rgb(var(--ink-900));
+  background: rgb(var(--canvas));
   font-family: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -68,33 +208,46 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Display type — clean SaaS uses bold sans, NOT serif. */
+/* Display type — clean SaaS uses bold sans, NOT serif. The weight lives on
+   the Tailwind side (font-semibold/font-bold) so utility classes win over
+   this family/tracking-only rule; hardcoding 700 here used to silently
+   override every font-semibold display heading in the app. */
 .font-display {
   font-family: 'Geist', 'Inter', -apple-system, system-ui, sans-serif;
-  font-weight: 700;
   letter-spacing: -0.025em;
 }
 
 /* ─── Scrollbar ─── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.24); background-clip: padding-box; border: 2px solid transparent; }
-* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; border: 2px solid transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 
 /* ─── Selection ─── */
-::selection { background: var(--brand-600); color: #060606; }
+::selection { background: rgb(var(--brand-600)); color: rgb(var(--on-brand)); }
 
 /* ─── Forms ─── */
-input, textarea, select { font-family: inherit; color: var(--ink-900); }
+input, textarea, select { font-family: inherit; color: rgb(var(--ink-900)); }
 input:focus, textarea:focus, select:focus { outline: none; }
-input::placeholder, textarea::placeholder { color: var(--ink-400); }
+input::placeholder, textarea::placeholder { color: rgb(var(--ink-400)); }
+
+/* ─── Focus fallback ───
+   Any interactive element that does not paint its own focus treatment
+   still gets a visible ring on keyboard focus. Components that manage
+   focus themselves (focus-visible:outline-none + ring utilities, or the
+   .focus-ring class) have higher specificity, so they are unaffected. */
+a:focus-visible, button:focus-visible, [role='button']:focus-visible,
+[role='switch']:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid rgb(var(--brand-600));
+  outline-offset: 2px;
+}
 
 input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
-  background: var(--ink-200);
+  background: rgb(var(--ink-200));
   border-radius: 99px;
   cursor: pointer;
 }
@@ -102,8 +255,8 @@ input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px; height: 16px;
   border-radius: 50%;
-  background: var(--brand-600);
-  border: 2.5px solid #060606;
+  background: rgb(var(--brand-600));
+  border: 2.5px solid rgb(var(--panel));
   box-shadow: 0 1px 3px rgba(0,0,0,0.18);
   cursor: pointer;
   transition: transform 0.15s cubic-bezier(0.22,1,0.36,1);
@@ -111,7 +264,7 @@ input[type='range']::-webkit-slider-thumb {
 input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.14); }
 input[type='range']::-moz-range-thumb {
   width: 16px; height: 16px; border-radius: 50%;
-  background: var(--brand-600); border: 2.5px solid #060606;
+  background: rgb(var(--brand-600)); border: 2.5px solid rgb(var(--panel));
   box-shadow: 0 1px 3px rgba(0,0,0,0.18);
 }
 
@@ -167,14 +320,14 @@ input[type='range']::-moz-range-thumb {
 
 /* Focus ring */
 .focus-ring:focus-visible {
-  outline: 2px solid var(--brand-600);
+  outline: 2px solid rgb(var(--brand-600));
   outline-offset: 2px;
   border-radius: 6px;
 }
 
 /* Subtle dotted rule */
 .divider-dotted {
-  background-image: linear-gradient(90deg, var(--ink-200) 50%, transparent 50%);
+  background-image: linear-gradient(90deg, rgb(var(--ink-200)) 50%, transparent 50%);
   background-size: 6px 1px;
   background-repeat: repeat-x;
   height: 1px;
@@ -192,351 +345,15 @@ input[type='range']::-moz-range-thumb {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   LANDING PAGE — light marketing theme.
-   Scoped to `.lp` so none of it reaches the dark product UI, which
-   owns the :root tokens above. Values are sampled from the approved
-   design comp: white canvas, violet accent, green score system.
+   Landing page shared bits.
+
+   The violet `.lp` marketing theme that used to live here was retired
+   with the red comp: no markup referenced it, and its Manrope webfont
+   was still downloaded on every route. Only the MegaMenu panel pop
+   animation below is still referenced by live markup, so it is kept;
+   the `.lp-anim` reveal gate and `.lp-bar` rules further down were
+   never scoped to `.lp` and survive independently.
    ═══════════════════════════════════════════════════════════════ */
-.lp {
-  /* Neutrals — pure white canvas, faint gray wash for inset rows */
-  --lp-page:      #FFFFFF;
-  --lp-card:      #FFFFFF;
-  --lp-wash:      #FAFAFA;   /* inset rows */
-  --lp-wash-2:    #F3F4F6;   /* secondary button fill */
-
-  /* Ink */
-  --lp-ink:       #0F1115;   /* headings — near-black */
-  --lp-ink-2:     #4B5563;   /* body copy */
-  --lp-ink-3:     #6B7280;   /* meta */
-  --lp-ink-4:     #9CA3AF;   /* axis ticks / faintest labels */
-
-  /* Brand violet — "publish.", links, active nav, chart lines */
-  --lp-purple:    #4F46E5;
-  --lp-purple-d:  #4338CA;
-  --lp-purple-l:  #EEF2FF;   /* active sidebar row / icon tiles */
-  --lp-purple-xl: #F6F5FF;   /* CTA band fill */
-  --lp-violet:    #7C5CFB;   /* headline accent */
-
-  /* Score greens */
-  --lp-green:     #16A34A;
-  --lp-green-d:   #15803D;
-  --lp-green-l:   #4ADE80;
-  --lp-green-xl:  #DCFCE7;
-  --lp-green-tr:  #E9F8EE;   /* gauge track */
-
-  /* Signal colours */
-  --lp-orange:    #EA580C;
-  --lp-orange-l:  #FFEDD5;
-  --lp-red:       #DC2626;
-  --lp-red-l:     #FEE2E2;
-  --lp-amber:     #F59E0B;
-
-  /* Lines */
-  --lp-line:      #EDEEF0;   /* card hairline */
-  --lp-line-2:    #E5E7EB;   /* button / input border */
-
-  --lp-dark:      #0F1115;   /* primary button + footer base */
-
-  font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  font-variant-numeric: normal;
-  background: var(--lp-page);
-  color: var(--lp-ink);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Manrope ships tabular figures via body{}; marketing wants proportional. */
-.lp * { font-variant-numeric: normal; }
-
-/* Page gutter. The comp runs a ~1240px content column inside a 1440 frame. */
-.lp-wrap {
-  width: 100%;
-  max-width: 1288px;
-  margin-inline: auto;
-  padding-inline: 24px;
-}
-@media (min-width: 1024px) { .lp-wrap { padding-inline: 32px; } }
-
-/* Headline rhythm — the comp runs very tight tracking on display sizes. */
-.lp-display {
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1.06;
-  color: var(--lp-ink);
-}
-.lp-h2 {
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.14;
-  color: var(--lp-ink);
-}
-
-/* Eyebrow pill — white with a hairline and an amber star. */
-.lp-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 16px 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--lp-line-2);
-  background: var(--lp-card);
-  color: var(--lp-ink);
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(15, 17, 21, 0.04);
-}
-
-/* Card hairline, no lift — the comp's inner analysis cards. */
-.lp-card {
-  background: var(--lp-card);
-  border: 1px solid var(--lp-line);
-  border-radius: 14px;
-}
-
-/* The hero score card and the big dashboard window float higher. */
-.lp-float {
-  background: var(--lp-card);
-  border: 1px solid var(--lp-line);
-  border-radius: 18px;
-  box-shadow:
-    0 1px 2px rgba(15, 17, 21, 0.04),
-    0 12px 28px -14px rgba(15, 17, 21, 0.10),
-    0 40px 80px -40px rgba(15, 17, 21, 0.16);
-}
-.lp-window {
-  background: var(--lp-card);
-  border: 1px solid var(--lp-line);
-  border-radius: 20px;
-  box-shadow:
-    0 1px 2px rgba(15, 17, 21, 0.03),
-    0 14px 34px -18px rgba(15, 17, 21, 0.09),
-    0 50px 96px -52px rgba(15, 17, 21, 0.16);
-}
-
-.lp-interactive {
-  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), border-color 200ms ease, box-shadow 200ms ease;
-}
-.lp-interactive:hover {
-  transform: translateY(-2px);
-  border-color: #DAD7FB;
-  box-shadow: 0 14px 30px -24px rgba(79, 70, 229, 0.30);
-}
-
-/* ── Buttons ─────────────────────────────────────────────────── */
-.lp .btn-dark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  height: 40px;
-  padding: 0 18px;
-  border-radius: 10px;
-  background: var(--lp-dark);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.012em;
-  white-space: nowrap;
-  transition: background 0.18s ease, transform 0.18s ease;
-}
-.lp .btn-dark:hover { background: #23262E; }
-
-/* Hero-scale primary — same skin, taller and roomier. */
-.lp .btn-dark-lg {
-  height: 52px;
-  padding: 0 26px;
-  border-radius: 12px;
-  font-size: 15.5px;
-  gap: 11px;
-  box-shadow: 0 1px 2px rgba(15, 17, 21, 0.12), 0 10px 24px -14px rgba(15, 17, 21, 0.45);
-}
-.lp .btn-dark-lg:hover { transform: translateY(-1px); }
-
-.lp .btn-ghost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  height: 52px;
-  padding: 0 24px;
-  border-radius: 12px;
-  border: 1px solid var(--lp-line-2);
-  background: var(--lp-card);
-  color: var(--lp-ink);
-  font-size: 15.5px;
-  font-weight: 700;
-  letter-spacing: -0.012em;
-  white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(15, 17, 21, 0.04);
-  transition: background 0.18s ease, border-color 0.18s ease;
-}
-.lp .btn-ghost:hover { background: var(--lp-wash); border-color: #D8DAE0; }
-
-/* Quiet in-card action ("Improve hook", "Improve"). */
-.lp .btn-soft {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border-radius: 8px;
-  background: var(--lp-wash-2);
-  color: var(--lp-ink);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  transition: background 0.16s ease;
-}
-.lp .btn-soft:hover { background: #E7E9ED; }
-
-.lp-menu-button {
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
-}
-.lp-menu-button:hover { background: var(--lp-wash); border-color: #D8DAE0; }
-.lp-menu-button:active { transform: scale(0.96); }
-
-.lp .btn-dark:focus-visible,
-.lp .btn-ghost:focus-visible,
-.lp .btn-soft:focus-visible,
-.lp-menu-button:focus-visible,
-.lp a:focus-visible,
-.lp button:focus-visible,
-.lp input:focus-visible {
-  outline: 3px solid rgba(79, 70, 229, 0.32);
-  outline-offset: 2px;
-}
-
-/* Sticky header — frosted white, hairline appears once the page scrolls. */
-.lp-header {
-  position: sticky;
-  top: 0;
-  z-index: 60;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: saturate(180%) blur(14px);
-  -webkit-backdrop-filter: saturate(180%) blur(14px);
-  border-bottom: 1px solid transparent;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
-}
-.lp-header[data-scrolled='true'] {
-  border-bottom-color: var(--lp-line);
-  box-shadow: 0 1px 2px rgba(15, 17, 21, 0.03);
-}
-
-/* Tab strip inside the features panel. */
-.lp-tab {
-  position: relative;
-  padding: 0 2px 13px;
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: -0.012em;
-  color: var(--lp-ink-2);
-  white-space: nowrap;
-  transition: color 160ms ease;
-}
-.lp-tab:hover { color: var(--lp-ink); }
-.lp-tab[aria-selected='true'] { color: var(--lp-ink); font-weight: 700; }
-.lp-tab[aria-selected='true']::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--lp-purple);
-}
-
-/* Horizontal scrollers (tab strip, logo row) hide their bar. */
-.lp-scroll-x {
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.lp-scroll-x::-webkit-scrollbar { display: none; }
-
-/* Video still stand-in. The comp shows a warm studio frame; this paints the
-   same value structure in CSS so the card never depends on a binary asset,
-   and any <img> layered on top simply covers it when present. */
-.lp-still {
-  background-color: #1B1512;
-  background-image:
-    radial-gradient(38% 52% at 26% 44%, rgba(255, 214, 170, 0.30) 0%, transparent 68%),
-    radial-gradient(24% 30% at 74% 30%, rgba(255, 170, 90, 0.34) 0%, transparent 70%),
-    radial-gradient(70% 90% at 50% 118%, rgba(0, 0, 0, 0.62) 0%, transparent 72%),
-    linear-gradient(150deg, #3A2C22 0%, #221A16 46%, #120E0C 100%);
-}
-
-/* ── Dark band (footer) ─────────────────────────────────────────
-   The footer is the page's single dark block. `.lp-onDark` re-points
-   the shared tokens so `.lp-card` and every `--lp-ink-*` text colour
-   invert themselves with no per-element overrides. */
-.lp-onDark {
-  --lp-card:      rgba(255, 255, 255, 0.05);
-  --lp-line:      rgba(255, 255, 255, 0.10);
-  --lp-line-2:    rgba(255, 255, 255, 0.16);
-  --lp-ink:       #FFFFFF;
-  --lp-ink-2:     #9CA3AF;
-  --lp-ink-3:     #8B929C;
-  --lp-ink-4:     #6B7280;
-  --lp-purple:    #A5B4FC;
-  --lp-green:     #4ADE80;
-  background: #0E0E10;
-  color: var(--lp-ink);
-}
-.lp-onDark .lp-card { box-shadow: none; }
-
-/* ── Motion ──────────────────────────────────────────────────────
-   `lp-anim` is added by JS after mount (see components/landing/
-   Reveal.tsx), which is what makes the hidden state safe: without
-   scripting — or under prefers-reduced-motion — the class never
-   lands and the content paints normally.
-
-   A section carries `lp-anim`, then `lp-in` once it scrolls into
-   view; its `.lp-rv` children stagger via `--i`. */
-.lp-anim .lp-rv {
-  opacity: 0;
-  transform: translateY(18px);
-  transition:
-    opacity 0.62s cubic-bezier(0.22, 0.61, 0.36, 1),
-    transform 0.62s cubic-bezier(0.22, 0.61, 0.36, 1);
-  transition-delay: calc(var(--i, 0) * 65ms);
-}
-.lp-anim.lp-in .lp-rv {
-  opacity: 1;
-  transform: none;
-}
-
-/* Line/ring draw-in. Each user sets its own `--len` to the path
-   length so one class covers the area chart and the score arcs. */
-@keyframes lp-draw { to { stroke-dashoffset: 0; } }
-.lp-draw {
-  stroke-dashoffset: var(--len, 1200);
-  animation: lp-draw 1.6s cubic-bezier(0.33, 1, 0.68, 1) 0.3s forwards;
-}
-
-/* Late-arriving chart furniture (dots, callout) that should not
-   appear before the line reaches it. */
-@keyframes lp-fade-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
-}
-.lp-late {
-  opacity: 0;
-  animation: lp-fade-up 0.5s ease-out forwards;
-  animation-delay: calc(1.05s + var(--i, 0) * 55ms);
-}
-
-/* Both of the above start at load, which is right for the hero — it
-   is above the fold. Inside a revealing section it is not: the chart
-   would finish drawing long before the visitor scrolls to it. Holding
-   the animation (delay included) until the section is `lp-in` makes
-   it play on arrival instead. */
-.lp-anim:not(.lp-in) .lp-draw,
-.lp-anim:not(.lp-in) .lp-late {
-  animation-play-state: paused;
-}
 
 /* Mega-menu panel */
 @keyframes lp-pop {
@@ -549,34 +366,7 @@ input[type='range']::-moz-range-thumb {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lp-anim .lp-rv {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
-  .lp-draw { stroke-dashoffset: 0; animation: none; }
-  .lp-late { opacity: 1; animation: none; }
   .lp-pop { animation: none; }
-  .lp-interactive { transition: none; }
-  .lp-interactive:hover { transform: none; }
-}
-
-@media (max-width: 640px) {
-  .lp-interactive:hover { transform: none; }
-}
-
-/* Printing never scrolls, so the reveal observer never fires and
-   every section below the first page would come out blank. Same
-   reason the hidden state is JS-applied in the first place: it must
-   never be the thing standing between a reader and the content. */
-@media print {
-  .lp-anim .lp-rv {
-    opacity: 1 !important;
-    transform: none !important;
-    transition: none !important;
-  }
-  .lp-draw { stroke-dashoffset: 0 !important; animation: none !important; }
-  .lp-late { opacity: 1 !important; animation: none !important; }
 }
 
 /* ═════════════════════════════════════════════════════════════════
@@ -604,8 +394,11 @@ input[type='range']::-moz-range-thumb {
 /* Clearance for the fixed cookie banner while it is up (the class is set by
    CookieBanner.tsx). Without it, a browser window shorter than the card leaves
    the submit button under the banner with no way to scroll it clear. Dropping
-   the class removes the extra height again, so a dismissed banner costs nothing. */
-.cookie-banner-open .auth-page-root {
+   the class removes the extra height again, so a dismissed banner costs nothing.
+   The auth pages and the restore page both center a card in the viewport, so
+   they share the rule. */
+.cookie-banner-open .auth-page-root,
+.cookie-banner-open .restore-page-root {
   padding-bottom: 200px;
 }
 

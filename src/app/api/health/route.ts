@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { env, hasBilling, hasStorage, hasTranscription, hasJobQueue, hasEmail, hasLiveModel } from '@/lib/env';
 import { prisma } from '@/lib/db';
+import { rateLimit, clientKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 
 /**
  * Lightweight health probe.
@@ -47,6 +47,26 @@ const DB_RETRY_DELAY_MS = 150;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Coarse, host-free classification of a DB probe failure. Prisma connection
+ * errors read `Can't reach database server at "db.xxx.supabase.com:5432"` —
+ * returning that verbatim to an unauthenticated caller leaks infrastructure
+ * topology. The server log keeps the raw message; the probe gets the class.
+ */
+function classifyDbError(message: string): string {
+  const lowered = message.toLowerCase();
+  if (lowered.includes('timed out') || lowered.includes('timeout') || lowered.includes('exceeded')) {
+    return 'timeout';
+  }
+  if (lowered.includes('reach') || lowered.includes('connect') || lowered.includes('econnrefused')) {
+    return 'unreachable';
+  }
+  if (lowered.includes('auth') || lowered.includes('password') || lowered.includes('credentials')) {
+    return 'auth_failed';
+  }
+  return 'unavailable';
+}
+
 /** One capped `SELECT 1`. Rejects on timeout so the caller can decide to retry. */
 async function probeDatabase(): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -68,7 +88,18 @@ async function probeDatabase(): Promise<void> {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  // Public and DB-backed: every other public route with a database read
+  // applies the same IP-keyed budget (share, community, badge, me/plan), so
+  // an unthrottled health endpoint was the one public DB probe left. Monitors
+  // poll on the order of once a minute — the READ budget (240/min) is far
+  // above legitimate use and still caps scripted abuse.
+  const rl = await rateLimit(clientKey(req, 'health'), LIMITS.READ.limit, LIMITS.READ.windowMs);
+  if (!rl.success) {
+    const { body, init } = tooManyRequests(rl);
+    return NextResponse.json(body, init);
+  }
+
   const started = Date.now();
 
   let db: 'ok' | 'degraded' = 'degraded';
@@ -81,9 +112,11 @@ export async function GET() {
       break;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // Only the last failure is reported, prefixed so a reader can tell a genuine
-      // outage (two failures) from a slow first connect (which never gets here).
-      dbError = `${message} (after ${attempt} attempt${attempt === 1 ? '' : 's'})`;
+      // The full message (which for Prisma connection errors embeds the DB
+      // host and port) stays in the server log only. The public probe gets a
+      // coarse, non-revealing classification.
+      console.error('[health] db probe failed:', message);
+      dbError = classifyDbError(message);
       if (attempt < DB_PROBE_ATTEMPTS) await sleep(DB_RETRY_DELAY_MS);
     }
   }
@@ -97,16 +130,12 @@ export async function GET() {
       latencyMs: Date.now() - started,
       database: db,
       ...(dbError ? { databaseError: dbError } : {}),
-      configured: {
-        nvidia: hasLiveModel(),
-        database: Boolean(env.DATABASE_URL),
-        lemonSqueezy: hasBilling(),
-        uploads: hasStorage(),
-        transcription: hasTranscription(),
-        email: hasEmail(),
-        redis: Boolean(env.UPSTASH_REDIS_REST_URL),
-        jobQueue: hasJobQueue(),
-      },
+      // Deliberately no per-feature configuration map: this endpoint is public
+      // and unauthenticated, and a `configured: { lemonSqueezy: false, … }`
+      // block is an attacker's triage list — it names exactly which defenses
+      // (webhook verification, billing, rate-limit backend) are absent on this
+      // deployment. Liveness is what a monitor needs; configuration is an ops
+      // concern for the logs.
     },
     status === 'ok' ? { status: 200 } : { status: 503 },
   );

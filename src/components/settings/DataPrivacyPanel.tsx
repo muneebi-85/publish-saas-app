@@ -19,7 +19,7 @@ const formatDate = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? iso
-    : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 };
 
 export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
@@ -127,12 +127,12 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
               <h3 className="text-[14px] font-semibold text-ink-900">Export your data</h3>
               <Badge variant="outline" size="sm">GDPR Art. 20</Badge>
             </div>
-            <p className="text-[13px] text-ink-500 mt-1.5 max-w-lg leading-relaxed">
+            <p className="text-[13px] text-ink-600 mt-1.5 max-w-lg leading-relaxed">
               Download everything we hold about you — account, projects, reports, comments —
               as a portable JSON file. Limit: 5 exports per hour.
             </p>
             {exportError && (
-              <p className="text-[12.5px] text-crimson-700 font-medium mt-2">{exportError}</p>
+              <p className="text-[12px] text-crimson-700 font-medium mt-2">{exportError}</p>
             )}
           </div>
           <Button
@@ -150,7 +150,7 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-[14px] font-semibold text-ink-900">Cookie preferences</h3>
-            <p className="text-[13px] text-ink-500 mt-1.5 max-w-lg leading-relaxed">
+            <p className="text-[13px] text-ink-600 mt-1.5 max-w-lg leading-relaxed">
               Change which optional cookies you allow. Read our{' '}
               <Link href="/legal/cookies" className="underline underline-offset-2 hover:text-ink-900">
                 cookie policy
@@ -167,7 +167,7 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-[14px] font-semibold text-ink-900">Manage subscription</h3>
-            <p className="text-[13px] text-ink-500 mt-1.5 max-w-lg leading-relaxed">
+            <p className="text-[13px] text-ink-600 mt-1.5 max-w-lg leading-relaxed">
               Update your card, change plan, cancel, or download invoices in the Lemon Squeezy
               customer portal. Cancelling stops future charges; you keep access until the period ends.
             </p>
@@ -182,7 +182,7 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
         </div>
       </Card>
 
-      <Card className="border-crimson-500/20 bg-crimson-50/30">
+      <Card className="border-crimson-200 bg-crimson-50">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -199,7 +199,7 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
           {!showDeleteConfirm && !scheduledFor && (
             <Button
               variant="secondary"
-              className="border-crimson-500/30 text-crimson-700 hover:bg-crimson-50"
+              className="border-crimson-300 text-crimson-700 hover:bg-crimson-50"
               onClick={() => setShowDeleteConfirm(true)}
               leftIcon={<Trash2 className="w-3.5 h-3.5" />}
             >
@@ -209,10 +209,10 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
         </div>
 
         {showDeleteConfirm && !scheduledFor && (
-          <div className="mt-5 pt-5 border-t border-crimson-500/15 space-y-3">
-            <div className="flex items-start gap-2.5 rounded-xl bg-crimson-50 border border-crimson-500/20 p-3">
+          <div className="mt-5 pt-5 border-t border-crimson-200 space-y-3">
+            <div className="flex items-start gap-2.5 rounded-lg bg-crimson-50 border border-crimson-200 p-3.5">
               <AlertTriangle className="w-4 h-4 text-crimson-700 shrink-0 mt-0.5" />
-              <div className="text-[12.5px] text-ink-700 leading-relaxed">
+              <div className="text-[12px] text-ink-700 leading-relaxed">
                 <strong className="text-ink-900">This is not immediate.</strong> Deletion is scheduled
                 30 days out. Your subscription is cancelled straight away, so you will not be charged
                 again. Come back to this page any time before the date to keep your account.
@@ -226,15 +226,15 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
                 rows={3}
                 maxLength={500}
                 placeholder="What could we have done better?"
-                className="mt-1.5 w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-[13px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 resize-none"
+                className="mt-1.5 w-full bg-surface-panel border border-ink-300 rounded-lg px-3 py-2.5 text-[13px] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 resize-none"
               />
             </label>
             {deleteError && (
-              <p className="text-[12.5px] text-crimson-700 font-medium">{deleteError}</p>
+              <p className="text-[12px] text-crimson-700 font-medium">{deleteError}</p>
             )}
             <div className="flex items-center gap-2">
               <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Never mind</Button>
-              <Button onClick={handleScheduleDelete} isLoading={deleting} className="bg-crimson-600 hover:bg-crimson-700">
+              <Button variant="danger" onClick={handleScheduleDelete} isLoading={deleting}>
                 Schedule deletion
               </Button>
             </div>
@@ -242,17 +242,17 @@ export const DataPrivacyPanel: React.FC<{ scheduledFor?: string | null }> = ({
         )}
 
         {scheduledFor && (
-          <div className="mt-5 pt-5 border-t border-crimson-500/15">
-            <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] border-l-4 border-l-amber-500 p-4">
+          <div className="mt-5 pt-5 border-t border-crimson-200">
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3.5">
               <div className="text-[13px] font-semibold text-ink-900">
                 Deletion scheduled for {formatDate(scheduledFor)}
               </div>
-              <p className="text-[12.5px] text-ink-600 mt-1.5 leading-relaxed">
+              <p className="text-[12px] text-ink-600 mt-1.5 leading-relaxed">
                 On that date your account, reports, projects, and uploads are erased and cannot be
                 recovered. Until then nothing is lost — press the button below to keep your account.
               </p>
               {deleteError && (
-                <p className="text-[12.5px] text-crimson-700 font-medium mt-2">{deleteError}</p>
+                <p className="text-[12px] text-crimson-700 font-medium mt-2">{deleteError}</p>
               )}
               <div className="mt-3">
                 <Button onClick={handleCancelDelete} isLoading={cancelling}>

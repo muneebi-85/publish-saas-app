@@ -43,6 +43,28 @@ export type ChannelSnapshot = {
   viewsCount: number;
 };
 
+/**
+ * Prisma returns BigInt for the Channel count columns (they are BIGINT in the
+ * database — lifetime view counts overflow 32-bit). JSON serialization and all
+ * client code expect plain numbers; every realistic count is exact well within
+ * Number's safe integer range, so the conversion is lossless.
+ */
+type CountsToNumbers<T> = {
+  [K in keyof T]: K extends 'subscribers' | 'videosCount' | 'viewsCount'
+    ? T[K] extends bigint
+      ? number
+      : T[K]
+    : T[K];
+};
+
+export function countsToNumbers<T extends object>(row: T): CountsToNumbers<T> {
+  const out = { ...row } as Record<string, unknown>;
+  for (const key of ['subscribers', 'videosCount', 'viewsCount']) {
+    if (typeof out[key] === 'bigint') out[key] = Number(out[key]);
+  }
+  return out as CountsToNumbers<T>;
+}
+
 /** Coerces platform counters, which arrive as strings, into safe integers. */
 export function count(value: unknown): number {
   const n = Number(value);
@@ -393,4 +415,359 @@ export async function fetchChannelCtr(
     // The API reports CTR as a percentage (e.g. 5.2).
     ctr: Number.isFinite(ctr) && ctr > 0 ? ctr : null,
   };
+}
+
+// ─── Public-link connect ──────────────────────────────────────────────────
+// Connect a channel from its public link or handle, no OAuth required. The
+// identity and every number still come from the platform itself — YouTube's
+// public channel page and TikTok's oEmbed endpoint — so the no-OAuth path
+// keeps the same rule as the OAuth path: nothing is typed in by hand and
+// nothing is invented. A platform that returns no number stays 0, rendered
+// as "Not measured".
+
+export type InputResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+/**
+ * Normalize whatever a creator pastes — `@handle`, a full channel URL, or a
+ * bare `UC…` id — into the path segment YouTube's own site uses
+ * (`@handle` or `channel/UC…`). Legacy `/c/` and `/user/` links are rejected
+ * with guidance, since YouTube itself now redirects them to handles.
+ */
+export function parseYouTubeInput(input: unknown): InputResult<string> {
+  const s = typeof input === 'string' ? input.trim() : '';
+  if (!s) return { ok: false, error: 'Paste your YouTube channel link or @handle.' };
+  if (s.length > 2048) return { ok: false, error: 'That link is too long.' };
+
+  // Pasted links usually arrive without a scheme ("youtube.com/@handle").
+  let path = /^(www\.|m\.)?youtube\.com\//i.test(s) ? `https://${s}` : s;
+  if (/^https?:\/\//i.test(path)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(path);
+    } catch {
+      return { ok: false, error: 'That does not look like a valid link.' };
+    }
+    const host = parsed.hostname.toLowerCase().replace(/^(www|m)\./, '');
+    if (host !== 'youtube.com') {
+      return { ok: false, error: 'That is not a YouTube channel link.' };
+    }
+    path = decodeURIComponent(parsed.pathname);
+  }
+
+  path = path.replace(/^\/+/, '').replace(/\/+$/, '');
+
+  const handleMatch = path.match(/^@([^/]+)/);
+  if (handleMatch) {
+    const handle = handleMatch[1];
+    if (!/^[A-Za-z0-9._-]{3,30}$/.test(handle)) {
+      return { ok: false, error: 'No YouTube channel found at that link.' };
+    }
+    return { ok: true, value: `@${handle}` };
+  }
+  const idMatch = path.match(/^(?:channel\/)?(UC[A-Za-z0-9_-]{22})(?:\/|$)/);
+  if (idMatch) {
+    return { ok: true, value: `channel/${idMatch[1]}` };
+  }
+  return {
+    ok: false,
+    error: 'Paste a link that includes your @handle (copy it from your channel page).',
+  };
+}
+
+/**
+ * Normalize a TikTok input — `@username`, a profile URL, or a bare username —
+ * into the unique id. TikTok usernames are 2–24 chars of letters, digits,
+ * dots and underscores; anything else is definitely not an account.
+ */
+export function parseTikTokInput(input: unknown): InputResult<string> {
+  const s = typeof input === 'string' ? input.trim() : '';
+  if (!s) return { ok: false, error: 'Paste your TikTok profile link or @username.' };
+  if (s.length > 2048) return { ok: false, error: 'That link is too long.' };
+
+  // Pasted links usually arrive without a scheme ("tiktok.com/@user").
+  let name = /^(www\.)?tiktok\.com\//i.test(s) ? `https://${s}` : s;
+  if (/^https?:\/\//i.test(name)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(name);
+    } catch {
+      return { ok: false, error: 'That does not look like a valid link.' };
+    }
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (host !== 'tiktok.com') {
+      return { ok: false, error: 'That is not a TikTok profile link.' };
+    }
+    const m = decodeURIComponent(parsed.pathname).match(/^\/@([^/]+)/);
+    if (!m) {
+      return { ok: false, error: 'Paste the profile link (tiktok.com/@username).' };
+    }
+    name = m[1];
+  }
+
+  name = name.replace(/^@+/, '').toLowerCase();
+  if (!/^[a-z0-9._]{2,24}$/.test(name)) {
+    return { ok: false, error: 'No TikTok account found at that link.' };
+  }
+  return { ok: true, value: name };
+}
+
+/**
+ * Coerce the human-readable counters YouTube embeds in its public pages
+ * ("30.3 million subscribers", "1.2K subscribers", "66,561,390 views",
+ * "No subscribers") into integers. Unknown shapes stay 0 — rendered as
+ * "Not measured", never guessed.
+ */
+export function parseHumanCount(text: unknown): number {
+  if (typeof text !== 'string') return 0;
+  const t = text.toLowerCase().replace(/,/g, '').trim();
+  if (!t || t.startsWith('no ')) return 0;
+  const m = t.match(/([\d.]+)\s*(k|m|b|thousand|million|billion)?/);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  const suffix = m[2];
+  const mult =
+    suffix === 'k' || suffix === 'thousand'
+      ? 1_000
+      : suffix === 'm' || suffix === 'million'
+        ? 1_000_000
+        : suffix === 'b' || suffix === 'billion'
+          ? 1_000_000_000
+          : 1;
+  return Math.floor(n * mult);
+}
+
+/**
+ * Read a YouTube text object: a plain string (newer about-panel variants),
+ * simpleText, joined runs, or the a11y label.
+ */
+function ytText(obj: unknown): string | null {
+  if (typeof obj === 'string') return obj;
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.simpleText === 'string') return o.simpleText;
+  if (Array.isArray(o.runs)) {
+    return o.runs
+      .map((r) => (r && typeof r === 'object' ? String((r as Record<string, unknown>).text ?? '') : ''))
+      .join('');
+  }
+  const acc = (o.accessibility as Record<string, unknown> | undefined)?.accessibilityData as
+    | Record<string, unknown>
+    | undefined;
+  return typeof acc?.label === 'string' ? acc.label : null;
+}
+
+/** Depth-limited collector for every value stored under a named key. */
+function collectKey(node: unknown, key: string, out: unknown[] = [], depth = 0): unknown[] {
+  if (depth > 18 || !node || typeof node !== 'object') return out;
+  if (!Array.isArray(node)) {
+    const obj = node as Record<string, unknown>;
+    if (key in obj) out.push(obj[key]);
+  }
+  const children = Array.isArray(node) ? node : Object.values(node);
+  for (const child of children) collectKey(child, key, out, depth + 1);
+  return out;
+}
+
+/**
+ * Locate the channel-level stats inside ytInitialData.
+ *
+ * Primary: the about panel's `aboutChannelViewModel` — the canonical node that
+ * carries subscriberCountText / videoCountText / viewCountText together. The
+ * page can preload OTHER channels' about panels (featured/related channels),
+ * so only a view model whose own channelId matches the page's channel is
+ * trusted; a mismatched one would silently attach another channel's numbers.
+ * Fallback: a ranked walk for pages that lack the panel. Ranking matters
+ * because other renderers carry look-alike counters — the featured video
+ * player has its own viewCountText, and related-channel cards carry another
+ * channel's subscriber/video counts. A node with subscriber and video
+ * counters outranks a view-count-only node.
+ */
+function findAboutStats(
+  node: unknown,
+  expectedChannelId: string,
+): Record<string, unknown> | null {
+  const viewModels = collectKey(node, 'aboutChannelViewModel');
+  for (const vm of viewModels) {
+    if (!vm || typeof vm !== 'object' || Array.isArray(vm)) continue;
+    const obj = vm as Record<string, unknown>;
+    const cid = obj.channelId;
+    if (typeof cid !== 'string' || cid === '' || cid === expectedChannelId) return obj;
+  }
+
+  let best: { score: number; obj: Record<string, unknown> } | null = null;
+
+  const scoreOf = (obj: Record<string, unknown>): number => {
+    let score = 0;
+    if ('subscriberCountText' in obj) score += 2;
+    if ('videoCountText' in obj) score += 1;
+    return score;
+  };
+
+  const walk = (n: unknown, d: number): void => {
+    if (d > 16 || !n || typeof n !== 'object') return;
+    if (!Array.isArray(n)) {
+      const obj = n as Record<string, unknown>;
+      // A node carrying another channel's id owns another channel's counters
+      // (related-channel cards) — skip the whole subtree.
+      const cid = obj.channelId;
+      if (typeof cid === 'string' && cid !== '' && cid !== expectedChannelId) return;
+      if (
+        'subscriberCountText' in obj ||
+        'videoCountText' in obj ||
+        'viewCountText' in obj
+      ) {
+        const score = scoreOf(obj);
+        if (!best || score > best.score) best = { score, obj };
+      }
+    }
+    const children = Array.isArray(n) ? n : Object.values(n);
+    for (const child of children) walk(child, d + 1);
+  };
+
+  walk(node, 0);
+  // A mismatched about panel is never used: its counters belong to another
+  // channel, and "Not measured" beats the wrong numbers.
+  return best ? (best as { score: number; obj: Record<string, unknown> }).obj : null;
+}
+
+/**
+ * Parse a YouTube public channel `/about` page into a snapshot. Identity
+ * (channel id, name, canonical URL, avatar) comes from the page's own
+ * metadata block; counters from the about section.
+ */
+export function parseYouTubeAboutHtml(html: string): ChannelSnapshot | { error: string } {
+  const m = html.match(/ytInitialData\s*=\s*(\{[\s\S]*?\});<\/script>/);
+  if (!m) {
+    return { error: 'Could not read that YouTube channel. Check the link and try again.' };
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(m[1]);
+  } catch {
+    return { error: 'Could not read that YouTube channel. Check the link and try again.' };
+  }
+  const meta = (data as Record<string, unknown> | null)?.metadata as Record<string, unknown> | undefined;
+  const cm = meta?.channelMetadataRenderer as Record<string, unknown> | undefined;
+  const channelId = typeof cm?.externalId === 'string' ? cm.externalId : '';
+  if (!cm || !channelId) {
+    return { error: 'No YouTube channel found at that link.' };
+  }
+
+  const stats = findAboutStats(data, channelId) ?? {};
+  const vanity = typeof cm.vanityChannelUrl === 'string' ? cm.vanityChannelUrl : '';
+  const handle = vanity.match(/\/(@[^/?#]+)/)?.[1];
+
+  let avatarUrl: string | null = null;
+  const thumbs = (cm.avatar as Record<string, unknown> | undefined)?.thumbnails;
+  if (Array.isArray(thumbs) && thumbs.length > 0) {
+    const last = thumbs[thumbs.length - 1] as Record<string, unknown>;
+    if (typeof last?.url === 'string') avatarUrl = last.url;
+  }
+
+  return {
+    channelId,
+    name: typeof cm.title === 'string' && cm.title ? cm.title : 'YouTube channel',
+    url: handle
+      ? `https://www.youtube.com/${handle}`
+      : `https://www.youtube.com/channel/${channelId}`,
+    avatarUrl,
+    subscribers: parseHumanCount(ytText(stats.subscriberCountText)),
+    videosCount: parseHumanCount(ytText(stats.videoCountText)),
+    viewsCount: parseHumanCount(ytText(stats.viewCountText)),
+  };
+}
+
+/**
+ * Parse a TikTok oEmbed body for a profile URL. oEmbed confirms the account
+ * exists and returns its real display name and canonical URL; it carries no
+ * counters, so those stay 0 ("Not measured") rather than being guessed.
+ */
+export function parseTikTokOembed(
+  body: unknown,
+): Pick<ChannelSnapshot, 'channelId' | 'name' | 'url'> | { error: string } {
+  const o = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const authorUrl = typeof o.author_url === 'string' ? o.author_url : '';
+  const m = authorUrl.match(/tiktok\.com\/@([A-Za-z0-9._]+)/i);
+  if (!m) return { error: 'No TikTok account found at that link.' };
+  const username = m[1].toLowerCase();
+  const name = typeof o.author_name === 'string' && o.author_name ? o.author_name : `@${username}`;
+  return { channelId: username, name, url: `https://www.tiktok.com/@${username}` };
+}
+
+/** Fetch a URL as text with a hard timeout; `fetchFn` is injectable for tests. */
+async function fetchText(
+  url: string,
+  timeoutMs = 10_000,
+  fetchFn: FetchLike = fetch,
+): Promise<{ ok: boolean; status: number; text: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchFn(url, {
+      headers: {
+        'User-Agent': BROWSER_UA,
+        Accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: controller.signal,
+      cache: 'no-store',
+      redirect: 'follow',
+    });
+    const text = await res.text().catch(() => '');
+    return { ok: res.ok, status: res.status, text };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Resolve a channel from a pasted link/handle using only public platform
+ * endpoints. Returns the snapshot or a user-facing error; never throws for a
+ * platform response.
+ */
+export async function fetchPublicChannelSnapshot(
+  platform: ChannelPlatform,
+  input: string,
+  fetchFn: FetchLike = fetch,
+): Promise<ChannelSnapshot | { error: string }> {
+  if (platform === 'YOUTUBE') {
+    const parsed = parseYouTubeInput(input);
+    if (!parsed.ok) return parsed;
+    let res: { ok: boolean; status: number; text: string };
+    try {
+      res = await fetchText(`https://www.youtube.com/${parsed.value}/about`, 10_000, fetchFn);
+    } catch {
+      return { error: 'YouTube did not respond in time. Please try again.' };
+    }
+    if (res.status === 404) return { error: 'No YouTube channel found at that link.' };
+    if (!res.ok) return { error: 'YouTube did not respond. Try again in a moment.' };
+    return parseYouTubeAboutHtml(res.text);
+  }
+
+  const parsed = parseTikTokInput(input);
+  if (!parsed.ok) return parsed;
+  const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(
+    `https://www.tiktok.com/@${parsed.value}`,
+  )}`;
+  let res: { ok: boolean; status: number; text: string };
+  try {
+    res = await fetchText(oembedUrl, 10_000, fetchFn);
+  } catch {
+    return { error: 'TikTok did not respond in time. Please try again.' };
+  }
+  if (!res.ok) return { error: 'No TikTok account found at that link.' };
+  let body: unknown;
+  try {
+    body = JSON.parse(res.text);
+  } catch {
+    return { error: 'TikTok returned an unexpected response. Try again.' };
+  }
+  const meta = parseTikTokOembed(body);
+  if ('error' in meta) return meta;
+  // oEmbed exposes identity, not counters — counts stay 0 ("Not measured").
+  return { ...meta, avatarUrl: null, subscribers: 0, videosCount: 0, viewsCount: 0 };
 }

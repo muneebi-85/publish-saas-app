@@ -84,9 +84,9 @@ export function MegaMenu({
         aria-expanded={open}
         aria-haspopup="true"
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-[5px] py-[6px] text-[14.5px] font-medium transition-colors ${
+        className={`inline-flex items-center gap-[5px] py-[6px] text-[16px] font-medium transition-colors ${
           open ? 'text-[var(--lp-ink)]' : 'text-[var(--lp-ink-2)] hover:text-[var(--lp-ink)]'
-        }`}
+        } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-brand/60 focus-visible:ring-offset-2 rounded-md`}
       >
         {label}
         <span className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>
@@ -102,7 +102,7 @@ export function MegaMenu({
           <div className={`grid gap-x-[8px] p-[14px] ${groups.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
             {groups.map((group) => (
               <div key={group.heading}>
-                <p className="px-[10px] pb-[8px] pt-[6px] text-[10px] font-extrabold uppercase tracking-[0.13em] text-[var(--lp-ink-4)]">
+                <p className="px-[10px] pb-[8px] pt-[6px] text-[10px] font-extrabold uppercase tracking-[0.13em] text-[var(--lp-ink-3)]">
                   {group.heading}
                 </p>
                 {group.items.map((item) => (

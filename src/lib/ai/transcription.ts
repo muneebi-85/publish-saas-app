@@ -19,8 +19,8 @@ export interface TranscriptionResult {
   speakingPaceWpm: number;
   /** Fraction of the media spent in inter-word pauses (> 0.45s count). */
   pauseRatio: number;
-  /** True when word durations are unusually uniform (robotic/flat delivery). */
-  isMonotone: boolean;
+  /** True when word durations are unusually uniform (robotic/flat delivery); null when the timings were too degenerate to compute. */
+  isMonotone: boolean | null;
 }
 
 const DEEPGRAM_ENDPOINT = 'https://api.deepgram.com/v1/listen';
@@ -86,15 +86,7 @@ export async function transcribeAudio(mediaUrl: string): Promise<TranscriptionRe
   }
   const pauseRatio = pauseSeconds / duration;
 
-  // Monotone: low variance in word durations is robotic pacing. Real speech
-  // alternates short function words and longer content words, so its
-  // coefficient of variation sits well above the threshold.
-  const durations = words.map((w) => w.end - w.start);
-  const mean = durations.reduce((a, b) => a + b, 0) / durations.length;
-  const variance =
-    durations.reduce((a, b) => a + (b - mean) ** 2, 0) / durations.length;
-  const coefficientOfVariation = Math.sqrt(variance) / mean;
-  const isMonotone = coefficientOfVariation < MONOTONE_CV_THRESHOLD;
+  const isMonotone = computeIsMonotone(words);
 
   return {
     transcript,
@@ -104,4 +96,26 @@ export async function transcribeAudio(mediaUrl: string): Promise<TranscriptionRe
     pauseRatio: Math.round(pauseRatio * 100) / 100,
     isMonotone,
   };
+}
+
+/**
+ * Monotone: low variance in word durations is robotic pacing. Real speech
+ * alternates short function words and longer content words, so its
+ * coefficient of variation sits well above the threshold.
+ *
+ * Degenerate timings (every word end === start, mean 0) make the CV
+ * undefined. Reporting `false` there would be a fabrication — the
+ * authenticity engine scores `false` as a MEASURED human pitch-variation
+ * signal worth +8 — so the honest answer is null: not computable.
+ */
+export function computeIsMonotone(words: DeepgramWord[]): boolean | null {
+  if (words.length === 0) return null;
+  const durations = words.map((w) => w.end - w.start);
+  const mean = durations.reduce((a, b) => a + b, 0) / durations.length;
+  const variance =
+    durations.reduce((a, b) => a + (b - mean) ** 2, 0) / durations.length;
+  const coefficientOfVariation = mean > 0 ? Math.sqrt(variance) / mean : NaN;
+  return !Number.isFinite(coefficientOfVariation)
+    ? null
+    : coefficientOfVariation < MONOTONE_CV_THRESHOLD;
 }

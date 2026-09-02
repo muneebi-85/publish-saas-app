@@ -11,7 +11,7 @@
  */
 
 import { chatJSON } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore } from './guardrails';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore, fenceSafe } from './guardrails';
 import { VoiceMetric } from '../types';
 
 export interface VoiceAnalysisInput {
@@ -24,7 +24,8 @@ export interface VoiceAnalysisInput {
   measured?: {
     speakingPaceWpm: number;
     pauseRatio: number;
-    isMonotone: boolean;
+    /** Null when the word timings were too degenerate to compute the CV. */
+    isMonotone: boolean | null;
   };
 }
 
@@ -89,7 +90,7 @@ Duration: ${input.durationSeconds ?? 'unknown'}s (${wpm !== null ? `${wpm} WPM` 
 Measured pause ratio: ${input.measured ? `${(input.measured.pauseRatio * 100).toFixed(0)}% of the track is inter-word pause` : 'unknown'}
 AI-generated: ${input.aiGenerated ? 'yes' : 'no'}
 Source label: ${input.voiceSourceLabel || 'unspecified'}
-Transcript excerpt: """${(input.transcript || '').slice(0, 1500)}"""`,
+Transcript excerpt: """${fenceSafe((input.transcript || '').slice(0, 1500))}"""`,
       },
     ],
     { model: 'reasoning', temperature: 0.3, maxTokens: 700 },
@@ -98,10 +99,12 @@ Transcript excerpt: """${(input.transcript || '').slice(0, 1500)}"""`,
   if (!raw) return heuristicVoice(input);
 
   return {
-    // Naturalness / emotion are LLM estimates over transcript+metadata, so
-    // "measured" stays false even when DSP ran: those two fields are not yet
-    // pitch analysis. The DSP-derived fields are stamped with real values.
-    measured:      false,
+    // `measured` means "an audio source was actually processed" (see
+    // types.ts) — Deepgram ran when input.measured is present, and its
+    // pauseRatio/isMonotone/wpm are real DSP values. Naturalness and emotion
+    // remain LLM estimates over the transcript either way; per-field honesty
+    // is conveyed by the accompanying recommendations and scorecard basis.
+    measured:      Boolean(input.measured),
     naturalness:   conservativeScore(raw.naturalness ?? 75),
     emotionScore:  conservativeScore(raw.emotionScore ?? 70),
     pauseRatio:    input.measured?.pauseRatio ?? null,
@@ -130,17 +133,26 @@ export function heuristicVoice(input: VoiceAnalysisInput): VoiceMetric {
     input.wordCount && input.durationSeconds
       ? Math.round((input.wordCount / input.durationSeconds) * 60)
       : null;
+  // A transcription ran, so the DSP values are real even when the model call
+  // failed — the panel must keep showing them, not drop to "not measured" and
+  // contradict the authenticity layer reasoning over the same numbers.
+  const dsp = input.measured;
   return {
-    measured: false,
-    naturalness: conservativeScore(input.aiGenerated ? 78 : 88),
+    measured: Boolean(dsp),
+    // No model pass ran, so nothing was estimated from the transcript either —
+    // a fixed default here would be an invented figure wearing a number.
+    naturalness: null,
     emotionScore: null,
-    pauseRatio: null,
-    speakingPaceWpm: wpm,
-    isMonotone: null,
+    pauseRatio: dsp?.pauseRatio ?? null,
+    speakingPaceWpm: dsp?.speakingPaceWpm ?? wpm,
+    isMonotone: dsp?.isMonotone ?? null,
     syntheticArtifactRisk: input.aiGenerated ? 'Medium' : 'Low',
     recommendations: [
-      input.aiGenerated
-        ? "In the YouTube Studio upload flow, open the 'Altered content' question in the Details step (also editable later under Content > Editor) and select 'Yes' — your source is labeled AI-generated, and realistic synthetic speech is covered by YouTube's altered/synthetic-content disclosure policy. Self-disclosing here places the label on your terms; omit it and YouTube can apply the label for you, with repeat omissions escalating toward enforcement — disclosing removes that risk without touching your reach or watch time."
+      ...(input.aiGenerated
+        ? ["In the YouTube Studio upload flow, open the 'Altered content' question in the Details step (also editable later under Content > Editor) and select 'Yes' — your source is labeled AI-generated, and realistic synthetic speech is covered by YouTube's altered/synthetic-content disclosure policy. Self-disclosing here places the label on your terms; omit it and YouTube can apply the label for you, with repeat omissions escalating toward enforcement — disclosing removes that risk without touching your reach or watch time."]
+        : []),
+      dsp
+        ? 'Your audio was processed, so pace, pause-ratio, and monotone above are real DSP measurements. Naturalness and emotion are blank because the model pass that estimates them did not complete this time — the measured delivery numbers above are unaffected, and a later review of the same track will fill the two estimates in.'
         : "Naturalness, pause-ratio, and monotone are blank here because no audio was processed — only your transcript and metadata were read, so these are honest 'unmeasured', not a passing grade. Attach the rendered voice track (the same WAV/MP3 you'll upload) to run pitch/pause analysis; that converts the blank into a real monotone flag, and flat delivery is a known driver of mid-video drop-off on voice-led content, so it's the check most worth turning on.",
       wpm !== null
         ? `Your pace is ${wpm} WPM, derived from word count ÷ duration (transcript-level, so silence isn't counted yet). Spoken narration typically retains best around 150-165 WPM: below ~130 tends to feel draggy and bleeds first-third retention, above ~180 outruns comprehension on dense points — check ${wpm} against that band and either tighten filler lines or add breath pauses to move toward it. Connect the audio track to replace this estimate with true, pause-aware pace.`

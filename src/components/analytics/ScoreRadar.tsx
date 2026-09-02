@@ -57,7 +57,7 @@ export const ScoreRadar: React.FC<{ axes: RadarAxis[]; size?: number }> = ({
             })
             .join(' ')}
           fill="none"
-          stroke="rgba(255,255,255,0.06)"
+          stroke="var(--ring)"
           strokeWidth={1}
         />
       ))}
@@ -71,23 +71,27 @@ export const ScoreRadar: React.FC<{ axes: RadarAxis[]; size?: number }> = ({
             y1={cy}
             x2={p.x}
             y2={p.y}
-            stroke="rgba(255,255,255,0.06)"
+            stroke="var(--ring)"
             strokeWidth={1}
           />
         );
       })}
 
+      {/* Neutral ink for the data shape, not the brand red: this chart is an
+          overview where good and bad axes coexist, and a red polygon would
+          read as an alarm regardless of the scores. Red stays reserved for
+          risk in this system. */}
       <polygon
         points={polygon}
-        fill="rgba(124,255,154,0.12)"
-        stroke="#7CFF9A"
+        fill="rgb(var(--ink-900) / 0.08)"
+        style={{ stroke: 'rgb(var(--ink-700))' }}
         strokeWidth={1.5}
         strokeLinejoin="round"
       />
 
       {axes.map((a, i) => {
         const p = pointAt(i, Math.max(0, Math.min(100, a.value)) / 100);
-        return <circle key={a.label} cx={p.x} cy={p.y} r={2.5} fill="#7CFF9A" />;
+        return <circle key={a.label} cx={p.x} cy={p.y} r={2.5} style={{ fill: 'rgb(var(--ink-700))' }} />;
       })}
 
       {axes.map((a, i) => {
@@ -99,7 +103,7 @@ export const ScoreRadar: React.FC<{ axes: RadarAxis[]; size?: number }> = ({
             y={p.y}
             textAnchor={p.x > cx + 4 ? 'start' : p.x < cx - 4 ? 'end' : 'middle'}
             dominantBaseline="middle"
-            fill="#71717A"
+            fill="rgb(var(--ink-500))"
             fontSize={10.5}
             fontWeight={500}
           >

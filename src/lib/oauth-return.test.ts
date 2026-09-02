@@ -32,6 +32,18 @@ describe('safeRedirect', () => {
     expect(safeRedirect('javascript:alert(1)')).toBe(OAUTH_RETURN_DEFAULT);
   });
 
+  it('rejects interior control characters that browsers strip at parse time', () => {
+    // `trim()` leaves an interior tab; WHATWG URL parsing removes it later, so
+    // `/\t//evil.com` passed the guard and landed as the cross-origin
+    // `///evil.com`. Every C0 control + DEL is rejected anywhere in the value.
+    expect(safeRedirect('/\t//evil.example.com')).toBe(OAUTH_RETURN_DEFAULT);
+    expect(safeRedirect('/\n//evil.example.com')).toBe(OAUTH_RETURN_DEFAULT);
+    expect(safeRedirect('/\r//evil.example.com')).toBe(OAUTH_RETURN_DEFAULT);
+    expect(safeRedirect('/\x00')).toBe(OAUTH_RETURN_DEFAULT);
+    expect(safeRedirect('/\x7f')).toBe(OAUTH_RETURN_DEFAULT);
+    expect(safeRedirect('/ok/\t')).toBe(OAUTH_RETURN_DEFAULT);
+  });
+
   it('passes through a legitimate same-origin path', () => {
     expect(safeRedirect('/connected-channels')).toBe('/connected-channels');
     expect(safeRedirect('/settings?tab=channels&connect=YOUTUBE')).toBe(
@@ -46,6 +58,31 @@ describe('safeRedirect', () => {
   it('honours a custom fallback when provided', () => {
     expect(safeRedirect('https://evil.example.com', '/home')).toBe('/home');
     expect(safeRedirect(undefined, '/home')).toBe('/home');
+  });
+
+  // The auth pages' readRedirect is this guard with a '/dashboard' fallback.
+  // These pin that the sign-in/up deep link survives the trip and that every
+  // open-redirect shape falls back — the exact attack surface of
+  // /sign-in?redirect_url=…
+  describe('auth redirect_url (readRedirect contract)', () => {
+    const read = (raw: string | null | undefined) => safeRedirect(raw ?? undefined, '/dashboard');
+
+    it('honours a same-origin deep link after sign-in', () => {
+      expect(read('/pricing')).toBe('/pricing');
+      expect(read('/settings?tab=billing')).toBe('/settings?tab=billing');
+    });
+
+    it('falls back to the dashboard for every open-redirect shape', () => {
+      expect(read(null)).toBe('/dashboard');
+      expect(read('https://evil.example.com')).toBe('/dashboard');
+      expect(read('//evil.example.com')).toBe('/dashboard');
+      expect(read('/\\evil.example.com')).toBe('/dashboard');
+      // WHATWG parsing strips interior tabs — this shape once passed the
+      // auth pages' local startsWith checks and resolved cross-origin.
+      expect(read('/\t//evil.example.com')).toBe('/dashboard');
+      expect(read('/\n//evil.example.com')).toBe('/dashboard');
+      expect(read('/\x00')).toBe('/dashboard');
+    });
   });
 });
 

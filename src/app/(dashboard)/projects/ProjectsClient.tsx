@@ -13,7 +13,6 @@ import { Badge } from '@/components/ui/Badge';
 import { ScoreGauge } from '@/components/ui/ScoreGauge';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { CommandMenu } from '@/components/dashboard/CommandMenu';
 
 interface ProjectItem {
   id: string;
@@ -40,8 +39,8 @@ function Thumb({ url, title, className }: { url?: string; title: string; classNa
     return <Image src={url} alt="" fill className={className ?? 'object-cover'} />;
   }
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-white/[0.08]">
-      <span aria-hidden="true" className="font-display font-bold text-ink-400 text-[1.25em]">
+    <div className="absolute inset-0 flex items-center justify-center bg-ink-100">
+      <span aria-hidden="true" className="font-display font-semibold text-ink-400 text-[1.25em]">
         {title.trim().charAt(0).toUpperCase() || '•'}
       </span>
     </div>
@@ -53,7 +52,14 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
   const [activeFolder, setActiveFolder] = useState('All');
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'grid' | 'list'>('grid');
-  const [cmdOpen, setCmdOpen] = useState(false);
+
+  // The dashboard Topbar (in the layout) already mounts the app's single
+  // CommandMenu and owns the ⌘K binding. A second instance here meant one
+  // keypress opened two stacked palettes fighting for focus. Opening it from
+  // this page goes through the same window event the footer's cookie-settings
+  // link uses, so there is still exactly one palette.
+  const openCommandMenu = () =>
+    window.dispatchEvent(new CustomEvent('publish:command-menu-open'));
 
   // Folder tabs are derived from the reports' real folders, so a filter can
   // never advertise a folder nothing lives in.
@@ -65,7 +71,13 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
 
   const filtered = projects.filter((p) => {
     const matchFolder = activeFolder === 'All' || p.folder === activeFolder;
-    const matchQuery = p.title.toLowerCase().includes(query.toLowerCase());
+    // The placeholder promises title AND folder search — the folder facet is
+    // what "find the thing I filed under Finance" needs; matching the title
+    // alone silently failed that query.
+    const q = query.toLowerCase();
+    const matchQuery =
+      p.title.toLowerCase().includes(q) ||
+      (p.folder || '').toLowerCase().includes(q);
     return matchFolder && matchQuery;
   });
 
@@ -110,22 +122,22 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
         showUtility
         actions={
           <Link href="/upload">
-            <Button variant="dark" leftIcon={<Plus className="w-4 h-4" />}>New analysis</Button>
+            <Button leftIcon={<Plus className="w-4 h-4" />}>New review</Button>
           </Link>
         }
       />
 
       {/* Toolbar */}
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
-        <div className="flex flex-wrap items-center gap-1 rounded-xl bg-white/[0.03] border border-white/[0.08] p-1">
+        <div className="flex flex-wrap items-center gap-0.5 rounded-lg bg-ink-100 p-0.5">
           {folders.map((f) => (
             <button
               key={f}
               onClick={() => setActiveFolder(f)}
-              className={`px-2.5 h-8 rounded-lg text-[12.5px] font-medium transition-colors ${
+              className={`px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors ${
                 activeFolder === f
-                  ? 'bg-brand-600 text-[#060606]'
-                  : 'text-ink-600 hover:text-white hover:bg-white/[0.06]'
+                  ? 'bg-surface-panel text-ink-900 shadow-xs'
+                  : 'text-ink-500 hover:text-ink-900'
               }`}
             >
               {f}
@@ -138,18 +150,18 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
             <input
               type="text"
-              placeholder="Search title, tag, folder…"
+              placeholder="Search title or folder…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg pl-9 pr-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+              className="w-full bg-surface-panel border border-ink-300 rounded-lg pl-9 pr-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
             />
           </div>
-          <div className="flex items-center border border-white/[0.08] rounded-lg p-0.5 bg-white/[0.03]">
+          <div className="flex items-center gap-0.5 rounded-lg p-0.5 bg-ink-100">
             <Tooltip content="Grid view">
               <button
                 onClick={() => setView('grid')}
-                className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors focus-ring outline-none ${
-                  view === 'grid' ? 'bg-brand-600 text-[#060606]' : 'text-ink-500 hover:text-white hover:bg-white/[0.06]'
+                className={`h-7 w-7 rounded-md flex items-center justify-center transition-colors focus-ring outline-none ${
+                  view === 'grid' ? 'bg-surface-panel text-ink-900 shadow-xs' : 'text-ink-500 hover:text-ink-900'
                 }`}
                 aria-label="Grid view"
               >
@@ -159,8 +171,8 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
             <Tooltip content="List view">
               <button
                 onClick={() => setView('list')}
-                className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors focus-ring outline-none ${
-                  view === 'list' ? 'bg-brand-600 text-[#060606]' : 'text-ink-500 hover:text-white hover:bg-white/[0.06]'
+                className={`h-7 w-7 rounded-md flex items-center justify-center transition-colors focus-ring outline-none ${
+                  view === 'list' ? 'bg-surface-panel text-ink-900 shadow-xs' : 'text-ink-500 hover:text-ink-900'
                 }`}
                 aria-label="List view"
               >
@@ -173,12 +185,12 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
             size="md"
             leftIcon={<Filter className="w-3.5 h-3.5" />}
             title="Search & Filter (Cmd+K)"
-            onClick={() => setCmdOpen(true)}
+            onClick={() => openCommandMenu()}
             className="hidden lg:flex"
           >
             Filter
-            <kbd className="ml-2 inline-flex h-5 items-center gap-1 rounded bg-white/[0.08] px-1.5 font-mono text-[10px] font-medium text-ink-500">
-              <span className="text-xs">⌘</span>K
+            <kbd className="ml-2 inline-flex h-5 items-center gap-1 rounded-md border border-ink-200 bg-ink-100 px-1.5 font-mono text-[11px] font-medium text-ink-500">
+              <span className="text-[12px]">⌘</span>K
             </kbd>
           </Button>
           <Button
@@ -186,7 +198,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
             size="md"
             leftIcon={<Filter className="w-3.5 h-3.5" />}
             title="Filter projects"
-            onClick={() => setCmdOpen(true)}
+            onClick={() => openCommandMenu()}
             className="lg:hidden"
           >
             Filter
@@ -194,18 +206,16 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
         </div>
       </div>
 
-      <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} />
-
       {/* Grid / list */}
       {filtered.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center py-24 text-center border-2 border-dashed border-ink-200 bg-surface-canvas/50 group hover:border-brand-300 transition-colors">
-          <div className="w-16 h-16 bg-brand-50 shadow-sm rounded-2xl flex items-center justify-center mb-5 ring-1 ring-brand-100 group-hover:scale-110 transition-transform">
-            <UploadCloud className="w-7 h-7 text-brand-600" />
+        <Card className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mb-4">
+            <UploadCloud className="w-5 h-5" />
           </div>
-          <h3 className="text-[15px] font-semibold text-ink-900 mb-1">
+          <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
             {initialProjects.length === 0 ? 'Upload your first video' : 'No projects found'}
           </h3>
-          <p className="text-[13px] text-ink-500 max-w-[260px] mx-auto mb-6 leading-relaxed">
+          <p className="text-[13px] leading-relaxed text-ink-600 mt-2 mb-6 max-w-sm mx-auto">
             {initialProjects.length === 0 
               ? "Drag and drop a video file to run a comprehensive safety and hook analysis." 
               : "We couldn't find any projects matching your filters. Try adjusting your search."}
@@ -225,7 +235,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
           {filtered.map((project) => (
             <Card key={project.id} hover className="group h-full flex flex-col">
               <Link href={`/analysis/${project.id}`} prefetch={true} className="flex-1 flex flex-col min-w-0">
-                <div className="relative aspect-video rounded-xl overflow-hidden bg-white/[0.08] ring-1 ring-ink-200 mb-4">
+                <div className="relative aspect-video rounded-xl overflow-hidden bg-ink-100 ring-1 ring-ink-200 mb-4">
                   <Thumb url={project.assets?.thumbnailUrl} title={project.title} />
                   <div className="absolute top-2.5 left-2.5">
                     <Badge
@@ -238,40 +248,40 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                   {/* Only rendered when the review actually recorded a duration —
                       a hardcoded 0:00 reads as a real measurement of an empty video. */}
                   {project.assets?.videoDuration && (
-                    <div className="absolute top-2.5 right-2.5 px-1.5 py-0.5 rounded-md bg-black/60 text-[10.5px] font-mono text-white/95 tabular-nums">
+                    <div className="absolute top-2.5 right-2.5 px-1.5 py-0.5 rounded-md bg-black/60 text-[11px] font-mono text-white/95 tabular-nums">
                       {project.assets.videoDuration}
                     </div>
                   )}
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-[14.5px] font-semibold text-ink-900 line-clamp-2 leading-snug">
+                  <h3 className="text-[14px] font-semibold text-ink-900 line-clamp-2 leading-snug">
                     {project.title}
                   </h3>
-                  <p className="text-xs text-ink-500 mt-1.5 line-clamp-2 leading-relaxed">
+                  <p className="text-[12px] text-ink-500 mt-1.5 line-clamp-2 leading-relaxed">
                     {project.description}
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between pt-4 mt-4 border-t border-ink-100">
-                  <div className="flex items-center gap-2 text-[11.5px] text-ink-500">
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-ink-200">
+                  <div className="flex items-center gap-2 text-[12px] text-ink-500">
                     <Clock className="w-3 h-3" />
-                    {new Date(project.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {new Date(project.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                   </div>
                   <div className="flex items-center gap-2">
                     <ScoreGauge score={project.scores?.overall || 0} size="sm" showLabel={false} />
-                    <ArrowUpRight className="w-3.5 h-3.5 text-ink-400 group-hover:text-white transition-colors" />
+                    <ArrowUpRight className="w-3.5 h-3.5 text-ink-400 group-hover:text-ink-900 transition-colors" />
                   </div>
                 </div>
               </Link>
 
-              <div className="mt-3 pt-3 border-t border-ink-100 flex items-center justify-between">
-                <span className="text-[11px] text-ink-400 capitalize">{project.folder}</span>
+              <div className="mt-3 pt-3 border-t border-ink-200 flex items-center justify-between">
+                <span className="text-[11px] text-ink-500 capitalize">{project.folder}</span>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => handleRename(project)}
-                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11.5px] font-medium text-ink-600 hover:text-white hover:bg-white/[0.06] transition-colors"
+                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[12px] font-medium text-ink-600 hover:text-ink-900 hover:bg-ink-100 transition-colors"
                     aria-label={`Rename ${project.title}`}
                   >
                     <Pencil className="w-3 h-3" /> Rename
@@ -279,7 +289,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                   <button
                     type="button"
                     onClick={() => handleDelete(project)}
-                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11.5px] font-medium text-crimson-700 hover:text-crimson-700 hover:bg-crimson-50 transition-colors"
+                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[12px] font-medium text-crimson-700 hover:text-crimson-700 hover:bg-crimson-50 transition-colors"
                     aria-label={`Delete ${project.title}`}
                   >
                     <Trash2 className="w-3 h-3" /> Delete
@@ -291,27 +301,27 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
         </div>
       ) : (
         <Card padded={false}>
-          <div className="divide-y divide-ink-100">
+          <div className="divide-y divide-ink-200">
             {filtered.map((project) => (
               <div
                 key={project.id}
-                className="flex items-center gap-4 p-4 hover:bg-white/[0.04] transition-colors"
+                className="flex items-center gap-4 p-4 hover:bg-ink-50 transition-colors"
               >
                 <Link
                   href={`/analysis/${project.id}`}
                   prefetch={true}
                   className="flex-1 flex items-center gap-4 min-w-0"
                 >
-                  <div className="relative w-20 h-14 rounded-lg overflow-hidden bg-white/[0.08] shrink-0 ring-1 ring-ink-200">
+                  <div className="relative w-20 h-14 rounded-lg overflow-hidden bg-ink-100 shrink-0 ring-1 ring-ink-200">
                     <Thumb url={project.assets?.thumbnailUrl} title={project.title} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-ink-900 truncate">{project.title}</div>
+                    <div className="text-[13px] font-medium text-ink-900 truncate">{project.title}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant={project.riskLevel === 'LOW' ? 'success' : project.riskLevel === 'MEDIUM' ? 'warning' : 'danger'} dot>
                         {project.riskLevel}
                       </Badge>
-                      <span className="text-[11.5px] text-ink-500 capitalize">{project.folder}</span>
+                      <span className="text-[12px] text-ink-500 capitalize">{project.folder}</span>
                     </div>
                   </div>
                   <ScoreGauge score={project.scores?.overall || 0} size="sm" showLabel={false} />
@@ -321,7 +331,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                   <button
                     type="button"
                     onClick={() => handleRename(project)}
-                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-ink-500 hover:text-white hover:bg-white/[0.06] transition-colors"
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-ink-500 hover:text-ink-900 hover:bg-ink-100 transition-colors"
                     aria-label={`Rename ${project.title}`}
                   >
                     <Pencil className="w-3.5 h-3.5" />
@@ -329,7 +339,7 @@ export default function ProjectsClient({ initialProjects }: { initialProjects: P
                   <button
                     type="button"
                     onClick={() => handleDelete(project)}
-                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-crimson-500 hover:text-crimson-700 hover:bg-crimson-50 transition-colors"
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-crimson-600 hover:text-crimson-700 hover:bg-crimson-50 transition-colors"
                     aria-label={`Delete ${project.title}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />

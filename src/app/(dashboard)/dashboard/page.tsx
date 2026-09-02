@@ -1,10 +1,11 @@
 import React from 'react';
 import Link from 'next/link';
 import { requirePageAuth } from '@/lib/api-guards';
+import { PublishShareLink } from '@/components/share/PublishShareLink';
 import {
   ArrowRight, UploadCloud, ShieldCheck, Play, CheckCircle2, Loader2,
   BarChart3, Gauge, CalendarDays, TrendingUp, AlertTriangle, Wrench,
-  Sparkles, Clock,
+  Sparkles,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -15,14 +16,17 @@ import { TrendCard } from '@/components/analytics/TrendCard';
 import { ScoreRadar } from '@/components/analytics/ScoreRadar';
 import { prisma } from '@/lib/db';
 import { getUserPlanState, PLAN_LIMITS } from '@/lib/session';
-import type { ProjectData, ScriptIssue } from '@/lib/types';
+import { planDisplayName } from '@/lib/plans';
+import { normalizeReport } from '@/lib/normalize-report';
+import { scoreBand, SCORE_BAND_UI } from '@/lib/score-band';
+import type { ScriptIssue } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 const PLATFORM_STATUS_TONE: Record<string, string> = {
-  Compliant: 'text-brand-600',
-  'Review Suggested': 'text-amber-500',
-  'At Risk': 'text-crimson-500',
+  Compliant: 'text-grass-700',
+  'Review Suggested': 'text-amber-700',
+  'At Risk': 'text-crimson-600',
 };
 
 export default async function DashboardPage({
@@ -100,33 +104,35 @@ export default async function DashboardPage({
         />
 
         {showActivating && (
-          <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.08] px-4 py-3 mb-6">
-            <Loader2 className="w-4 h-4 animate-spin text-amber-500 shrink-0" />
-            <p className="text-[13px] text-amber-500">
+          <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 mb-6">
+            <Loader2 className="w-4 h-4 animate-spin text-amber-600 shrink-0" />
+            <p className="text-[13px] text-amber-900">
               <strong>Activating your plan</strong> — this usually takes under 30 seconds. Refresh once your plan badge updates in the sidebar.
             </p>
           </div>
         )}
         {showActivated && (
-          <div className="flex items-center gap-3 rounded-xl border border-brand-600/20 bg-brand-600/[0.08] px-4 py-3 mb-6">
-            <CheckCircle2 className="w-4 h-4 text-brand-600 shrink-0" />
-            <p className="text-[13px] text-brand-600">
+          <div className="flex items-center gap-3 rounded-xl border border-grass-200 bg-grass-50 p-4 mb-6">
+            <CheckCircle2 className="w-4 h-4 text-grass-600 shrink-0" />
+            <p className="text-[13px] text-grass-800">
               <strong>Plan activated.</strong> Your reviews are unlocked — start your first one below.
             </p>
           </div>
         )}
 
-        <div className="bg-surface-panel border border-white/[0.06] rounded-3xl p-8 sm:p-10">
+        <div className="bg-surface-panel border border-ink-200 rounded-xl shadow-xs p-6 sm:p-8">
           <div className="max-w-2xl">
             <Badge variant="ink" dot>
               {state.plan === 'free'
                 ? 'Free plan · 1 review included'
-                : `${state.plan[0].toUpperCase()}${state.plan.slice(1)} plan active`}
+                // The catalogue name ("Creator"), never the capitalized id —
+                // the pricing page sells "Creator" and the id is "starter".
+                : `${planDisplayName(state.plan)} plan active`}
             </Badge>
-            <h2 className="mt-4 font-display text-2xl sm:text-[28px] font-bold tracking-[-0.03em] text-white">
+            <h2 className="mt-4 font-display text-[24px] sm:text-[30px] leading-[1.15] font-semibold tracking-[-0.025em] text-ink-900">
               Analyze your first video
             </h2>
-            <p className="text-[15px] text-ink-600 mt-3 leading-relaxed">
+            <p className="text-[14px] text-ink-600 mt-2.5 leading-relaxed max-w-xl">
               Drop a title, script, or thumbnail. Every review covers six layers — script authenticity,
               hook retention, voice, thumbnail CTR, copyright exposure, and per-platform policy — in under
               a minute.
@@ -143,18 +149,18 @@ export default async function DashboardPage({
             </div>
           </div>
 
-          <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="mt-8 pt-8 border-t border-ink-200 grid grid-cols-1 sm:grid-cols-3 gap-5">
             {[
               { title: 'Script + hook', body: 'AI-fingerprint detection, virality scoring, weak-opener rewrites.' },
               { title: 'Policy + copyright', body: 'YouTube, TikTok, Meta, LinkedIn — advertiser suitability and claim risk.' },
               { title: 'Trend over time', body: 'Every re-review shows a real trend line for the same project.' },
             ].map((f, i) => (
-              <div key={f.title} className="border border-white/[0.06] rounded-2xl p-5 bg-white/[0.02]">
-                <div className="w-8 h-8 rounded-lg bg-brand-600 text-[#060606] flex items-center justify-center text-[13px] font-semibold">
+              <div key={f.title}>
+                <div className="w-6 h-6 rounded-md bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100 flex items-center justify-center text-[12px] font-semibold">
                   {i + 1}
                 </div>
-                <div className="text-[14px] font-semibold text-white mt-3">{f.title}</div>
-                <p className="text-[12.5px] text-ink-600 mt-1.5 leading-relaxed">{f.body}</p>
+                <div className="text-[14px] font-semibold text-ink-900 mt-3">{f.title}</div>
+                <p className="text-[12px] text-ink-600 mt-1.5 leading-relaxed">{f.body}</p>
               </div>
             ))}
           </div>
@@ -168,19 +174,24 @@ export default async function DashboardPage({
     ? await prisma.analysisReport.findFirst({
         where: { userId: user.id },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, title: true, report: true },
+        select: { id: true, title: true, report: true, createdAt: true },
       })
     : null;
 
-  const latest = latestRow?.report as unknown as ProjectData | null;
+  // The raw cast here used to render legacy object-shaped fields straight into
+  // JSX, which crashes React — the same rows `/analysis/[id]` already
+  // normalizes. One shared normalizer keeps both consumers identical.
+  const latest = latestRow ? normalizeReport(latestRow) : null;
   const s = latest?.scores;
 
   const radarAxes = s
     ? [
         { label: 'Monetization', value: s.monetization },
         { label: 'SEO',          value: s.seo },
-        { label: 'Hook',         value: s.hook },
-        { label: 'Editing',      value: s.editing },
+        // Hook is null when the review had no script/transcript — the radar has
+        // no "unevaluated" axis, so it drops the axis rather than drawing 0.
+        ...(s.hook !== null ? [{ label: 'Hook', value: s.hook }] : []),
+        ...(s.editing !== null ? [{ label: 'Editing', value: s.editing }] : []),
         { label: 'Brand safety', value: s.brandSafety },
         { label: 'Copyright',    value: s.copyright },
         { label: 'Originality',  value: s.originality },
@@ -206,27 +217,28 @@ export default async function DashboardPage({
         subtitle={`${totalReports} review${totalReports === 1 ? '' : 's'} run · average score ${avgOverall}`}
         actions={
           <Link href="/upload">
-            <Button variant="primary" leftIcon={<UploadCloud className="w-4 h-4" />}>New analysis</Button>
+            <Button variant="primary" leftIcon={<UploadCloud className="w-4 h-4" />}>New review</Button>
           </Link>
         }
       />
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
-        <Kpi icon={<BarChart3 className="w-[18px] h-[18px]" />} label="Total analyses" value={totalReports}
+      {/* KPI strip -- one frame, hairline-divided, so six numbers read as a
+          single instrument panel instead of six competing cards. */}
+      <div className="mb-6 rounded-xl border border-ink-200 bg-surface-panel shadow-xs overflow-hidden grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 divide-x divide-y xl:divide-y-0 divide-ink-200">
+        <Kpi icon={<BarChart3 className="w-4 h-4" />} label="Total analyses" value={totalReports}
              hint={`${state.auditsUsed} used this cycle`} />
-        <Kpi icon={<Gauge className="w-[18px] h-[18px]" />} label="Avg. score" value={avgOverall}
+        <Kpi icon={<Gauge className="w-4 h-4" />} label="Avg. score" value={avgOverall}
              tone={avgOverall >= 85 ? 'good' : avgOverall >= 70 ? 'warn' : 'bad'}
-             hint={`Across your last ${reports.length}`} />
-        <Kpi icon={<TrendingUp className="w-[18px] h-[18px]" />} label="Avg. monetization" value={avgMonetization}
+             hint={`Average of your last ${reports.length}`} />
+        <Kpi icon={<TrendingUp className="w-4 h-4" />} label="Avg. monetization" value={avgMonetization}
              tone={avgMonetization >= 85 ? 'good' : avgMonetization >= 70 ? 'warn' : 'bad'}
              hint="Revenue eligibility" />
-        <Kpi icon={<CalendarDays className="w-[18px] h-[18px]" />} label="This month" value={thisMonthCount}
+        <Kpi icon={<CalendarDays className="w-4 h-4" />} label="This month" value={thisMonthCount}
              hint={now.toLocaleDateString('en-US', { month: 'long' })} />
-        <Kpi icon={<ShieldCheck className="w-[18px] h-[18px]" />} label="Safe to publish" value={`${safeRate}%`}
+        <Kpi icon={<ShieldCheck className="w-4 h-4" />} label="Safe to publish" value={`${safeRate}%`}
              tone={safeRate >= 80 ? 'good' : 'neutral'}
              hint={`${safeCount} of ${reports.length} scored 85+`} />
-        <Kpi icon={<Wrench className="w-[18px] h-[18px]" />} label="Open fixes"
+        <Kpi icon={<Wrench className="w-4 h-4" />} label="Open fixes"
              value={insights?.totalFixes ?? topIssues.length}
              tone={(insights?.blockingCount ?? 0) > 0 ? 'bad' : 'neutral'}
              hint={insights ? `${insights.blockingCount} blocking` : 'On latest review'} />
@@ -247,7 +259,7 @@ export default async function DashboardPage({
           title="Publishing score"
           caption={latestRow.title}
           action={
-            <Link href={`/analysis/${latestRow.id}`} className="text-[13px] text-ink-500 hover:text-white inline-flex items-center gap-1 transition-colors">
+            <Link href={`/analysis/${latestRow.id}`} className="text-[13px] text-ink-500 hover:text-ink-900 inline-flex items-center gap-1 transition-colors">
               Open report <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           }
@@ -258,7 +270,7 @@ export default async function DashboardPage({
               {insights && (
                 <div className="text-center">
                   <div className="text-[12px] text-ink-500">Potential after fixes</div>
-                  <div className="font-mono text-[20px] font-bold text-brand-600 mt-0.5">
+                  <div className="font-display text-[20px] font-semibold tracking-[-0.02em] tabular-nums text-grass-700 mt-0.5">
                     {insights.scorePotential}
                   </div>
                 </div>
@@ -271,7 +283,7 @@ export default async function DashboardPage({
                 {radarAxes.map((a) => (
                   <li key={a.label} className="flex items-center justify-between gap-4 text-[13px]">
                     <span className="text-ink-600 truncate">{a.label}</span>
-                    <span className="font-mono font-semibold text-white tabular-nums">{a.value}</span>
+                    <span className="font-semibold text-ink-900 tabular-nums">{a.value}</span>
                   </li>
                 ))}
               </ul>
@@ -281,36 +293,36 @@ export default async function DashboardPage({
       )}
 
       {/* Recent content + right rail */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+        <div className="lg:col-span-2 space-y-4">
           <Panel
             padded={false}
             title="Recent content"
             caption={`${totalReports} total`}
             action={
-              <Link href="/analyses" className="text-[13px] text-ink-500 hover:text-white inline-flex items-center gap-1 transition-colors">
+              <Link href="/analyses" className="text-[13px] text-ink-500 hover:text-ink-900 inline-flex items-center gap-1 transition-colors">
                 View all <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             }
           >
-            <div className="divide-y divide-white/[0.06]">
+            <div className="divide-y divide-ink-200">
               {reports.map((r) => {
                 const tone =
-                  r.overallScore >= 85 ? { text: 'Ready',   cls: 'text-brand-600'   } :
-                  r.overallScore >= 70 ? { text: 'Improve', cls: 'text-amber-500'   } :
-                                         { text: 'Rework',  cls: 'text-crimson-500' };
+                  r.overallScore >= 85 ? { text: 'Ready',   cls: 'text-grass-700'   } :
+                  r.overallScore >= 70 ? { text: 'Improve', cls: 'text-amber-700'   } :
+                                         { text: 'Rework',  cls: 'text-crimson-600' };
                 return (
                   <Link
                     key={r.id}
                     href={`/analysis/${r.id}`}
-                    className="group flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.03] transition-colors"
+                    className="group flex items-center gap-4 px-5 py-3.5 hover:bg-ink-50 transition-colors"
                   >
-                    <div className="w-11 h-8 rounded-md bg-white/[0.06] border border-white/[0.08] flex items-center justify-center shrink-0 text-ink-600 group-hover:text-brand-600 transition-colors">
+                    <div className="w-11 h-8 rounded-md bg-ink-100 border border-ink-200 flex items-center justify-center shrink-0 text-ink-600 group-hover:text-brand-600 transition-colors">
                       <Play className="w-3 h-3" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="text-[13.5px] font-medium text-white truncate">{r.title}</h3>
-                      <div className="text-[11.5px] text-ink-500 mt-0.5">
+                      <h3 className="text-[13px] font-medium text-ink-900 truncate">{r.title}</h3>
+                      <div className="text-[12px] text-ink-500 mt-0.5">
                         {r.targetPlatform} · {r.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </div>
                     </div>
@@ -322,15 +334,15 @@ export default async function DashboardPage({
             </div>
             <Link
               href="/upload"
-              className="flex items-center justify-between px-5 py-3.5 border-t border-white/[0.06] group hover:bg-white/[0.03] transition-colors"
+              className="flex items-center justify-between px-5 py-3.5 border-t border-ink-200 group hover:bg-ink-50 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-md border border-dashed border-white/[0.16] flex items-center justify-center text-ink-500 group-hover:text-brand-600 group-hover:border-brand-600/50 transition-colors">
+                <div className="w-8 h-8 rounded-md border border-dashed border-ink-300 flex items-center justify-center text-ink-500 group-hover:text-brand-600 group-hover:border-brand-300 transition-colors">
                   <UploadCloud className="w-4 h-4" />
                 </div>
-                <span className="text-[13.5px] font-medium text-ink-700">Start a new analysis</span>
+                <span className="text-[13px] font-medium text-ink-700">Start a new review</span>
               </div>
-              <ArrowRight className="w-4 h-4 text-ink-500 group-hover:text-white transition-colors" />
+              <ArrowRight className="w-4 h-4 text-ink-500 group-hover:text-ink-900 transition-colors" />
             </Link>
           </Panel>
 
@@ -339,23 +351,23 @@ export default async function DashboardPage({
               <ul className="space-y-3">
                 {topIssues.map((issue) => {
                   const tone =
-                    issue.severity === 'high'   ? { cls: 'text-crimson-500', ring: 'border-crimson-500/25 bg-crimson-500/[0.08]' } :
-                    issue.severity === 'medium' ? { cls: 'text-amber-500',   ring: 'border-amber-500/25 bg-amber-500/[0.08]'     } :
-                                                  { cls: 'text-ink-600',     ring: 'border-white/[0.08] bg-white/[0.03]'         };
+                    issue.severity === 'high'   ? { cls: 'text-crimson-600', ring: 'border-crimson-200 bg-crimson-50' } :
+                    issue.severity === 'medium' ? { cls: 'text-amber-700',   ring: 'border-amber-200 bg-amber-50'     } :
+                                                  { cls: 'text-ink-600',     ring: 'border-ink-200 bg-ink-50'         };
                   return (
-                    <li key={issue.id} className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <li key={issue.id} className="flex items-start gap-3 rounded-lg border border-ink-200 bg-ink-50 p-4">
                       <span className={`shrink-0 w-7 h-7 rounded-lg border flex items-center justify-center ${tone.ring}`}>
                         <AlertTriangle className={`w-3.5 h-3.5 ${tone.cls}`} />
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className={`text-[10.5px] font-semibold uppercase tracking-[0.1em] ${tone.cls}`}>
+                          <span className={`text-[11px] font-semibold uppercase tracking-[0.08em] ${tone.cls}`}>
                             {issue.severity}
                           </span>
                           <span className="text-[11px] text-ink-500">Line {issue.line}</span>
                         </div>
-                        <p className="text-[13.5px] text-white mt-1.5 leading-relaxed">{issue.text}</p>
-                        <p className="text-[12.5px] text-ink-600 mt-1 leading-relaxed">{issue.suggestion}</p>
+                        <p className="text-[13px] text-ink-900 mt-1.5 leading-relaxed">{issue.text}</p>
+                        <p className="text-[12px] text-ink-600 mt-1 leading-relaxed">{issue.suggestion}</p>
                       </div>
                     </li>
                   );
@@ -364,7 +376,7 @@ export default async function DashboardPage({
               {latestRow && (
                 <Link
                   href={`/analysis/${latestRow.id}`}
-                  className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-brand-600 hover:text-brand-400 transition-colors"
+                  className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-brand-600 hover:text-brand-700 transition-colors"
                 >
                   See every fix <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
@@ -378,24 +390,27 @@ export default async function DashboardPage({
                 {platformReports.map((p) => (
                   <div
                     key={p.platform}
-                    className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 hover:border-white/[0.14] transition-colors"
+                    className="rounded-lg border border-ink-200 bg-ink-50 p-4 hover:border-ink-300 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-[13.5px] font-medium text-white">{p.platform}</span>
-                      <span className="font-mono text-[18px] font-bold text-white tabular-nums leading-none">
+                      <span className="text-[13px] font-medium text-ink-900">{p.platform}</span>
+                      <span className="font-display text-[18px] font-semibold tracking-[-0.015em] text-ink-900 tabular-nums leading-none">
                         {p.score}
                       </span>
                     </div>
-                    <div className="mt-3 h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
+                    <div className="mt-3 h-1.5 w-full rounded-full bg-ink-100 overflow-hidden">
+                      {/* Band-coloured, not brand-red: a 92 next to a green
+                          "Compliant" must not render as a red bar — red is
+                          the risk colour in this system. */}
                       <div
-                        className="h-full rounded-full bg-brand-600 transition-all duration-700"
+                        className={`h-full rounded-full transition-all duration-500 ${SCORE_BAND_UI[scoreBand(p.score)].bar}`}
                         style={{ width: `${Math.max(0, Math.min(100, p.score))}%` }}
                       />
                     </div>
                     <div className={`mt-2.5 text-[12px] font-medium ${PLATFORM_STATUS_TONE[p.policyStatus] ?? 'text-ink-600'}`}>
                       {p.policyStatus}
                     </div>
-                    <div className="text-[11.5px] text-ink-500 mt-0.5 leading-relaxed">{p.adSuitability}</div>
+                    <div className="text-[12px] text-ink-500 mt-0.5 leading-relaxed">{p.adSuitability}</div>
                   </div>
                 ))}
               </div>
@@ -404,25 +419,25 @@ export default async function DashboardPage({
         </div>
 
         {/* Right rail */}
-        <div className="space-y-6">
+        <div className="space-y-4">
           {showProgress && (
-            <Card className="border-brand-600/20">
+            <Card>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[13px] font-semibold text-white">Score progress</h3>
+                <h3 className="text-[13px] font-semibold text-ink-900">Score progress</h3>
                 <Badge variant="outline">last {reports.length}</Badge>
               </div>
               <div className="flex items-end gap-2">
-                <span className="font-display text-[28px] leading-none font-bold tabular-nums tracking-tight text-ink-400 line-through decoration-ink-600/50">
+                <span className="font-display text-[30px] leading-none font-semibold tabular-nums tracking-[-0.025em] text-ink-500 line-through decoration-ink-600/50">
                   {firstScore}
                 </span>
                 <span
-                  className={`font-display text-[34px] leading-none font-bold tabular-nums tracking-tight ${
-                    scoreDelta > 0 ? 'text-grass-600' : scoreDelta < 0 ? 'text-crimson-600' : 'text-white'
+                  className={`font-display text-[30px] leading-none font-semibold tabular-nums tracking-[-0.025em] ${
+                    scoreDelta > 0 ? 'text-grass-600' : scoreDelta < 0 ? 'text-crimson-600' : 'text-ink-900'
                   }`}
                 >
                   {latestScore}
                 </span>
-                <span className={`text-[13px] font-bold mb-0.5 ${scoreDelta > 0 ? 'text-grass-600' : scoreDelta < 0 ? 'text-crimson-600' : 'text-ink-500'}`}>
+                <span className={`text-[13px] font-semibold mb-0.5 ${scoreDelta > 0 ? 'text-grass-600' : scoreDelta < 0 ? 'text-crimson-600' : 'text-ink-500'}`}>
                   {scoreDelta === 0 ? '±0' : scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta}
                 </span>
               </div>
@@ -431,38 +446,38 @@ export default async function DashboardPage({
                 <strong className="text-ink-500">{latestScore}</strong> across your last {reports.length} reviews.
               </div>
               {scoreDelta > 0 && latestRow && (
-                <Link
-                  href={`/share/${latestRow.id}`}
-                  className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-brand-600 hover:text-brand-400 transition-colors"
+                <PublishShareLink
+                  reportId={latestRow.id}
+                  className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-brand-600 hover:text-brand-700 transition-colors"
                 >
                   Share your latest score <ArrowRight className="w-3 h-3" />
-                </Link>
+                </PublishShareLink>
               )}
             </Card>
           )}
 
           <Card>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[13px] font-semibold text-white">Your plan</h3>
-              <Badge variant="outline">{state.plan}</Badge>
+              <h3 className="text-[13px] font-semibold text-ink-900">Your plan</h3>
+              <Badge variant="outline">{planDisplayName(state.plan)}</Badge>
             </div>
-            <div className="font-display text-[30px] leading-none font-bold tabular-nums tracking-tight text-white">
-              {state.auditsUsed}<span className="text-ink-500 text-[17px]"> / {state.auditsLimit}</span>
+            <div className="font-display text-[30px] leading-none font-semibold tabular-nums tracking-[-0.025em] text-ink-900">
+              {state.auditsUsed}<span className="text-ink-500 text-[18px]"> / {state.auditsLimit}</span>
             </div>
             <div className="text-[12px] text-ink-600 mt-1.5">analyses used this cycle</div>
-            <div className="mt-3 h-1.5 w-full bg-white/[0.08] rounded-full overflow-hidden" role="progressbar" aria-valuenow={state.auditsUsed} aria-valuemin={0} aria-valuemax={state.auditsLimit}>
+            <div className="mt-3 h-1.5 w-full bg-ink-100 rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.min(state.auditsUsed, state.auditsLimit)} aria-valuemin={0} aria-valuemax={state.auditsLimit}>
               <div
-                className={`h-full rounded-full transition-all duration-500 ${state.isNearLimit ? 'bg-amber-500' : 'bg-brand-600'}`}
+                className={`h-full rounded-full transition-all duration-500 ${state.isNearLimit ? 'bg-amber-600' : 'bg-brand-600'}`}
                 style={{ width: `${Math.min(100, (state.auditsUsed / state.auditsLimit) * 100)}%` }}
               />
             </div>
-            <div className="text-[11.5px] text-ink-500 mt-2">
+            <div className="text-[12px] text-ink-500 mt-2">
               {state.periodEnd
                 ? `Resets ${state.periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                 : 'Monthly cycle'} · limit {PLAN_LIMITS[state.plan]}
             </div>
             {state.plan === 'free' && (
-              <Link href="/pricing" className="mt-4 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600 hover:text-brand-400 transition-colors">
+              <Link href="/pricing" className="mt-4 inline-flex items-center gap-1 text-[12px] font-semibold text-brand-600 hover:text-brand-700 transition-colors">
                 Upgrade for more <ArrowRight className="w-3 h-3" />
               </Link>
             )}
@@ -475,7 +490,7 @@ export default async function DashboardPage({
                   <li key={`${rec.platform}-${i}`} className="flex items-start gap-2.5">
                     <Sparkles className="w-3.5 h-3.5 text-brand-600 shrink-0 mt-1" />
                     <div className="min-w-0">
-                      <div className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-500">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">
                         {rec.platform}
                       </div>
                       <p className="text-[13px] text-ink-700 leading-relaxed mt-0.5">{rec.text}</p>
@@ -486,30 +501,11 @@ export default async function DashboardPage({
             </Panel>
           )}
 
-          <Panel title="Recent activity" caption="Your last reviews">
-            <ol className="relative space-y-4 pl-5 before:absolute before:left-[5px] before:top-1.5 before:bottom-1.5 before:w-px before:bg-white/[0.08]">
-              {reports.slice(0, 5).map((r) => (
-                <li key={r.id} className="relative">
-                  <span className="absolute -left-5 top-1.5 w-2.5 h-2.5 rounded-full bg-brand-600 ring-4 ring-surface-panel" />
-                  <Link href={`/analysis/${r.id}`} className="block group">
-                    <div className="text-[13px] text-white truncate group-hover:text-brand-600 transition-colors">
-                      {r.title}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11.5px] text-ink-500 mt-0.5">
-                      <Clock className="w-3 h-3" />
-                      {r.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · scored {r.overallScore}
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ol>
-          </Panel>
-
-          <Card className="border-brand-600/20 bg-brand-600/[0.05]">
+          <Card className="bg-ink-50 shadow-none">
             <div className="flex items-start gap-3">
-              <ShieldCheck className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+              <ShieldCheck className="w-4 h-4 text-ink-400 shrink-0 mt-0.5" />
               <div>
-                <div className="text-[13px] font-semibold text-white">Every fix is evidence-based</div>
+                <div className="text-[13px] font-semibold text-ink-900">Every fix is evidence-based</div>
                 <p className="text-[12px] text-ink-600 mt-1 leading-relaxed">
                   Scores come from your actual assets — never inflated. Estimates are always marked as estimates,
                   and no result guarantees monetization.
@@ -526,10 +522,10 @@ export default async function DashboardPage({
 /* ───────────────── Local presentation pieces ───────────────── */
 
 const TONE_CLS: Record<string, string> = {
-  neutral: 'text-white',
-  good:    'text-brand-600',
-  warn:    'text-amber-500',
-  bad:     'text-crimson-500',
+  neutral: 'text-ink-900',
+  good:    'text-grass-700',
+  warn:    'text-amber-700',
+  bad:     'text-crimson-700',
 };
 
 const Kpi: React.FC<{
@@ -539,15 +535,15 @@ const Kpi: React.FC<{
   hint?: string;
   tone?: 'neutral' | 'good' | 'warn' | 'bad';
 }> = ({ icon, label, value, hint, tone = 'neutral' }) => (
-  <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-5 hover:border-white/[0.14] transition-colors duration-180">
-    <div className="flex items-center gap-2 text-ink-600">
-      <span className="text-ink-500">{icon}</span>
-      <span className="text-[12.5px] font-medium truncate">{label}</span>
+  <div className="p-4 min-w-0">
+    <div className="flex items-center gap-1.5 text-ink-500">
+      <span className="text-ink-400 shrink-0">{icon}</span>
+      <span className="text-[12px] font-medium truncate">{label}</span>
     </div>
-    <div className={`font-display text-[30px] leading-none font-bold tracking-tight mt-3 tabular-nums ${TONE_CLS[tone]}`}>
+    <div className={`font-display text-[24px] leading-none font-semibold tracking-[-0.02em] mt-2.5 tabular-nums ${TONE_CLS[tone]}`}>
       {value}
     </div>
-    {hint && <div className="text-[11.5px] text-ink-500 mt-2.5 truncate">{hint}</div>}
+    {hint && <div className="text-[11px] text-ink-500 mt-1.5 truncate">{hint}</div>}
   </div>
 );
 
@@ -559,14 +555,14 @@ const Panel: React.FC<{
   className?: string;
   children: React.ReactNode;
 }> = ({ title, caption, action, padded = true, className = '', children }) => (
-  <section className={`rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden ${className}`}>
-    <div className="flex items-center justify-between gap-4 px-5 pt-5 pb-4">
+  <section className={`rounded-xl border border-ink-200 bg-surface-panel shadow-xs overflow-hidden ${className}`}>
+    <div className="flex items-center justify-between gap-4 px-5 h-[52px] border-b border-ink-200">
       <div className="min-w-0">
-        <h2 className="text-[14px] font-semibold text-white tracking-[-0.01em]">{title}</h2>
-        {caption && <p className="text-[12px] text-ink-500 mt-0.5 truncate">{caption}</p>}
+        <h2 className="text-[13px] font-semibold text-ink-900">{title}</h2>
+        {caption && <p className="text-[11px] text-ink-500 truncate">{caption}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>
-    <div className={padded ? 'px-5 pb-5' : ''}>{children}</div>
+    <div className={padded ? 'p-5' : ''}>{children}</div>
   </section>
 );

@@ -19,8 +19,15 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/api-guards', () => ({ requireAuth: h.requireAuth }));
 vi.mock('@/lib/ratelimit', () => ({
   rateLimit: h.rateLimit,
+  // The route must key the bucket to the account, not the IP — pinned here so
+  // a regression back to clientKey() fails this suite instead of shipping.
+  userKey: (userId: string, scope: string) => `${scope}:user:${userId}`,
   clientKey: (_req: Request, scope: string) => scope,
   LIMITS: { SEO: { limit: 30, windowMs: 60_000 } },
+  tooManyRequests: () => ({
+    body: { error: 'Too many requests. Please slow down and try again shortly.' },
+    init: { status: 429, headers: { 'Retry-After': '1' } },
+  }),
 }));
 vi.mock('@/lib/ml/publish', () => ({
   publishReport: h.publishReport,
@@ -87,6 +94,25 @@ describe('POST /api/publish-score', () => {
     expect(body.suggestionsConsidered).toBe(9);
     expect(body.bestRejectedLift).toBeCloseTo(0.66, 10);
     expect(body.provenance).toEqual(['Trained on 5,000 videos.']);
+  });
+
+  it('rate-limits by the authenticated account, not by IP', async () => {
+    await POST(post({ title: 'A real title' }));
+    const key = h.rateLimit.mock.calls.at(-1)?.[0];
+    expect(key).toBe('publish-score:user:clerk_me');
+  });
+
+  it('rejects an oversized body before parsing it', async () => {
+    // A 200 KB body is not a scoring request, it is a payload. The cap has to
+    // answer 400 without the parse ever seeing the bytes.
+    const res = await POST(post({ title: 'x', description: 'd'.repeat(200_000) }));
+    expect(res.status).toBe(400);
+    expect(h.publishReport).not.toHaveBeenCalled();
+  });
+
+  it('answers 400, not 500, on a malformed body', async () => {
+    const res = await POST(post('{not json'));
+    expect(res.status).toBe(400);
   });
 
   it('answers 503, never a guess, when no model is deployed', async () => {

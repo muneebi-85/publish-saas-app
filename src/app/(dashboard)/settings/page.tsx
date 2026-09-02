@@ -55,7 +55,8 @@ export default async function SettingsPage() {
     platform: c.platform,
     name: c.name,
     url: c.url,
-    subscribers: c.subscribers,
+    // Channel.subscribers is BigInt in the database; the client expects a number.
+    subscribers: Number(c.subscribers),
   }));
 
   return <SettingsClient user={userData} initialChannels={channels} />;

@@ -83,10 +83,16 @@ type Grabber = {
  * `onProgress` reports 0..1 across the whole decode. It exists because this runs
  * for fifteen to thirty seconds on a long file and a frozen upload button reads as
  * a hang.
+ *
+ * `signal` lets the caller retire the decode early (the video was removed, the
+ * page is navigating away): it is checked between seeks, so a cancelled run stops
+ * burning CPU for the remainder of the 30s deadline and resolves null, which the
+ * caller already treats as "layer unmeasured".
  */
 export async function extractFrameSignals(
   file: File,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<FrameSignals | null> {
   const deadline = Date.now() + DEADLINE_MS;
   let grabber: Grabber | null = null;
@@ -94,6 +100,7 @@ export async function extractFrameSignals(
   try {
     grabber = await openVideo(file);
     if (!grabber) return null;
+    if (signal?.aborted) return null;
 
     const { video } = grabber;
     const width = video.videoWidth;
@@ -111,6 +118,7 @@ export async function extractFrameSignals(
     const total = sheetTimes.length + hookTimes.length + probeTimes.length;
     let done = 0;
     const tick = () => onProgress?.(total === 0 ? 1 : ++done / total);
+    const outOfTime = () => Date.now() > deadline || signal?.aborted === true;
 
     // ── Contact sheet across the runtime ──────────────────────────────────────
     const geo = sheetGeometry(width, height, sheetTimes.length);
@@ -124,7 +132,7 @@ export async function extractFrameSignals(
 
     let drawn = 0;
     for (const [i, t] of sheetTimes.entries()) {
-      if (Date.now() > deadline) break;
+      if (outOfTime()) break;
       const ok = await grabber.grab(t);
       if (ok) {
         const col = i % geo.cols;
@@ -149,7 +157,7 @@ export async function extractFrameSignals(
         hookCtx.fillRect(0, 0, hookCanvas.width, hookCanvas.height);
         let hookDrawn = 0;
         for (const [i, t] of hookTimes.entries()) {
-          if (Date.now() > deadline) break;
+          if (outOfTime()) break;
           if (await grabber.grab(t)) {
             grabber.drawInto(hookCtx, i * hookGeo.cellW, 0, hookGeo.cellW, hookGeo.cellH);
             hookDrawn++;
@@ -164,7 +172,7 @@ export async function extractFrameSignals(
     const deltas: (number | null)[] = [];
     let previous: Uint8ClampedArray | null = null;
     for (const t of probeTimes) {
-      if (Date.now() > deadline) break;
+      if (outOfTime()) break;
       const buffer = await grabber.grab(t);
       deltas.push(buffer && previous ? lumaDelta(previous, buffer) : null);
       previous = buffer ?? previous;

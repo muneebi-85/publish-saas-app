@@ -8,7 +8,7 @@
  */
 
 import { chatJSON } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden } from './guardrails';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, fenceSafe } from './guardrails';
 
 export interface HumanizeOptions {
   tone: 'conversational' | 'authoritative' | 'storyteller' | 'energetic';
@@ -106,10 +106,10 @@ function buildSystemPrompt(o: HumanizeOptions): string {
   // an empty kit costs no tokens and steers nothing.
   const bv = o.brandVoice;
   const brandBlock = [
-    bv?.tones.length ? `Brand tone — the creator selected: ${bv.tones.join(', ')}. Layer this over the delivery style above; where they conflict, the brand tone wins.` : '',
-    bv?.description.trim() ? `Brand description, in the creator's own words: """${bv.description.trim().slice(0, 600)}"""` : '',
+    bv?.tones.length ? `Brand tone — the creator selected: """${fenceSafe(bv.tones.join(', '))}""". Layer this over the delivery style above; where they conflict, the brand tone wins.` : '',
+    bv?.description.trim() ? `Brand description, in the creator's own words: """${fenceSafe(bv.description.trim().slice(0, 600))}"""` : '',
     bv?.banned.length
-      ? `BANNED WORDS — the creator has forbidden these words and phrases: ${bv.banned.map((b) => `"${b}"`).join(', ')}. Do not use any of them in humanizedText or changesSummary. If one appears in their original script, rewrite around it and say so in the summary. This is a hard constraint, not a preference.`
+      ? `BANNED WORDS — the creator has forbidden these words and phrases: """${fenceSafe(bv.banned.map((b) => `"${b}"`).join(', '))}""". Do not use any of them in humanizedText or changesSummary. If one appears in their original script, rewrite around it and say so in the summary. This is a hard constraint, not a preference.`
       : '',
   ]
     .filter(Boolean)
@@ -158,7 +158,7 @@ export async function humanizeScriptContent(
 
   const messages = [
     { role: 'system' as const, content: buildSystemPrompt(options) },
-    { role: 'user' as const, content: `Rewrite this script:\n\n"""${trimmed.slice(0, 8000)}"""` },
+    { role: 'user' as const, content: `Rewrite this script:\n\n"""${fenceSafe(trimmed.slice(0, 8000))}"""` },
   ];
 
   let raw = await chatJSON<RawHumanizeResponse>(messages, {
@@ -202,9 +202,37 @@ export async function humanizeScriptContent(
     originalText:  rawScript,
     humanizedText,
     changesSummary,
-    metricsBefore: raw.metricsBefore,
-    metricsAfter:  raw.metricsAfter,
+    metricsBefore: validMetrics(raw.metricsBefore)
+      ?? heuristicHumanize(rawScript, options).metricsBefore,
+    metricsAfter:  validMetrics(raw.metricsAfter)
+      ?? heuristicHumanize(rawScript, options).metricsAfter,
     ...brandVoiceReport(humanizedText, options),
+  };
+}
+
+/**
+ * Shape-check a model-supplied metrics block. `chatJSON` guarantees the outer
+ * response parses, not that nested objects conform — a model that omits
+ * `metricsBefore` or returns strings for the scores would crash the Humanizer
+ * page's before/after arithmetic (`metricsBefore.gptProbabilityScore - …`).
+ * Returns null on any malformation so the caller falls back to the
+ * deterministic metrics, which always have the right shape.
+ */
+function validMetrics(
+  m: unknown,
+): { gptProbabilityScore: number; readabilityGrade: string; hookStrengthScore: number } | null {
+  if (typeof m !== 'object' || m === null) return null;
+  const o = m as Record<string, unknown>;
+  const gpt = Number(o.gptProbabilityScore);
+  const hook = Number(o.hookStrengthScore);
+  const grade = o.readabilityGrade;
+  if (!Number.isFinite(gpt) || !Number.isFinite(hook) || typeof grade !== 'string' || !grade.trim()) {
+    return null;
+  }
+  return {
+    gptProbabilityScore: Math.max(0, Math.min(100, Math.round(gpt))),
+    readabilityGrade: grade,
+    hookStrengthScore: Math.max(0, Math.min(100, Math.round(hook))),
   };
 }
 
@@ -266,10 +294,14 @@ export function heuristicHumanize(rawScript: string, options: HumanizeOptions): 
     : [];
 
   // Hook edit — only counts when a "Today" anchor is actually present to rewrite.
+  // Both rewrites are claim-free pattern interrupts: the engine's own hard rule
+  // ("do not invent new facts") forbids injecting a time frame or statistic the
+  // creator never stated, so the storyteller variant re-uses their own words
+  // rather than fabricating "3 years ago, nobody saw this coming".
   let hookRewritten = false;
   const beforeHook = humanized;
   if (options.tone === 'storyteller') {
-    humanized = humanized.replace(/Today,?/i, '3 years ago, nobody saw this coming. Today,');
+    humanized = humanized.replace(/Today,?/i, "Here's the part most people get wrong —");
   } else if (options.tone === 'energetic') {
     humanized = humanized.replace(/Today,?/i, 'Stop everything you\'re doing —');
   }
@@ -291,7 +323,7 @@ export function heuristicHumanize(rawScript: string, options: HumanizeOptions): 
   if (hookRewritten) {
     changesSummary.push(
       options.tone === 'storyteller'
-        ? `Reframed the opening "Today…" into a stakes-first cold open ("3 years ago, nobody saw this coming…") — a flat topic-announcement opener leaks attention in the first 3 seconds on ${options.targetPlatform}, and leading with a turning point gives the viewer a reason to stay through it.`
+        ? `Reframed the opening "Today…" into a stakes-first cold open ("Here's the part most people get wrong —") — a flat topic-announcement opener leaks attention in the first 3 seconds on ${options.targetPlatform}, and leading with a curiosity gap gives the viewer a reason to stay through it. The interrupt adds no new claims: it uses only the setup you already wrote.`
         : options.tone === 'energetic'
         ? `Replaced the calm "Today…" lead with a pattern-interrupt ("Stop everything you're doing —") — on a sound-on ${options.targetPlatform} feed the first line competes with a swipe, and a direct interrupt earns the next 3 seconds better than a topic label.`
         : `Tightened the opening line so the payoff lands sooner, matching ${options.targetPlatform}'s ~3-second attention window.`,
@@ -331,7 +363,12 @@ export function heuristicHumanize(rawScript: string, options: HumanizeOptions): 
     },
     metricsAfter: {
       gptProbabilityScore: afterGpt,
-      readabilityGrade: 'Grade 7 (Conversational)',
+      // The readability claim must track a real edit: a pass where nothing
+      // changed (no phrases, no hook, no long sentences) still reads at its
+      // original grade, not an instant "conversational" upgrade.
+      readabilityGrade: editSignal > 0 || longSentences > 0
+        ? 'Grade 7 (Conversational)'
+        : longSentences > 1 ? 'Grade 12 (Academic)' : 'Grade 10 (Formal)',
       hookStrengthScore: afterHookScore,
     },
     ...brandVoiceReport(humanized, options),

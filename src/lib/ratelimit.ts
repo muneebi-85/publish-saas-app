@@ -124,13 +124,23 @@ export const LIMITS = {
 } as const;
 
 export function clientKey(req: Request, prefix: string): string {
-  // IP-derived key. Only correct for unauthenticated routes — an authenticated
-  // route must use userKey() so one user behind a shared NAT cannot exhaust the
-  // bucket for everyone else on that IP (and so rotating IPs cannot bypass it).
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    'anon';
+  // IP-derived key for UNAUTHENTICATED routes only — authenticated routes must
+  // use userKey() so one user behind a shared NAT cannot exhaust the bucket
+  // for everyone else on that IP.
+  //
+  // Which header value to trust is the whole game. Anything the client can set
+  // is forgeable, and on this deploy target (Vercel) `x-real-ip` is NOT a
+  // platform header — the platform never sets it and never strips it, so a
+  // script rotating `x-real-ip` per request used to mint a fresh bucket every
+  // time, turning every IP-keyed limit into no limit at all (and leaking one
+  // memoryStore entry per forged key until its window expired).
+  //
+  // The one value the client cannot choose is the RIGHTMOST
+  // `x-forwarded-for` entry — the one appended by the closest proxy. A client
+  // can prepend its own entries to XFF, but it cannot remove the proxy's.
+  const xff =
+    req.headers.get('x-forwarded-for')?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
+  const ip = xff[xff.length - 1] || 'anon';
   return `${prefix}:ip:${ip}`;
 }
 

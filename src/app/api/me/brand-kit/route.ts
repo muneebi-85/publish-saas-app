@@ -144,10 +144,23 @@ export async function PUT(req: Request) {
   const kit = sanitizeBrandKit(body.value.brandKit);
   if (!kit.ok) return NextResponse.json({ error: kit.error }, { status: 400 });
 
-  await prisma.user.update({
-    where: { id: authCtx.dbUserId },
-    data: { brandKit: kit.value as object },
-  });
+  // P2025 = the row vanished mid-request (deletion racing this save). Answer
+  // 409 rather than a raw framework 500.
+  try {
+    await prisma.user.update({
+      where: { id: authCtx.dbUserId },
+      data: { brandKit: kit.value as object },
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Account is no longer available. Refresh and try again.' },
+        { status: 409 },
+      );
+    }
+    console.error('[PUT /api/me/brand-kit] write failed:', err);
+    return NextResponse.json({ error: 'Could not save your brand kit.' }, { status: 503 });
+  }
 
   return NextResponse.json(
     { success: true },

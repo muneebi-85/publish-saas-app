@@ -30,6 +30,12 @@ export default async function CommunityPage() {
     where: {
       createdAt: { gte: since },
       user: { leaderboardOptIn: true },
+      // Same publication gate as /api/community: the board links to the public
+      // score card, so it may only list reports the creator actually shared
+      // (`sharedAt`) — leaderboardOptIn alone is a Settings toggle, not a
+      // per-report publication consent, and the board's own copy says every
+      // score was shared on purpose.
+      sharedAt: { not: null },
     },
     select: {
       id: true,
@@ -37,17 +43,20 @@ export default async function CommunityPage() {
       targetPlatform: true,
       overallScore: true,
       createdAt: true,
-      user: { select: { name: true } },
+      user: { select: { id: true, name: true } },
     },
     orderBy: { overallScore: 'desc' },
     take: 400,
   });
 
+  // One entry per creator — their best score this week. Keyed by the user's
+  // database id, never their name: names are neither unique nor guaranteed,
+  // and keying every unnamed creator as "creator" would drop all but one of
+  // them from the board. Mirrors /api/community exactly.
   const byUser = new Map<string, (typeof rows)[number]>();
   for (const row of rows) {
-    const key = row.user.name ?? 'creator';
-    const existing = byUser.get(key);
-    if (!existing || row.overallScore > existing.overallScore) byUser.set(key, row);
+    const existing = byUser.get(row.user.id);
+    if (!existing || row.overallScore > existing.overallScore) byUser.set(row.user.id, row);
   }
 
   const entries = [...byUser.values()]
@@ -65,7 +74,7 @@ export default async function CommunityPage() {
           <h1 className="font-display text-[34px] sm:text-[40px] font-bold tracking-[-0.03em] text-white mt-4">
             Best scripts of the week
           </h1>
-          <p className="text-[14px] text-ink-500 mt-3 max-w-md mx-auto leading-relaxed">
+          <p className="text-[14px] text-[#9BA1A6] mt-3 max-w-md mx-auto leading-relaxed">
             The highest Publish Scores from creators who opted in. See what&apos;s
             working — then beat it.
           </p>
@@ -73,18 +82,18 @@ export default async function CommunityPage() {
 
         {/* Board */}
         {entries.length === 0 ? (
-          <div className="mt-10 rounded-2xl border border-white/[0.08] bg-surface-panel p-10 text-center">
-            <div className="w-12 h-12 rounded-full bg-white/[0.06] flex items-center justify-center mx-auto text-ink-500">
+          <div className="mt-10 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-10 text-center">
+            <div className="w-12 h-12 rounded-full bg-white/[0.06] flex items-center justify-center mx-auto text-[#9BA1A6]">
               <Trophy className="w-5 h-5" />
             </div>
             <h2 className="text-[16px] font-semibold text-white mt-4">No scores posted yet this week</h2>
-            <p className="text-[13px] text-ink-500 mt-2 max-w-sm mx-auto leading-relaxed">
+            <p className="text-[13px] text-[#9BA1A6] mt-2 max-w-sm mx-auto leading-relaxed">
               The board fills as creators opt in and share their best scores. Be the first —
               run a review and flip on the leaderboard in Settings.
             </p>
             <Link
               href="/sign-up"
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-600 px-4 text-[13px] font-bold text-[#060606] hover:bg-brand-400 transition-colors mt-5"
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-600 px-4 text-[13px] font-bold text-white hover:bg-red-brand-ink transition-colors mt-5"
             >
               Run your first review <ArrowRight className="w-3.5 h-3.5" />
             </Link>
@@ -95,7 +104,7 @@ export default async function CommunityPage() {
               <li key={entry.id}>
                 <Link
                   href={`/share/${entry.id}`}
-                  className="group flex items-center gap-4 rounded-2xl border border-white/[0.08] bg-surface-panel px-5 py-4 hover:border-brand-600/40 transition-colors"
+                  className="group flex items-center gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.05] px-5 py-4 hover:border-brand-600/40 transition-colors"
                 >
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center font-display font-bold text-[15px] shrink-0 ${
@@ -104,8 +113,8 @@ export default async function CommunityPage() {
                         : index === 1
                           ? 'bg-white/[0.07] text-white border border-white/[0.12]'
                           : index === 2
-                            ? 'bg-orange-500/10 text-orange-400 border border-orange-500/25'
-                            : 'bg-white/[0.04] text-ink-500 border border-white/[0.08]'
+                            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/25'
+                            : 'bg-white/[0.04] text-[#9BA1A6] border border-white/[0.08]'
                     }`}
                   >
                     {index + 1}
@@ -114,7 +123,7 @@ export default async function CommunityPage() {
                     <h2 className="text-[14px] font-semibold text-white truncate group-hover:text-brand-600 transition-colors">
                       {entry.title}
                     </h2>
-                    <div className="flex items-center gap-2 mt-1 text-[11.5px] text-ink-500">
+                    <div className="flex items-center gap-2 mt-1 text-[11.5px] text-[#9BA1A6]">
                       <span>{entry.user.name || 'Anonymous creator'}</span>
                       <span>·</span>
                       <span>{entry.targetPlatform}</span>
@@ -124,7 +133,7 @@ export default async function CommunityPage() {
                     <div className="font-display text-[26px] font-bold tabular-nums leading-none text-brand-600">
                       {entry.overallScore}
                     </div>
-                    <div className="text-[10px] text-ink-500 mt-0.5">/ 100</div>
+                    <div className="text-[10px] text-[#9BA1A6] mt-0.5">/ 100</div>
                   </div>
                 </Link>
               </li>
@@ -135,14 +144,14 @@ export default async function CommunityPage() {
         {/* Opt-in note */}
         <div className="mt-8 flex items-start gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3.5">
           <ShieldCheck className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
-          <p className="text-[12px] text-ink-500 leading-relaxed">
+          <p className="text-[12px] text-[#9BA1A6] leading-relaxed">
             Every score here was shared by its creator on purpose. Your reports stay private
             unless you turn on the leaderboard in Settings — and you can turn it off any time.
           </p>
         </div>
 
         <div className="mt-6 text-center">
-          <Link href="/" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-500 hover:text-white transition-colors">
+          <Link href="/" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#9BA1A6] hover:text-white transition-colors">
             <Sparkles className="w-3.5 h-3.5 text-brand-600" />
             Get your own Publish Score
           </Link>

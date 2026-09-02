@@ -56,15 +56,29 @@ URGENCY_WORDS = {
 
 SECOND_PERSON = {"you", "your", "yours", "you're", "youre", "yourself"}
 
-LIST_PREFIX = re.compile(r"^\s*(\d{1,3})\s*(?:[.)\-:]|\s)")
-HOWTO = re.compile(r"\bhow\s+(to|i|we|he|she|they)\b", re.I)
+# ASCII `[0-9]`, not Python's Unicode-aware `\d`, in the title-grammar patterns
+# (LIST_PREFIX, TOP_N, TIMESTAMP): JS `\d` is ASCII-only, so `٣ tips` produced
+# title_starts_number=1 here and 0 in the TS mirror. Aligned on the narrower
+# class — changed on BOTH sides together per the parity contract. ISO_DURATION
+# keeps `\d` only because it parses YouTube's ASCII-only ISO-8601 durations.
+LIST_PREFIX = re.compile(r"^\s*([0-9]{1,3})\s*(?:[.)\-:]|\s)")
+# Word boundaries written out instead of `\b`: Python's `\b` is Unicode-aware
+# while JS `\b` is ASCII-word based, so "how toüntertake" matched here but not
+# in the TS mirror. `(?<![A-Za-z0-9_])…(?![A-Za-z0-9_])` is the same class both
+# extractors use for word characters. Changed on BOTH sides together — the
+# parity contract requires it.
+HOWTO = re.compile(r"(?<![A-Za-z0-9_])how\s+(to|i|we|he|she|they)(?![A-Za-z0-9_])", re.I)
 EMOJI = re.compile(
     "[" "\U0001f300-\U0001faff" "\U00002600-\U000027bf" "\U0001f1e6-\U0001f1ff" "←-⇿" "]"
 )
 BRACKETS = re.compile(r"[\[\](){}|]")
 URL = re.compile(r"https?://\S+")
-TIMESTAMP = re.compile(r"^\s*\(?\d{1,2}:\d{2}(?::\d{2})?\)?", re.M)
-HASHTAG = re.compile(r"(?:^|\s)#\w+")
+# `[0-9]` for parity with the TS mirror — see the note on LIST_PREFIX.
+TIMESTAMP = re.compile(r"^\s*\(?[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\)?", re.M)
+# Word characters written as an explicit class rather than `\w`: Python's
+# `\w` is Unicode-aware and JS's is ASCII-only, so `#café` matched here but
+# not in the TS mirror. `[A-Za-z0-9_]` is the class both extractors agree on.
+HASHTAG = re.compile(r"(?:^|\s)#[A-Za-z0-9_]+")
 ISO_DURATION = re.compile(r"^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
 
 # Features a creator can act on. Anything not in here is context, and the
@@ -138,9 +152,18 @@ def _parse_time(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        # Date-only (and any offset-less) input: the TS mirror's `new Date`
+        # treats a date-only ISO string as UTC midnight, so Python must too —
+        # a naive datetime otherwise crashes the aware-`now` subtraction in
+        # the age path, and a naive datetime WITH a time disagrees with JS
+        # (which reads it in the machine's local zone — machine-dependent).
+        # UTC is the single deterministic contract for both sides.
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _words(text: str) -> list[str]:
@@ -161,7 +184,11 @@ def title_features(title: str) -> dict[str, float]:
         # (~0.15) from ALL CAPS SHOUTING (1.0) without a threshold.
         "title_caps_ratio": (sum(1 for c in letters if c.isupper()) / len(letters)) if letters else 0.0,
         "title_allcaps_words": float(sum(1 for w in words if len(w) > 2 and w.isupper())),
-        "title_has_number": float(any(c.isdigit() for c in title)),
+        # `isdecimal()`, NOT `isdigit()`: isdigit() also accepts superscripts
+        # (100²), circled (①), and subscripts, which the TS side's `\p{Nd}`
+        # rejects — the two extractors disagreed on exactly those titles.
+        # isdecimal() is precisely the Nd class, matching TS `\p{Nd}` exactly.
+        "title_has_number": float(any(c.isdecimal() for c in title)),
         "title_starts_number": float(bool(LIST_PREFIX.match(title))),
         "title_question": float("?" in title),
         "title_exclaim": float(title.count("!")),
@@ -173,7 +200,7 @@ def title_features(title: str) -> dict[str, float]:
         "title_curiosity": float(sum(1 for w in lower if w in CURIOSITY_MARKERS)),
         "title_urgency": float(sum(1 for w in lower if w in URGENCY_WORDS)),
         "title_howto": float(bool(HOWTO.search(title))),
-        "title_list": float(bool(LIST_PREFIX.match(title)) or bool(re.match(r"^\s*top\s+\d", title, re.I))),
+        "title_list": float(bool(LIST_PREFIX.match(title)) or bool(re.match(r"^\s*top\s+[0-9]", title, re.I))),
         "title_avg_word_len": (sum(len(w) for w in words) / len(words)) if words else 0.0,
         "title_longest_word": float(max((len(w) for w in words), default=0)),
         "title_stopword_ratio": (sum(1 for w in lower if w in STOPWORDS) / len(lower)) if lower else 0.0,

@@ -248,25 +248,37 @@ const CTA_PHRASES = [
 
 const LIST_PREFIX = /^\s*(\d{1,3})\s*(?:[.)\-:]|\s)/;
 const TOP_N = /^\s*top\s+\d/i;
-const HOWTO = /\bhow\s+(to|i|we|he|she|they)\b/i;
+// Word boundaries written out instead of `\b`: JS `\b` is ASCII-word based
+// while Python's is Unicode-aware, so "how toüntertake" matched here but not
+// in Python. `(?<![A-Za-z0-9_])…(?![A-Za-z0-9_])` is the same class both
+// languages use for word characters in this file's own tokenizer.
+const HOWTO = /(?<![A-Za-z0-9_])how\s+(to|i|we|he|she|they)(?![A-Za-z0-9_])/i;
 /** Same code-point ranges as the Python `EMOJI` class; `u` makes both count code points. */
 const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{2190}-\u{21FF}]/gu;
 const BRACKETS = /[[\](){}|]/g;
 const URL = /https?:\/\/\S+/g;
 const TIMESTAMP = /^\s*\(?\d{1,2}:\d{2}(?::\d{2})?\)?/gm;
-/** `\p{L}\p{N}_`, not `\w`: JS `\w` is ASCII-only, Python's `\w` is not. */
-const HASHTAG = /(?:^|\s)#[\p{L}\p{N}_]+/gu;
+/** `[A-Za-z0-9_]`, the explicit word class BOTH extractors agree on — see the note in features.py. */
+const HASHTAG = /(?:^|\s)#[A-Za-z0-9_]+/g;
 const ISO_DURATION = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
 const WORD_SPLIT = /[^A-Za-z0-9'’]+/;
-/** `\p{N}`, matching Python's Unicode-aware `str.isdigit()` closely enough. */
-const ANY_DIGIT = /\p{N}/u;
+/**
+ * Python's `str.isdecimal()` — precisely the Unicode Nd class, the same class
+ * JS spells `\p{Nd}`. The extractors previously disagreed at the edges:
+ * Python's `isdigit()` also accepts superscripts (100²), circled (①), and
+ * subscript digits, which the hand-enumerated Nd range list here missed
+ * (only ~15 of the ~50 Nd scripts were listed) — and the parity fixtures used
+ * only Arabic-Indic digits, so the drift was invisible to the suite.
+ * `isdecimal()` and `\p{Nd}` are exact mirrors by definition.
+ */
+const ANY_DIGIT = /\p{Nd}/u;
 const LETTER = /\p{L}/gu;
 const UPPER_LETTER = /\p{Lu}/u;
 const LOWER_LETTER = /\p{Ll}/u;
 
 // --- Python-compatibility helpers -------------------------------------------
 
-/** `len(s)` — code points, not UTF-16 units. */
+/** `len(s)` \u2014 code points, not UTF-16 units. */
 function codePoints(text: string): number {
   // The string iterator yields code points; `.length` counts UTF-16 units and
   // disagrees with Python on every emoji and every astral-plane character.
@@ -277,11 +289,13 @@ function codePoints(text: string): number {
  * `str.splitlines()`.
  *
  * Differs from `split('\n')` in two ways that both change feature values: the
- * empty string yields no lines at all, and a trailing terminator does not
- * produce an empty final line.
+ * empty string yields `[]` (not `['']`), and a trailing terminator is not
+ * kept as a final empty line. The explicit terminator list mirrors Python's,
+ * not just `\r?\n`.
  */
 function splitLines(text: string): string[] {
-  if (text === '') return [];
+  // Python's splitlines() on the empty string is [] \u2014 split('\n') would say [''].
+  if (!text) return [];
   // Every terminator Python's splitlines() recognises, written as escapes so the
   // file stays readable. \r\n must come first, or CRLF would split twice and
   // add a phantom empty line to `desc_lines`.
@@ -325,8 +339,89 @@ export function durationSeconds(iso?: string | null): number {
 
 function parseTime(value?: string | null): Date | null {
   if (!value) return null;
-  const date = new Date(value);
+  // Offset-less ISO strings: JS `new Date` reads a datetime-with-time in the
+  // MACHINE'S local zone (so the same row parses differently per machine) and
+  // a date-only string as UTC. Python's mirror attaches UTC to both. Appending
+  // Z makes this side deterministic and identical to Python for every input.
+  //
+  // The ISO-shaped regex is the ONLY accepted form — Python's mirror is strict
+  // `fromisoformat` and returns None for anything else ("March 4, 2026" etc.).
+  // A `new Date(trimmed)` fallback used to accept those, computing a
+  // machine-zone-dependent age_days_log Python would have scored as 0 — the
+  // exact drift this parity layer exists to prevent.
+  const trimmed = value.trim();
+  // Strict ISO-8601 subset mirroring what Python's `fromisoformat` accepts
+  // (after its Z→+00:00 rewrite): date, optional time with optional fractional
+  // seconds, optional trailing Z/offset. Python returns None for anything
+  // else ("March 4, 2026") — a `new Date(trimmed)` fallback used to accept
+  // those, computing a machine-zone-dependent age_days_log Python scored as 0.
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.exec(trimmed);
+  if (!m) return null;
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (!isValidCalendarDate(year, month, day)) return null;
+  if (!/[T ]/.test(trimmed)) {
+    // Date-only: both sides read UTC midnight.
+    const date = new Date(`${trimmed}T00:00:00Z`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(trimmed);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Wall-clock hour/dow as WRITTEN in the ISO string, not converted to UTC.
+ *
+ * Python's `datetime.fromisoformat` keeps the local fields of the timestamp
+ * (a `2026-03-04T09:15:00+05:00` parses to hour 9), and that is what the
+ * trainer recorded into `publish_hour`. `new Date(value).getUTCHours()`
+ * instead converts to UTC (hour 4), so the two extractors silently disagreed
+ * on every offset timestamp — the parity fixture never caught it because it
+ * only uses `Z`-suffixed times. This reads the fields straight out of the
+ * string so TS and Python produce identical numbers for any offset.
+ *
+ * Returns null for anything not shaped like a date (`YYYY-MM-DD`, optionally
+ * followed by `THH[:mm[:ss]]` and an offset) — the caller then falls back to
+ * the absent-value branch, same as Python's `_parse_time` returning None.
+ *
+ * Python's `fromisoformat` accepts a DATE-ONLY string and treats the time as
+ * midnight, so the TS regex must too: a bare `2026-03-04` used to fall to the
+ * absent branch here (dow pinned to 0/Monday) while Python computed the real
+ * weekday — `publish_dow` and `publish_weekend` disagreed on every date-only
+ * input. The time part is optional; a missing hour is 0, matching midnight.
+ */
+function wallClock(value?: string | null): { hour: number; dow: number } | null {
+  if (!value) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2})(?::(\d{2}))?)?/.exec(value.trim());
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = m[4] !== undefined ? Number(m[4]) : 0;
+  // Python's fromisoformat rejects impossible calendar dates (2026-02-31) —
+  // `Date.UTC` would silently roll them into next month and compute the wrong
+  // weekday, so the day must be range-checked BEFORE the calendar lookup.
+  if (!isValidCalendarDate(year, month, day)) return null;
+  // Weekday from the calendar date. Python's `weekday()` is Monday=0.
+  // The Date here is only a calendar lookup (UTC-constructed, never
+  // shifted) so the offset in the string cannot influence it.
+  const utcMidnight = Date.UTC(year, month - 1, day);
+  if (Number.isNaN(utcMidnight)) return null;
+  const dow = (new Date(utcMidnight).getUTCDay() + 6) % 7;
+  if (!(hour >= 0 && hour <= 23) || !(month >= 1 && month <= 12)) return null;
+  return { hour, dow };
+}
+
+/**
+ * True only for a date that exists on the calendar. Python's fromisoformat
+ * rejects e.g. 2026-02-31 and 2026-04-31; `Date.UTC` would roll them over
+ * instead, so every mirror that hands (y, m, d) to Date.UTC must check this
+ * first to keep the two extractors agreeing on what parses at all.
+ */
+function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  if (!(month >= 1 && month <= 12) || !(day >= 1)) return false;
+  const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  const leap = month === 2 && ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0);
+  return day <= daysInMonth + (leap ? 1 : 0);
 }
 
 // --- feature groups ---------------------------------------------------------
@@ -459,11 +554,13 @@ export function extract(
   row.is_hd = video.definition === 'hd' ? 1 : 0;
   row.has_captions = video.caption ? 1 : 0;
 
-  if (published) {
-    row.publish_hour = published.getUTCHours();
-    // Python's `weekday()` is Monday=0; JS `getUTCDay()` is Sunday=0.
-    row.publish_dow = (published.getUTCDay() + 6) % 7;
-    row.publish_weekend = row.publish_dow >= 5 ? 1 : 0;
+  const wall = wallClock(video.publishedAt);
+  if (wall) {
+    // Wall-clock fields as written — see `wallClock`. Matches Python's
+    // `published.hour` / `published.weekday()` for every offset, not just Z.
+    row.publish_hour = wall.hour;
+    row.publish_dow = wall.dow;
+    row.publish_weekend = wall.dow >= 5 ? 1 : 0;
   } else {
     row.publish_hour = 0;
     row.publish_dow = 0;

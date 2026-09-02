@@ -61,7 +61,7 @@ export default function CookiePolicyPage() {
       <h2 id="manage">3. Managing your preferences</h2>
       <p>
         The first time you visit, we ask which optional cookies you allow. You can change your
-        answer at any time from <a href="/settings#privacy">Settings &rsaquo; Privacy</a>, or by
+        answer at any time from <a href="/settings?tab=privacy">Settings &rsaquo; Privacy</a>, or by
         clicking &ldquo;Cookie settings&rdquo; in the footer.
       </p>
       <p>

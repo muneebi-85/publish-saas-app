@@ -157,7 +157,7 @@ export const SignInForm: React.FC = () => {
         />
         <FormError error={error} />
         {note && !error && (
-          <p className="mb-4 rounded-[10px] border border-gray-200 bg-gray-50 px-3 py-2.5 text-[13.5px] text-gray-600">
+          <p className="mb-4 rounded-[10px] border border-ink-200 bg-ink-50 px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-600">
             {note}
           </p>
         )}
@@ -165,7 +165,7 @@ export const SignInForm: React.FC = () => {
           {requesting ? (
             <Field
               label="Email address"
-              icon={<Mail className="h-[17px] w-[17px]" />}
+              icon={<Mail className="h-4 w-4" />}
               type="email"
               autoComplete="email"
               required
@@ -177,7 +177,7 @@ export const SignInForm: React.FC = () => {
             <>
               <Field
                 label="Verification code"
-                icon={<KeyRound className="h-[17px] w-[17px]" />}
+                icon={<KeyRound className="h-4 w-4" />}
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 required
@@ -187,7 +187,7 @@ export const SignInForm: React.FC = () => {
               />
               <PasswordField
                 label="New password"
-                icon={<Lock className="h-[17px] w-[17px]" />}
+                icon={<Lock className="h-4 w-4" />}
                 autoComplete="new-password"
                 required
                 placeholder="Create a password"
@@ -205,7 +205,7 @@ export const SignInForm: React.FC = () => {
             setError(null);
             setNote(null);
           }}
-          className="mt-5 flex w-full items-center justify-center gap-1.5 text-[13.5px] text-gray-500 transition-colors hover:text-gray-900"
+          className="mt-6 flex w-full items-center justify-center gap-1.5 text-[13px] font-medium text-ink-500 transition-colors hover:text-ink-900"
         >
           <ArrowLeft className="h-4 w-4" /> Back to log in
         </button>
@@ -224,7 +224,7 @@ export const SignInForm: React.FC = () => {
       <form onSubmit={onPassword} className="space-y-4">
         <Field
           label="Email address"
-          icon={<Mail className="h-[17px] w-[17px]" />}
+          icon={<Mail className="h-4 w-4" />}
           type="email"
           autoComplete="email"
           required
@@ -234,7 +234,7 @@ export const SignInForm: React.FC = () => {
         />
         <PasswordField
           label="Password"
-          icon={<Lock className="h-[17px] w-[17px]" />}
+          icon={<Lock className="h-4 w-4" />}
           autoComplete="current-password"
           required
           placeholder="Enter your password"
@@ -248,7 +248,7 @@ export const SignInForm: React.FC = () => {
                   setMode('reset-request');
                   setError(null);
                 }}
-                className="text-[13px] font-semibold text-red-brand transition-colors hover:text-red-brand-ink"
+                className="text-[13px] font-medium text-red-brand transition-colors hover:text-red-brand-ink"
               >
                 Forgot password?
               </button>
@@ -257,7 +257,7 @@ export const SignInForm: React.FC = () => {
         />
         {/* A touch more air above the primary action than space-y-4 gives, so the
             "Forgot password?" link does not read as part of the button. */}
-        <div className="pt-1.5">
+        <div className="pt-2">
           <SubmitButton busy={busy}>Log in</SubmitButton>
         </div>
       </form>

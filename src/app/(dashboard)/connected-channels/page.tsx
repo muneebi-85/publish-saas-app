@@ -1,5 +1,6 @@
 import { requirePageAuth } from '@/lib/api-guards';
 import { prisma } from '@/lib/db';
+import { countsToNumbers } from '@/lib/channels';
 import ChannelsClient from './ChannelsClient';
 
 export const dynamic = 'force-dynamic';
@@ -32,7 +33,7 @@ export default async function ConnectedChannelsPage() {
   return (
     <ChannelsClient
       initialChannels={channels.map((c) => ({
-        ...c,
+        ...countsToNumbers(c),
         updatedAt: c.updatedAt.toISOString(),
       }))}
     />

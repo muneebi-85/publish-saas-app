@@ -1,68 +1,124 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Share2, Check, Link2 } from 'lucide-react';
+import { Share2, Check, LinkOff } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { track } from '@/lib/analytics';
 
 /**
- * Copies the public, shareable link for this report's score card.
+ * Publishes this report's public score card and copies the link — or revokes
+ * it, once shared.
  *
  * The link resolves to /share/[id], a public page that renders ONLY the score,
- * the title and the platform — no script, no fixes, no private data. Sharing is
- * explicitly opt-in: nothing is public until the creator copies this link and
- * posts it somewhere.
+ * the title and the platform — no script, no fixes, no private data. Sharing
+ * is genuinely opt-in: the page 404s until this button stamps `sharedAt` via
+ * POST /api/share/[id]. Revoking (DELETE) clears the stamp and immediately
+ * un-publishes every public surface — page, badge, OG image, community board.
+ * Without it, "opt-in" was one-way: a creator who shared once had no way back.
+ *
+ * The initial state comes from the server-rendered `shared` prop; every click
+ * flips it locally so the button always tells the truth about the current
+ * request's outcome, and the server keeps the stamp authoritative either way.
  */
-export function ShareScoreButton({ reportId, reportTitle }: { reportId: string; reportTitle?: string }) {
+export function ShareScoreButton({
+  reportId,
+  reportTitle,
+  shared = false,
+}: {
+  reportId: string;
+  reportTitle?: string;
+  /** Server-known publication state — true when `sharedAt` is set on the row. */
+  shared?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
+  const [isShared, setIsShared] = useState(shared);
+  const [busy, setBusy] = useState(false);
 
   const handleShare = async () => {
-    const url = `${window.location.origin}/share/${reportId}`;
+    setBusy(true);
     try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      // Clipboard can be blocked (permissions, insecure context, headless).
-      // Fall back to the legacy path so the button always does something.
-      const textarea = document.createElement('textarea');
-      textarea.value = url;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      textarea.remove();
+      // Opt-in first, copy second: a link copied before the stamp resolves
+      // to 404 for whoever opens it. Idempotent server-side, so re-clicking
+      // just re-copies.
+      await fetch(`/api/share/${reportId}`, { method: 'POST' }).catch(() => undefined);
+      setIsShared(true);
+
+      const url = `${window.location.origin}/share/${reportId}`;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        // Clipboard can be blocked (permissions, insecure context, headless).
+        // Same guarded fallback ReportActions uses — an unguarded
+        // document.execCommand failure here would leave a published card and
+        // no copied link with zero feedback.
+        try {
+          const textarea = document.createElement('textarea');
+          textarea.value = url;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          textarea.remove();
+        } catch {
+          // Both paths refused. The card is published (above); copying by hand
+          // from the share page is the remaining path.
+        }
+      }
+      setCopied(true);
+      void track('share_link_copied', { reportId });
+      window.setTimeout(() => setCopied(false), 2000);
+    } finally {
+      setBusy(false);
     }
-    setCopied(true);
-    void track('share_link_copied', { reportId });
-    window.setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleRevoke = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/share/${reportId}`, { method: 'DELETE' }).catch(
+        () => undefined,
+      );
+      // 200 means the stamp is gone and every public surface now 404s. A
+      // failed/unreachable DELETE keeps the button at "Unshare" so the creator
+      // can try again rather than believe a revoke that never landed.
+      if (res && res.ok) {
+        setIsShared(false);
+        void track('share_revoked', { reportId });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const isPublic = isShared;
   return (
     <Button
       variant="secondary"
       size="sm"
-      onClick={handleShare}
+      onClick={isPublic ? handleRevoke : handleShare}
+      disabled={busy}
       leftIcon={
         copied ? (
           <Check className="w-3.5 h-3.5 text-grass-700" strokeWidth={3} />
+        ) : isPublic ? (
+          <LinkOff className="w-3.5 h-3.5" />
         ) : (
           <Share2 className="w-3.5 h-3.5" />
         )
       }
-      aria-label={`Share the Publish Score for ${reportTitle ?? 'this report'}`}
-      title="Copy the public score card link"
+      aria-label={
+        isPublic
+          ? `Unpublish the public score card for ${reportTitle ?? 'this report'}`
+          : `Share the Publish Score for ${reportTitle ?? 'this report'}`
+      }
+      title={
+        isPublic
+          ? 'Un-publish the public score card (the page, badge and embed stop resolving)'
+          : 'Publish the public score card and copy its link'
+      }
     >
-      {copied ? 'Link copied' : 'Share score'}
+      {copied ? 'Link copied' : busy ? (isPublic ? 'Unpublishing…' : 'Publishing…') : isPublic ? 'Unshare' : 'Share score'}
     </Button>
-  );
-}
-
-/** Small inline hint shown next to the share button. */
-export function ShareScoreHint() {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-400">
-      <Link2 className="w-3 h-3" />
-      Only the score card is public — never your script or fixes.
-    </span>
   );
 }

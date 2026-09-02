@@ -52,20 +52,25 @@ export async function POST(req: Request) {
 
   // Load both reports. The accepter's report is ownership-scoped in the same
   // query, so another user's id simply resolves to nothing (404, never a hint
-  // that the report exists).
+  // that the report exists). The target must ALSO be published (`sharedAt`):
+  // the challenge loop starts from a shared score card, and a target that was
+  // never shared — or was revoked — is not a challengeable card.
   const [target, mine] = await Promise.all([
-    prisma.analysisReport.findUnique({
-      where: { id: targetId.value },
-      select: { id: true, title: true, overallScore: true, targetPlatform: true, userId: true },
+    prisma.analysisReport.findFirst({
+      where: { id: targetId.value, sharedAt: { not: null } },
+      select: { id: true, title: true, overallScore: true, targetPlatform: true, userId: true, createdAt: true },
     }),
     prisma.analysisReport.findFirst({
       where: { id: mineId.value, user: { clerkId: authCtx.clerkId } },
-      select: { id: true, title: true, overallScore: true, targetPlatform: true },
+      select: { id: true, title: true, overallScore: true, targetPlatform: true, createdAt: true },
     }),
   ]);
 
   if (!target) {
-    return NextResponse.json({ error: 'That score card no longer exists.' }, { status: 404 });
+    return NextResponse.json(
+      { error: 'That score card no longer exists or is no longer shared.' },
+      { status: 404 },
+    );
   }
   if (!mine) {
     return NextResponse.json(
@@ -75,6 +80,18 @@ export async function POST(req: Request) {
   }
   if (target.userId === authCtx.dbUserId) {
     return NextResponse.json({ error: 'You cannot challenge your own score.' }, { status: 400 });
+  }
+  // A challenge means "I can beat this": the accepter's report must postdate
+  // the target. Without this, two colluding accounts could mint challenger
+  // credits forever by re-accepting the SAME stale report each cycle. The
+  // accepter's review always costs them a real audit from their own allowance,
+  // so each farmed credit is paid for by a real pipeline run — the same
+  // net-zero shape the referral program now enforces.
+  if (mine.createdAt.getTime() <= target.createdAt.getTime()) {
+    return NextResponse.json(
+      { error: 'That score card was created after this report — review the shared script first, then accept with the new report.' },
+      { status: 400 },
+    );
   }
 
   const comparison = {
@@ -141,15 +158,20 @@ export async function POST(req: Request) {
       });
     });
   } catch (err) {
-    // Unique (reportId, acceptedByUserId) from a concurrent accept — treat as
-    // done, same as the idempotent path above.
-    if ((err as { code?: string }).code !== 'P2002') {
-      console.error('[POST /api/challenge/accept] failed:', err);
+    // The unique (reportId, acceptedByUserId) constraint rejected a concurrent
+    // accept — the credit was NOT minted, so answer exactly like the idempotent
+    // path above rather than reporting a credit that never landed.
+    if ((err as { code?: string }).code === 'P2002') {
       return NextResponse.json(
-        { error: 'The challenge could not be recorded. Please try again.' },
-        { status: 503 },
+        { ...comparison, creditsEarned: 0, already: true },
+        { headers: { 'Cache-Control': 'no-store' } },
       );
     }
+    console.error('[POST /api/challenge/accept] failed:', err);
+    return NextResponse.json(
+      { error: 'The challenge could not be recorded. Please try again.' },
+      { status: 503 },
+    );
   }
 
   return NextResponse.json(

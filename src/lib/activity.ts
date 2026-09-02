@@ -11,7 +11,9 @@
  * a timestamp newer than it is unread. Nothing is stored per item.
  */
 import { prisma } from './db';
-import { PLAN_LIMITS, type Plan } from './session';
+import { PLAN_LIMITS } from './session';
+import { planDisplayName } from './plans';
+import { normalizePlan } from './entitlement';
 
 export type ActivityKind = 'review_complete' | 'review_failed' | 'review_running' | 'billing';
 
@@ -40,8 +42,9 @@ function truncate(value: string, max = 72): string {
 }
 
 function planLabel(plan: string): string {
-  const normalized = plan.toLowerCase();
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  // The catalogue name ("Creator"), not the capitalized id ("Starter") — the
+  // activity feed must speak the same vocabulary as the pricing page.
+  return planDisplayName(plan);
 }
 
 function formatDate(date: Date): string {
@@ -134,7 +137,9 @@ export async function getActivity(
         title: `Review did not finish — ${label}`,
         body:
           job.error?.trim() ||
-          'The review stopped before it produced a report. Your allowance was not charged.',
+          // Do NOT claim a refund that has not happened: a non-terminal failure
+          // still HOLDS the slot (the refund lands only if every retry fails).
+          'The review stopped before it produced a report and will be retried. If every retry fails, your allowance is refunded.',
         at,
         href: '/upload',
         unread: !seenAt || at > seenAt,
@@ -174,7 +179,7 @@ export async function getActivity(
       title = `${planLabel(sub.plan)} plan paused`;
       body = 'Resume it from Settings → Billing whenever you are ready to review again.';
     } else {
-      const limit = PLAN_LIMITS[sub.plan.toLowerCase() as Plan] ?? null;
+      const limit = PLAN_LIMITS[normalizePlan(sub.plan)] ?? null;
       title = `${planLabel(sub.plan)} plan active`;
       body = limit
         ? `${limit} reviews per cycle. Renews ${formatDate(sub.currentPeriodEnd)}.`
@@ -199,9 +204,12 @@ export async function getActivity(
 }
 
 /**
- * Count-only variant for the header bell. Mirrors `getActivity`'s unread rule —
- * a finished job or a subscription change newer than `activitySeenAt` — without
- * building any strings.
+ * Count-only variant for the header bell. Mirrors `getActivity`'s unread rule
+ * — terminal states are news (`finishedAt ?? updatedAt` for jobs, matching the
+ * feed's `at` exactly), a running job is not, and COMPLETED rows that somehow
+ * lack a report are not either (the feed renders those as "in progress").
+ * Deriving the two from different predicates is what previously let the bell
+ * disagree with the feed it opens.
  */
 export async function getUnreadActivityCount(dbUserId: string): Promise<number> {
   const user = await prisma.user.findUnique({
@@ -217,8 +225,15 @@ export async function getUnreadActivityCount(dbUserId: string): Promise<number> 
     prisma.analysisJob.count({
       where: {
         userId: dbUserId,
+        // Terminal states only. `finishedAt` is set on terminal failure and
+        // completion, but a RETRYABLE failure stamps it null — the feed still
+        // surfaces that via `at = finishedAt ?? updatedAt`, so the bell must
+        // too or it under-counts failures the feed shows as unread.
         status: { in: ['COMPLETED', 'FAILED'] },
-        updatedAt: { gt: after },
+        OR: [{ finishedAt: { gt: after } }, { finishedAt: null, updatedAt: { gt: after } }],
+        // A COMPLETED row without a report is rendered "in progress" by the
+        // feed and is not news there; exclude it from the bell as well.
+        NOT: { status: 'COMPLETED', reportId: null },
       },
     }),
     prisma.subscription.count({
@@ -226,7 +241,9 @@ export async function getUnreadActivityCount(dbUserId: string): Promise<number> 
     }),
   ]);
 
-  return Math.min(jobs + subscriptions, 99);
+  // The feed renders at most FEED_LIMIT items, so the bell must not claim more
+  // unread than the page it opens can actually show.
+  return Math.min(jobs + subscriptions, FEED_LIMIT);
 }
 
 /** Records that the user has now seen everything up to this moment. */

@@ -28,7 +28,17 @@ type Posthog = {
   reset: () => void;
 };
 
-let client: Posthog | null | undefined;
+/**
+ * The loaded posthog-js bundle — and only the bundle.
+ *
+ * Deliberately NOT a "the client is active" flag. Two bugs lived in that shape:
+ * (a) once loaded, `consentGiven()` was never re-read, so a user who revoked
+ * consent mid-session kept sending events forever; (b) a `track()` fired
+ * before consent cached `null` permanently, so consent granted later never
+ * activated anything. Consent is now re-evaluated on EVERY call and only the
+ * genuinely expensive part (the dynamic import + init) is cached.
+ */
+let loaded: Posthog | null | undefined;
 
 function consentGiven(): boolean {
   if (typeof window === 'undefined') return false;
@@ -44,11 +54,8 @@ function consentGiven(): boolean {
 
 /** Load posthog-js lazily so an unconfigured deploy ships no analytics code. */
 async function getClient(): Promise<Posthog | null> {
-  if (client !== undefined) return client;
-  if (!POSTHOG_KEY || !consentGiven()) {
-    client = null;
-    return client;
-  }
+  if (!POSTHOG_KEY || !consentGiven()) return null;
+  if (loaded !== undefined) return loaded;
   try {
     const { posthog } = await import('posthog-js');
     posthog.init(POSTHOG_KEY, {
@@ -63,20 +70,21 @@ async function getClient(): Promise<Posthog | null> {
         posthog.identify?.(posthog.get_distinct_id?.() ?? '');
       },
     });
-    client = {
+    loaded = {
       capture: (event, props) => posthog.capture(event, props),
       identify: () => undefined,
       reset: () => posthog.reset?.(),
     };
   } catch {
-    client = null;
+    loaded = null;
   }
-  return client;
+  return loaded;
 }
 
 /**
  * Fire a product event. Safe to call anywhere on the client — it resolves to a
- * no-op when analytics are not consented or not configured.
+ * no-op when analytics are not consented or not configured. Consent is checked
+ * on every call, so a mid-session revoke takes effect immediately.
  */
 export async function track(event: string, props?: Record<string, unknown>): Promise<void> {
   const c = await getClient();

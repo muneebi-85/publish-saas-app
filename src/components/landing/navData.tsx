@@ -73,7 +73,7 @@ export const SOLUTIONS_MENU: MenuGroup[] = [
   {
     heading: 'By team',
     items: [
-      { label: 'Agencies', desc: 'White-label reports for clients', href: '#pricing', icon: UsersIcon },
+      { label: 'Agencies', desc: 'Volume checks for client work', href: '#pricing', icon: UsersIcon },
       { label: 'Brand & social teams', desc: 'Policy review before sign-off', href: '#checks', icon: BriefcaseIcon },
     ],
   },

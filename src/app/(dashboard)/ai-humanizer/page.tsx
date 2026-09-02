@@ -30,8 +30,8 @@ export default function ScriptOptimizerPage() {
   return (
     <PlanGate
       feature="Creator Script Optimizer"
-      requiredPlan="starter"
-      description="Grade your script across 12 revenue signals before you record, then rewrite the weak spots in one pass. Included on Starter, Pro, and Agency plans."
+      requiredPlan="pro"
+      description="Grade your script across 12 revenue signals before you record, then rewrite the weak spots in one pass. Included on every paid plan."
     >
       {/* Suspense: useSearchParams must sit below a boundary for prerendered pages. */}
       <Suspense fallback={null}>
@@ -94,11 +94,15 @@ function ScriptOptimizerBody() {
     }
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!result) return;
-    navigator.clipboard.writeText(result.humanizedText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(result.humanizedText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard refused — never flash a false "Copied".
+    }
   };
 
   const scoreDelta = result ? result.metricsBefore.gptProbabilityScore - result.metricsAfter.gptProbabilityScore : 0;
@@ -122,7 +126,7 @@ function ScriptOptimizerBody() {
               <select
                 value={options.tone}
                 onChange={(e) => setOptions({ ...options, tone: e.target.value as HumanizeOptions['tone'] })}
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
               >
                 <option value="conversational">Conversational</option>
                 <option value="storyteller">Storyteller</option>
@@ -135,7 +139,7 @@ function ScriptOptimizerBody() {
               <select
                 value={options.targetPlatform}
                 onChange={(e) => setOptions({ ...options, targetPlatform: e.target.value as HumanizeOptions['targetPlatform'] })}
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl h-11 px-3.5 text-[14px] focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+                className="w-full bg-surface-panel border border-ink-300 rounded-lg h-9 px-3 text-[13px] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
               >
                 {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
               </select>
@@ -153,7 +157,6 @@ function ScriptOptimizerBody() {
             <div className="flex items-end">
               <Button
                 full
-                size="lg"
                 onClick={handleRun}
                 isLoading={loading}
                 disabled={rawText.trim().length < MIN_SCRIPT_CHARS}
@@ -166,7 +169,7 @@ function ScriptOptimizerBody() {
         </Card>
 
         {error && (
-          <div className="bg-crimson-50 border border-crimson-200 text-crimson-700 px-4 py-3 rounded-xl text-[13px] flex items-start gap-2">
+          <div className="bg-crimson-50 border border-crimson-200 text-crimson-700 p-4 rounded-xl text-[13px] flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <div>
               <div className="font-semibold">Optimization failed</div>
@@ -177,14 +180,14 @@ function ScriptOptimizerBody() {
 
         {/* Script Score verdict */}
         {report && (
-          <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-6">
+          <div className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel p-6">
             <div className="flex flex-col sm:flex-row sm:items-center gap-5">
               <div className="shrink-0 sm:pr-6 sm:border-r sm:border-ink-200">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-brand-600">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">
                   <Gauge className="w-3.5 h-3.5" /> Script Score
                 </div>
                 <div className="flex items-end gap-3 mt-1.5">
-                  <span className={`font-display text-[48px] leading-[0.9] font-bold tabular-nums tracking-tight ${scoreTone(report.overall).num}`}>
+                  <span className={`font-display text-[48px] leading-[0.9] font-semibold tabular-nums tracking-[-0.025em] ${scoreTone(report.overall).num}`}>
                     {report.overall}
                   </span>
                   <span className="text-[13px] font-semibold text-ink-900 pb-1.5">{report.headline}</span>
@@ -204,7 +207,7 @@ function ScriptOptimizerBody() {
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-4 h-4 text-brand-600" />
-              <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">Pre-publish signals</h3>
+              <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">Pre-publish signals</h3>
               <span className="text-[12px] text-ink-500">Every one tied to reach, retention, or revenue</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -233,7 +236,7 @@ function ScriptOptimizerBody() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[13px] font-semibold text-ink-700">Your script</span>
+              <span className="text-[13px] font-medium text-ink-700">Your script</span>
               {result && <Badge variant="warning" dot>Est. AI risk {result.metricsBefore.gptProbabilityScore}%</Badge>}
             </div>
             <textarea
@@ -244,7 +247,7 @@ function ScriptOptimizerBody() {
               aria-label="Your script"
               aria-describedby="script-input-hint"
               placeholder="Paste your script or voiceover draft here — the full thing, not a summary. Every signal below is graded from this text."
-              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl p-4 text-[14px] text-ink-800 leading-relaxed resize-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+              className="w-full bg-surface-panel border border-ink-300 rounded-lg p-3.5 text-[13px] text-ink-800 leading-relaxed resize-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
             />
             <div id="script-input-hint" className="mt-2 flex items-center justify-between text-[12px] text-ink-500">
               <span>
@@ -257,23 +260,23 @@ function ScriptOptimizerBody() {
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[13px] font-semibold text-ink-700">Optimized rewrite</span>
+              <span className="text-[13px] font-medium text-ink-700">Optimized rewrite</span>
               {result && <Badge variant="success" dot>Est. AI risk {result.metricsAfter.gptProbabilityScore}%</Badge>}
             </div>
-            <div className="bg-white/[0.03] border border-white/[0.08] rounded-xl p-4 min-h-[298px] text-[14px] text-ink-800 leading-relaxed whitespace-pre-line relative">
+            <div className="bg-surface-panel border border-ink-200 rounded-lg p-3.5 min-h-[294px] text-[13px] text-ink-800 leading-relaxed whitespace-pre-line relative">
               {loading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm rounded-xl z-10">
+                <div className="absolute inset-0 flex items-center justify-center bg-scrim backdrop-blur-sm rounded-lg z-10">
                   <Loader2 className="w-5 h-5 animate-spin text-brand-600" />
                 </div>
               )}
-              {result ? result.humanizedText : <span className="text-ink-400 italic">Run the optimizer to grade your script and see the rewrite…</span>}
+              {result ? result.humanizedText : <span className="text-ink-400">Run the optimizer to grade your script and see the rewrite…</span>}
             </div>
             <div className="flex justify-end mt-2">
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={handleCopy}
-                leftIcon={copied ? <Check className="w-3.5 h-3.5 text-brand-600" /> : <Copy className="w-3.5 h-3.5" />}
+                leftIcon={copied ? <Check className="w-3.5 h-3.5 text-grass-700" /> : <Copy className="w-3.5 h-3.5" />}
               >
                 {copied ? 'Copied' : 'Copy'}
               </Button>
@@ -285,13 +288,13 @@ function ScriptOptimizerBody() {
         {result && (
         <Card>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">Rewrite changes</h3>
+            <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">Rewrite changes</h3>
             <Badge variant="outline">{result.changesSummary.length} edits</Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {result.changesSummary.map((c, i) => (
-              <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
-                <Check className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+              <div key={i} className="flex items-start gap-2.5 p-3.5 rounded-lg bg-surface-canvas border border-ink-200 text-[13px] text-ink-700 leading-relaxed">
+                <Check className="w-4 h-4 text-grass-700 shrink-0 mt-0.5" />
                 {c}
               </div>
             ))}
@@ -307,7 +310,7 @@ function ScriptOptimizerBody() {
           <Card>
             <div className="flex items-center gap-2 mb-3">
               <Palette className="w-4 h-4 text-brand-600" />
-              <h3 className="font-display text-lg font-bold tracking-tight text-ink-900">
+              <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
                 Your brand kit
               </h3>
             </div>
@@ -334,7 +337,7 @@ function ScriptOptimizerBody() {
                 ) : (
                   <p
                     role="alert"
-                    className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900"
+                    className="flex items-start gap-2 p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900"
                   >
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
                     <span>
@@ -349,7 +352,7 @@ function ScriptOptimizerBody() {
                   </p>
                 ))}
             </div>
-            <p className="text-[11.5px] text-ink-500 mt-3">
+            <p className="text-[12px] text-ink-500 mt-3">
               Edit these in{' '}
               <Link href="/brand-kit" className="font-medium text-brand-600 hover:underline">
                 Brand Kit
@@ -381,8 +384,8 @@ const bandChip: Record<SignalBand, { label: string; variant: 'success' | 'warnin
 
 const Stat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div>
-    <div className="text-[10px] font-semibold text-ink-500 uppercase tracking-wide">{label}</div>
-    <div className="text-[18px] font-bold text-ink-900 tabular-nums mt-0.5">{value}</div>
+    <div className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em]">{label}</div>
+    <div className="text-[18px] font-semibold text-ink-900 tabular-nums mt-0.5">{value}</div>
   </div>
 );
 
@@ -391,23 +394,23 @@ const SignalCard: React.FC<{ sig: ScriptSignal }> = ({ sig }) => {
   const tone = measured ? scoreTone(sig.score as number) : { num: 'text-ink-400', bar: 'bg-ink-300', chip: 'outline' as const };
   const chip = bandChip[sig.band];
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-4">
+    <div className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel p-4">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[13px] font-semibold text-ink-900">{sig.label}</span>
         <div className="flex items-center gap-2">
           {measured
             ? <Badge variant={chip.variant} dot>{chip.label}</Badge>
             : <Badge variant="outline">Estimate</Badge>}
-          <span className={`font-display text-[20px] font-bold tabular-nums leading-none ${tone.num}`}>
+          <span className={`font-display text-[20px] font-semibold tracking-[-0.02em] tabular-nums leading-none ${tone.num}`}>
             {measured ? sig.score : '—'}
           </span>
         </div>
       </div>
-      <div className="relative mt-2.5 h-1 w-full bg-white/[0.08] rounded-full">
-        <div className={`h-full rounded-full transition-all duration-700 ${tone.bar}`} style={{ width: `${measured ? sig.score : 0}%` }} />
+      <div className="relative mt-2.5 h-1 w-full bg-ink-100 rounded-full">
+        <div className={`h-full rounded-full transition-all duration-500 ${tone.bar}`} style={{ width: `${measured ? sig.score : 0}%` }} />
       </div>
-      <p className="text-[12.5px] text-ink-600 leading-relaxed mt-3">{sig.finding}</p>
-      <div className="flex items-start gap-2 mt-2.5 pt-2.5 border-t border-ink-100 text-[12.5px] text-ink-800 leading-relaxed">
+      <p className="text-[12px] text-ink-600 leading-relaxed mt-3">{sig.finding}</p>
+      <div className="flex items-start gap-2 mt-2.5 pt-2.5 border-t border-ink-200 text-[12px] text-ink-800 leading-relaxed">
         <ArrowRight className="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-600" />
         <span><span className="font-semibold text-ink-900">Fix:</span> {sig.fix}</span>
       </div>
@@ -429,13 +432,13 @@ const MetricRow: React.FC<{ label: string; before: string | number; after: strin
       <div className="flex items-center gap-2 mt-1.5">
         <span className="text-[13px] text-ink-500 line-through tabular-nums">{before}</span>
         <ArrowRight className="w-3 h-3 text-ink-400" />
-        <span className={`text-[15px] font-semibold tabular-nums ${improved ? 'text-brand-600' : 'text-ink-900'}`}>
+        <span className={`text-[16px] font-semibold tabular-nums ${improved ? 'text-grass-700' : 'text-ink-900'}`}>
           {after}
         </span>
       </div>
       <div className="text-[11px] text-ink-500 mt-1.5 flex items-center gap-1">
         {improved ? (
-          <><TrendingUp className="w-3 h-3 text-brand-600" /> Improved</>
+          <><TrendingUp className="w-3 h-3 text-grass-600" /> Improved</>
         ) : (
           <><TrendingDown className="w-3 h-3 text-ink-400" /> Held steady</>
         )}

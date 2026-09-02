@@ -31,6 +31,14 @@ export const CookieBanner: React.FC = () => {
     if (!stored?.decided) setVisible(true);
   }, []);
 
+  // The footer's "Cookie settings" link clears the stored decision and fires
+  // this event; the banner reopens in place (no reload).
+  useEffect(() => {
+    const onReopen = () => setVisible(true);
+    window.addEventListener('publish:cookie-settings-open', onReopen);
+    return () => window.removeEventListener('publish:cookie-settings-open', onReopen);
+  }, []);
+
   // Flag the banner on <html> so layouts can reserve room for it. It is a fixed
   // overlay, so on a short window it lands on top of whatever is at the bottom of
   // the page — on the auth pages, the submit button. A class means the page only
@@ -62,8 +70,11 @@ export const CookieBanner: React.FC = () => {
           route including the light-background auth pages, where a 4%-white panel
           left this card's white text unreadable. surface-raised (#0F0F10) is a
           hair lighter than the dark canvas it usually sits on, so nothing changes
-          there, and the ink-* text below stays legible everywhere. */}
-      <div className="w-full sm:w-auto sm:max-w-sm bg-surface-raised border border-white/[0.12] rounded-2xl shadow-elevated p-4 pointer-events-auto animate-enter">
+          there, and the ink-* text below stays legible everywhere. Border and
+          toggle track use ink-* tokens rather than white/[0.12]: in the light
+          theme surface-raised is WHITE, and 12%-white on white renders the card
+          edge and the off-toggle invisible. */}
+      <div className="w-full sm:w-auto sm:max-w-sm bg-surface-raised border border-ink-200 rounded-2xl shadow-float p-4 pointer-events-auto animate-enter">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="text-[13.5px] font-semibold text-ink-900">We use cookies</div>
@@ -114,12 +125,13 @@ const Toggle: React.FC<{
       disabled={disabled}
       onClick={() => onChange?.(!on)}
       className={`w-10 h-6 rounded-full relative transition-colors shrink-0 ${
-        on ? 'bg-brand-600' : 'bg-white/[0.12]'
+        on ? 'bg-brand-600' : 'bg-ink-300'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       role="switch"
       aria-checked={on}
+      aria-label={label}
     >
-      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-subtle transition-all duration-200 ${on ? 'left-[18px]' : 'left-0.5'}`} />
+      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-subtle transition-all duration-150 ${on ? 'left-[18px]' : 'left-0.5'}`} />
     </button>
   </div>
 );

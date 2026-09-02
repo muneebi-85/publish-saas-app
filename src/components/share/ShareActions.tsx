@@ -83,12 +83,12 @@ export function ShareActions({
     {
       label: 'Post on X',
       href: `https://twitter.com/intent/tweet?text=${caption}&url=${encodedUrl}`,
-      cls: 'hover:bg-white/[0.08] hover:text-white',
+      cls: 'hover:bg-ink-50 hover:border-ink-400',
     },
     {
       label: 'Share on LinkedIn',
       href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`,
-      cls: 'hover:bg-white/[0.08] hover:text-white',
+      cls: 'hover:bg-ink-50 hover:border-ink-400',
     },
   ];
 
@@ -99,7 +99,7 @@ export function ShareActions({
         <button
           type="button"
           onClick={() => handleCopy('link')}
-          className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/[0.12] bg-white/[0.04] px-3.5 text-[12.5px] font-semibold text-ink-700 transition-colors hover:border-white/[0.24]"
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-300 bg-surface-panel px-3 text-[13px] font-medium text-ink-800 shadow-xs transition-colors hover:bg-ink-50 hover:border-ink-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-panel"
         >
           {copied === 'link' ? <Check className="w-3.5 h-3.5 text-grass-700" /> : <Link2 className="w-3.5 h-3.5" />}
           {copied === 'link' ? 'Copied' : 'Copy link'}
@@ -109,7 +109,7 @@ export function ShareActions({
             key={b.label}
             type="button"
             onClick={() => openIntent(b.href)}
-            className={`inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/[0.12] bg-white/[0.04] px-3.5 text-[12.5px] font-semibold text-ink-700 transition-colors ${b.cls}`}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-300 bg-surface-panel px-3 text-[13px] font-medium text-ink-800 shadow-xs transition-colors ${b.cls}`}
           >
             {b.label}
           </button>
@@ -121,7 +121,7 @@ export function ShareActions({
         <button
           type="button"
           onClick={() => handleCopy('caption')}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.02] px-3 text-[12px] font-medium text-ink-500 transition-colors hover:text-white"
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-200 px-3 text-[12px] font-medium text-ink-600 transition-colors hover:bg-ink-50 hover:text-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
         >
           {copied === 'caption' ? <Check className="w-3.5 h-3.5 text-grass-700" /> : <Copy className="w-3.5 h-3.5" />}
           {copied === 'caption' ? 'Copied' : 'TikTok / IG story caption'}
@@ -129,7 +129,7 @@ export function ShareActions({
         <button
           type="button"
           onClick={() => handleCopy('embed')}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.02] px-3 text-[12px] font-medium text-ink-500 transition-colors hover:text-white"
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-200 px-3 text-[12px] font-medium text-ink-600 transition-colors hover:bg-ink-50 hover:text-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
         >
           {copied === 'embed' ? <Check className="w-3.5 h-3.5 text-grass-700" /> : <Code2 className="w-3.5 h-3.5" />}
           {copied === 'embed' ? 'Copied' : 'Embed badge on your site'}

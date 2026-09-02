@@ -23,9 +23,9 @@ export const AuthShell: React.FC<{
 }> = ({ children, altPrompt, altLabel, altHref }) => (
   // Clearance for the fixed cookie banner is added by `.cookie-banner-open
   // .auth-page-root` in globals.css, only while that banner is actually up.
-  <div className="auth-page-root flex min-h-svh flex-col items-center px-4 pb-10 pt-6 sm:px-6 sm:pt-10">
-    <div className="w-full max-w-[520px]">
-      <div className="mb-5 flex items-center justify-between gap-4">
+  <div className="auth-page-root flex min-h-svh flex-col items-center justify-center px-4 py-10 sm:px-6">
+    <div className="w-full max-w-[400px]">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <Link href="/" aria-label="Publish home" className="shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element -- same fixed-size
               local logo the landing header uses; next/image would add a loader
@@ -35,21 +35,21 @@ export const AuthShell: React.FC<{
             alt="Publish"
             width={379}
             height={81}
-            className="h-[26px] w-auto object-contain"
+            className="h-7 w-auto object-contain"
           />
         </Link>
-        <p className="text-[14px] text-gray-500">
+        <p className="text-[13px] text-ink-500">
           <span className="hidden sm:inline">{altPrompt} </span>
           <Link
             href={altHref}
-            className="font-semibold text-red-brand transition-colors hover:text-red-brand-ink"
+            className="font-medium text-red-brand transition-colors hover:text-red-brand-ink"
           >
             {altLabel}
           </Link>
         </p>
       </div>
 
-      <div className="rounded-[16px] border border-gray-200/90 bg-white p-6 shadow-[0_1px_3px_rgba(17,17,17,0.04),0_14px_36px_-18px_rgba(17,17,17,0.12)] sm:p-9">
+      <div className="rounded-[14px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(17,17,17,0.04),0_8px_24px_-16px_rgba(17,17,17,0.12)] sm:p-8">
         {children}
       </div>
     </div>
@@ -58,10 +58,10 @@ export const AuthShell: React.FC<{
 
 /** Card heading + one line of context, centred as in the comp. */
 export const AuthHeading: React.FC<{ title: string; sub: string }> = ({ title, sub }) => (
-  <div className="mb-7 text-center">
-    <h1 className="text-[27px] font-extrabold tracking-tight text-gray-900 sm:text-[29px]">
+  <div className="mb-6 text-center">
+    <h1 className="text-[24px] font-semibold leading-[1.2] tracking-[-0.02em] text-ink-900">
       {title}
     </h1>
-    <p className="mt-1.5 text-[14.5px] text-gray-500">{sub}</p>
+    <p className="mt-2 text-[14px] leading-relaxed text-ink-500">{sub}</p>
   </div>
 );

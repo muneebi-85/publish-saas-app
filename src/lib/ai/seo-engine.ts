@@ -14,7 +14,7 @@
  */
 
 import { chatJSON } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore } from './guardrails';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore, fenceSafe } from './guardrails';
 
 export interface SEOAnalysis {
   seoScore: number;
@@ -90,11 +90,18 @@ function platformConstraints(platform: string): string {
 export async function generateSEOAnalysis(
   title: string,
   platform: string,
+  description?: string,
 ): Promise<SEOAnalysis> {
+  const hasDescription = typeof description === 'string' && description.trim().length > 0;
   const raw = await chatJSON<RawSEOResponse>(
     [
       { role: 'system', content: buildPrompt(platform) },
-      { role: 'user',   content: `Video title: "${title.trim()}"` },
+      {
+        role: 'user',
+        content:
+          `Video title: "${fenceSafe(title.trim())}"` +
+          (hasDescription ? `\nCreator's description: """${fenceSafe(description!.trim().slice(0, 2000))}"""` : ''),
+      },
     ],
     { model: 'fast', temperature: 0.7, maxTokens: 1400 },
   );
@@ -109,7 +116,11 @@ export async function generateSEOAnalysis(
     optimizedTitles: (raw.optimizedTitles ?? []).slice(0, 3).map((t) => scrubForbidden(t).clean.slice(0, 100)),
     tags:            (raw.tags ?? []).slice(0, 12).map((t) => scrubForbidden(t).clean.slice(0, 40)),
     description:     scrubForbidden(raw.description ?? '').clean,
-    timestamps:      raw.timestamps ?? [],
+    // Timestamps are only meaningful when the engine saw the creator's own
+    // description (the only script-adjacent text this call receives). Without
+    // it the model cannot know real chapter boundaries, so a fabricated
+    // "0:00 Intro" is dropped rather than passed through.
+    timestamps: hasDescription ? (raw.timestamps ?? []).slice(0, 10) : [],
   };
 }
 

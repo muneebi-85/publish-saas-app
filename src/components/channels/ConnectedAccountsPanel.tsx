@@ -55,8 +55,8 @@ function accountIdentifier(a: LinkedAccount): string {
 
 function GoogleMark() {
   return (
-    <span className="w-8 h-8 rounded-full bg-white border border-white/[0.12] flex items-center justify-center text-[13px] font-bold tracking-tight">
-      <span className="bg-clip-text text-transparent bg-gradient-to-br from-[#4285F4] via-[#EA4335] to-[#FBBC05]">G</span>
+    <span className="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 flex items-center justify-center text-[13px] font-semibold">
+      G
     </span>
   );
 }
@@ -128,34 +128,34 @@ export default function ConnectedAccountsPanel({
   return (
     <Card padded className="mt-6">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-ink-200 flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-lg bg-ink-100 border border-ink-200 flex items-center justify-center shrink-0">
           <Unlink className="w-4 h-4 text-brand-600" />
         </div>
         <div>
-          <h3 className="font-display text-[15px] font-bold tracking-tight text-ink-900">
+          <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
             Connected accounts
           </h3>
-          <p className="text-[12.5px] text-ink-500 mt-0.5">
+          <p className="text-[12px] text-ink-500 mt-0.5">
             The platform accounts Publish uses to pull your channel numbers.
           </p>
         </div>
       </div>
 
       {error && (
-        <p role="alert" className="mt-4 text-[12.5px] font-medium text-crimson-700 inline-flex items-start gap-1.5">
+        <p role="alert" className="mt-4 text-[12px] font-medium text-crimson-700 inline-flex items-start gap-1.5">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           {error}
         </p>
       )}
       {notice && (
-        <p className="mt-4 text-[12.5px] font-medium text-grass-700 inline-flex items-center gap-1.5">
+        <p className="mt-4 text-[12px] font-medium text-grass-700 inline-flex items-center gap-1.5">
           <CheckCircle2 className="w-4 h-4" />
           {notice}
         </p>
       )}
 
       {!isLoaded ? (
-        <p className="mt-4 text-[12.5px] text-ink-500">Checking linked accounts…</p>
+        <p className="mt-4 text-[12px] text-ink-500">Checking linked accounts…</p>
       ) : accounts.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-ink-200 px-4 py-5">
           <p className="text-[13px] text-ink-600 leading-relaxed">
@@ -164,7 +164,7 @@ export default function ConnectedAccountsPanel({
           </p>
         </div>
       ) : (
-        <div className="mt-4 divide-y divide-ink-100">
+        <div className="mt-4 divide-y divide-ink-200">
           {accounts.map((account) => {
             const meta = providerMeta(account.provider);
             const platformName = meta.platform ? PLATFORM_LABEL[meta.platform] : null;
@@ -174,16 +174,16 @@ export default function ConnectedAccountsPanel({
                   {account.provider === 'oauth_google' ? (
                     <GoogleMark />
                   ) : (
-                    <span className="w-8 h-8 rounded-full bg-white/[0.06] text-white flex items-center justify-center">
+                    <span className="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 flex items-center justify-center">
                       <Video className="w-4 h-4" />
                     </span>
                   )}
                   <div className="min-w-0">
-                    <div className="text-[13.5px] font-medium text-ink-900 truncate">
+                    <div className="text-[13px] font-medium text-ink-900 truncate">
                       {meta.name}
                       <span className="text-ink-500 font-normal"> · {accountIdentifier(account)}</span>
                     </div>
-                    <div className="text-[11.5px] text-ink-500">
+                    <div className="text-[12px] text-ink-500">
                       {platformName ? `Powers your ${platformName} channel connection` : 'Linked account'}
                     </div>
                   </div>
@@ -204,7 +204,7 @@ export default function ConnectedAccountsPanel({
         </div>
       )}
 
-      <div className="mt-4 pt-4 border-t border-ink-100 flex items-center gap-2 text-[12px] text-ink-500">
+      <div className="mt-4 pt-4 border-t border-ink-200 flex items-center gap-2 text-[12px] text-ink-500">
         <Lock className="w-3.5 h-3.5 text-brand-600 shrink-0" />
         <span>
           Removing an account stops Publish from refreshing that platform&apos;s channels. Past

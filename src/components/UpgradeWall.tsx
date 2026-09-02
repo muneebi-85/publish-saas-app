@@ -6,6 +6,7 @@ import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { useQuota } from '@/hooks/useQuota';
 import { PlanId } from '@/lib/billing/lemonsqueezy';
+import { planDisplayName } from '@/lib/plans';
 import { track } from '@/lib/analytics';
 
 interface Props {
@@ -19,7 +20,9 @@ export const UpgradeWall: React.FC<Props> = ({ feature, requiredPlan, descriptio
   const [error, setError] = useState('');
   const { plan } = useQuota();
 
-  const planLabel = requiredPlan.charAt(0).toUpperCase() + requiredPlan.slice(1);
+  // Catalogue display name ("Creator"), not the capitalized id ("Starter") —
+  // the wall must name the tier the pricing page sells.
+  const planLabel = planDisplayName(requiredPlan);
 
   const handleUpgrade = async () => {
     setLoading(true);
@@ -39,7 +42,9 @@ export const UpgradeWall: React.FC<Props> = ({ feature, requiredPlan, descriptio
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ planId: requiredPlan }),
       });
-      const data = await res.json();
+      // A proxy 502/HTML error page is not JSON — guard so it surfaces as the
+      // friendly checkout error rather than "Unexpected token '<'".
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Checkout failed');
       if (data.url) window.location.href = data.url;
       else throw new Error('No checkout URL returned');
@@ -51,11 +56,11 @@ export const UpgradeWall: React.FC<Props> = ({ feature, requiredPlan, descriptio
 
   return (
     <Card className="max-w-md mx-auto text-center">
-      <div className="w-12 h-12 rounded-2xl bg-white/[0.08] text-ink-600 flex items-center justify-center mx-auto">
+      <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-600 flex items-center justify-center mx-auto">
         <Lock className="w-5 h-5" />
       </div>
-      <h3 className="font-display text-lg font-semibold text-ink-950 mt-4">{feature}</h3>
-      <p className="text-[13px] text-ink-500 mt-2 leading-relaxed">
+      <h1 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900 mt-4">{feature}</h1>
+      <p className="text-[13px] text-ink-600 mt-2 leading-relaxed">
         {description ?? `This feature is available on the ${planLabel} plan and above.`}
       </p>
       {error && <p className="text-[12px] text-crimson-700 mt-3">{error}</p>}

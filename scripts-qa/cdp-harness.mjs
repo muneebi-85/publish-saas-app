@@ -4,12 +4,15 @@
 // cookies fakes a session that Clerk's client JS later invalidates client-side.
 // Run: node scripts-qa/cdp-harness.mjs <signin|upload|projects|templates|debug>
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const PORT = 9223; // 9222 is owned by Lenovo Vantage's Edge — never touch it
 const APP = process.env.TARGET_PORT ? `http://localhost:${process.env.TARGET_PORT}` : 'http://localhost:3100';
-const QA_EMAIL = process.env.QA_EMAIL || 'qa2.freebuff.tester@gmail.com';
-const QA_PASSWORD = process.env.QA_PASSWORD || 'FreebuffQA#2026x!';
+const QA_EMAIL = process.env.QA_EMAIL;
+if (!QA_EMAIL) { console.error('Set QA_EMAIL before running the harness.'); process.exit(1); }
+const QA_PASSWORD = process.env.QA_PASSWORD;
+if (!QA_PASSWORD) { console.error('Set QA_PASSWORD before running the harness.'); process.exit(1); }
 
 function findChrome() {
   const candidates = [
@@ -33,7 +36,7 @@ async function waitForChrome() {
       const chrome = spawn(findChrome(), [
         '--headless=new',
         `--remote-debugging-port=${PORT}`,
-        '--user-data-dir=scripts-qa/.chrome-profile',
+        `--user-data-dir=${resolve('scripts-qa/.chrome-profile')}`,
         '--no-first-run',
         '--no-default-browser-check',
         '--disable-gpu',
@@ -179,7 +182,64 @@ async function fetchPlanStatus(cdp) {
  * Ensure a real authenticated session: go to a protected page (so the middleware
  * hands Clerk a redirect_url), then complete the embedded SignIn form with the
  * QA user's real email + password. Returns true when /api/me/plan says authed.
+ *
+ * When the Clerk instance enforces 2FA (email_code second factor — a real user
+ * would retrieve the code from their inbox), the form path cannot complete
+ * headlessly. The ticket path signs the QA user in through Clerk's official
+ * server-side handoff instead: a sign-in token minted by the backend key is
+ * exchanged at the FAPI's ticket first factor from the browser's own client,
+ * the session token is minted, and the app cookies are stamped — a genuine
+ * Clerk session, owned by clerk-js, same as the form flow.
  */
+const INSTANCE = 'resolved-buzzard-30.clerk.accounts.dev';
+const TOKEN_FILE = process.env.QA_SIGNIN_TOKEN_FILE || 'C:/tmp/sitoken-fresh.txt';
+
+async function ensureSignedInTicket(cdp) {
+  if (!existsSync(TOKEN_FILE)) return false;
+  const token = readFileSync(TOKEN_FILE, 'utf8').trim();
+  if (!token) return false;
+  const result = await cdp.eval(`(async () => {
+    const dbCookie = document.cookie.split('; ').find(c => c.startsWith('__clerk_db_jwt'));
+    const dbjwt = dbCookie ? dbCookie.split('=').slice(1).join('=') : '';
+    const base = 'https://${INSTANCE}';
+    const common = '?__clerk_api_version=2025-11-10&_clerk_js_version=5.127.2&__clerk_db_jwt=' + encodeURIComponent(dbjwt);
+    const post = async (path, params) => {
+      const r = await fetch(base + path + common, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(params).toString(),
+      });
+      return { status: r.status, j: await r.json().catch(() => ({})) };
+    };
+    // Reuse the active session if this client already has one.
+    const g = await fetch(base + '/v1/client' + common, { credentials: 'include' });
+    const gj = await g.json().catch(() => ({}));
+    const active = ((gj.response || {}).sessions || []).find(s => s.status === 'active');
+    let sid = active ? active.id : null;
+    if (!sid) {
+      const c = await post('/v1/client/sign_ins', { locale: 'en-US', identifier: ${JSON.stringify(QA_EMAIL)} });
+      const sia = c.j.response?.id;
+      if (!sia) return { err: 'create: ' + JSON.stringify(c.j).slice(0, 150) };
+      const a = await post('/v1/client/sign_ins/' + sia + '/attempt_first_factor', { strategy: 'ticket', ticket: ${JSON.stringify(token)} });
+      sid = a.j.response?.created_session_id;
+      if (a.j.response?.status !== 'complete' || !sid) return { err: 'attempt: ' + JSON.stringify(a.j).slice(0, 150) };
+    }
+    const t = await post('/v1/client/sessions/' + sid + '/tokens', {});
+    const jwtStr = t.j.jwt || t.j.response?.jwt;
+    if (!jwtStr) return { err: 'mint: ' + JSON.stringify(t.j).slice(0, 150) };
+    const exp = 'expires=Fri, 01 Jan 2027 00:00:00 GMT';
+    document.cookie = '__session=' + jwtStr + '; path=/; samesite=lax; ' + exp;
+    document.cookie = '__session_rQaZVsp-=' + jwtStr + '; path=/; samesite=lax; ' + exp;
+    document.cookie = '__client_uat=' + Math.floor(Date.now() / 1000) + '; path=/; ' + exp;
+    document.cookie = '__client_uat_rQaZVsp-=' + Math.floor(Date.now() / 1000) + '; path=/; ' + exp;
+    return { ok: true, sid };
+  })()`);
+  if (!result || result.err) { console.log('SIGNIN(ticket): failed ->', JSON.stringify(result).slice(0, 200)); return false; }
+  console.log('SIGNIN(ticket): session', result.sid);
+  return true;
+}
+
 async function ensureSignedIn(cdp) {
   await cdp.goto(APP + '/upload');
   await cdp.sleep(1500);
@@ -187,6 +247,20 @@ async function ensureSignedIn(cdp) {
   if (before.status === 200 && before.authenticated === true) {
     console.log('SIGNIN: already authenticated');
     return true;
+  }
+  // On the app origin now — the ticket flow needs the app's cookies writable.
+  if (await ensureSignedInTicket(cdp)) {
+    await cdp.sleep(800);
+    const mid = await fetchPlanStatus(cdp);
+    if (mid.status === 200 && mid.authenticated === true) {
+      console.log('SIGNIN: ticket authenticated');
+      return true;
+    }
+    // cookies were just set — reload so the middleware reads them
+    await cdp.goto(APP + '/upload');
+    await cdp.sleep(2000);
+    const after = await fetchPlanStatus(cdp);
+    if (after.status === 200 && after.authenticated === true) return true;
   }
 
   const onSignIn = await cdp.eval(`location.pathname.startsWith('/sign-in')`);
@@ -196,32 +270,33 @@ async function ensureSignedIn(cdp) {
   }
   console.log('SIGNIN: on sign-in page, filling credentials…');
 
-  // Identifier (email) field
-  await cdp.waitFor(`!!document.querySelector('input[name="identifier"]')`, 20000);
-  const setIdent = await cdp.eval(setInputValue('input[name="identifier"]', QA_EMAIL));
+  // Identifier (email) field — newer clerk-js dropped name="identifier"; type matches both eras
+  await cdp.waitFor(`!!document.querySelector('input[name="identifier"], input[type="email"]')`, 20000);
+  const setIdent = await cdp.eval(setInputValue('input[name="identifier"], input[type="email"]', QA_EMAIL));
   await cdp.sleep(300);
 
   // Password field is usually on the same screen for password-based accounts.
-  const hasPassword = await cdp.eval(`!!document.querySelector('input[name="password"]')`);
+  const hasPassword = await cdp.eval(`!!document.querySelector('input[name="password"], input[type="password"]')`);
   if (hasPassword) {
-    const setPw = await cdp.eval(setInputValue('input[name="password"]', QA_PASSWORD));
+    const setPw = await cdp.eval(setInputValue('input[name="password"], input[type="password"]', QA_PASSWORD));
     await cdp.sleep(200);
     console.log('SIGNIN: set ident/pw ->', setIdent, '/', setPw);
   } else {
     // Two-step flow: submit identifier first, then fill the password step.
     await cdp.clickSubmit();
-    await cdp.waitFor(`!!document.querySelector('input[name="password"]')`, 15000);
-    await cdp.eval(setInputValue('input[name="password"]', QA_PASSWORD));
+    await cdp.waitFor(`!!document.querySelector('input[name="password"], input[type="password"]')`, 15000);
+    await cdp.eval(setInputValue('input[name="password"], input[type="password"]', QA_PASSWORD));
   }
 
   const fieldValues = await cdp.eval(`Array.from(document.querySelectorAll('input')).map(i => i.name + '=' + i.value).join(' | ')`);
   const buttons = await cdp.eval(`Array.from(document.querySelectorAll('button')).map(b => (b.type || 'no-type') + ':' + b.textContent.trim().slice(0, 20)).join(' || ')`);
   console.log('SIGNIN: field values ->', fieldValues);
   console.log('SIGNIN: buttons ->', buttons);
-  // Click the real Clerk primary button: type=submit with exact text "Continue"
-  // (the social "Continue with Google" is also type=submit — never pick it).
+  // Click the real Clerk primary submit button: exact text "Continue" or
+  // "Log in" — the social "Continue with Google" is also type=submit, and an
+  // exact match is what excludes it.
   const clicked = await cdp.eval(`(() => {
-    const b = Array.from(document.querySelectorAll('button[type="submit"]')).find(b => b.textContent.trim() === 'Continue');
+    const b = Array.from(document.querySelectorAll('button[type="submit"]')).find(b => ['Continue', 'Log in'].includes(b.textContent.trim()));
     if (!b) return false;
     const r = b.getBoundingClientRect();
     const opts = { bubbles: true, cancelable: true };
@@ -232,7 +307,7 @@ async function ensureSignedIn(cdp) {
   await cdp.sleep(500);
 
   // If an OTP step appears (shouldn't for password auth), report it.
-  const otpStep = await cdp.eval(`!!document.querySelector('input[name="code"]')`);
+  const otpStep = await cdp.eval(`!!document.querySelector('input[name="code"], input[autocomplete="one-time-code"]')`);
   if (otpStep) console.log('SIGNIN: OTP step appeared (unexpected for password auth)');
 
   await cdp.waitFor(`!location.pathname.startsWith('/sign-in')`, 30000).catch(() => {});

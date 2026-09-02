@@ -42,22 +42,37 @@ const TIERS: {
   popular: PRESENTATION[id].popular,
 }));
 
+// Every row describes something the app actually enforces or provides today:
+// the humanizer and coach are requirePaidPlan() routes on the server, export
+// is available on every plan (the report page renders it unconditionally), and
+// priority support matches the catalogue and the help center's reply promise.
+// The fictional rows this table used to carry — per-plan platform-report
+// counts, team seats, white-label PDFs — described no code that exists.
 const COMPARISON = [
   { feature: 'Monetization risk review', free: true,  starter: true,  pro: true,  agency: true },
   { feature: 'Copyright auditor',        free: true,  starter: true,  pro: true,  agency: true },
+  { feature: 'All 9 checks per review',  free: true,  starter: true,  pro: true,  agency: true },
+  { feature: 'Report export (PDF)',      free: true,  starter: true,  pro: true,  agency: true },
   { feature: 'AI script humanizer',      free: false, starter: true,  pro: true,  agency: true },
-  { feature: 'Platform reports',         free: '1',   starter: '2',   pro: '5',   agency: '5' },
-  { feature: 'White-label PDFs',         free: false, starter: false, pro: false, agency: true },
-  { feature: 'Team seats',               free: '1',   starter: '1',   pro: '3',   agency: '15' },
+  { feature: 'AI Coach',                 free: false, starter: true,  pro: true,  agency: true },
+  { feature: 'Priority support',         free: false, starter: true,  pro: true,  agency: true },
 ];
 
 export default function PricingPage() {
   const [loadingId, setLoadingId] = useState<PlanId | null>(null);
   const [checkoutError, setCheckoutError] = useState('');
-  const { plan: currentPlan } = useQuota();
+  const { plan: currentPlan, loading: quotaLoading, authenticated } = useQuota();
 
   const handleUpgrade = async (planId: PlanId | null) => {
     if (!planId) return;
+    // /pricing is a public route: an anonymous visitor clicking a paid tier
+    // cannot open a checkout (the route is auth-bound by design — the webhook
+    // must credit a real account). Send them to sign-up with the intent kept
+    // in the redirect instead of surfacing a raw 401 as "Not authenticated".
+    if (!authenticated) {
+      window.location.href = '/sign-up?redirect_url=%2Fpricing';
+      return;
+    }
     setLoadingId(planId);
     setCheckoutError('');
 
@@ -65,10 +80,14 @@ export default function PricingPage() {
     // Opening a second checkout would bill them twice — plan changes go
     // through the customer portal, which swaps the variant on the existing
     // subscription (upgrade, downgrade, or cancel).
-    if (currentPlan !== 'free' && currentPlan !== planId) {
+    // The loading gate matters: useQuota's initial state is plan:'free', and
+    // acting on it mid-load would bounce a subscribed user to a second
+    // checkout instead of the portal.
+    if (!quotaLoading && currentPlan !== 'free' && currentPlan !== planId) {
       window.location.href = '/api/billing/portal';
       return;
     }
+    if (quotaLoading) return;
 
     try {
       const res = await fetch('/api/billing/checkout', {
@@ -76,8 +95,19 @@ export default function PricingPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ planId, interval: 'monthly' }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Checkout failed');
+      // Guarded: a proxy error page is HTML, and unguarded parsing would
+      // surface as "Unexpected token '<'" in the checkout-error UI.
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // The server already holds a live subscription for this account: the
+        // portal is the only correct next step, so take it rather than showing
+        // an error the user cannot act on.
+        if (data?.portalRequired) {
+          window.location.href = '/api/billing/portal';
+          return;
+        }
+        throw new Error(data.error || 'Checkout failed');
+      }
       if (data.url) window.location.href = data.url;
     } catch (err) {
       setCheckoutError((err as Error).message);
@@ -94,10 +124,10 @@ export default function PricingPage() {
         showUtility
       />
 
-      <div className="space-y-10">
+      <div className="space-y-6">
         {/* Error */}
         {checkoutError && (
-          <div className="max-w-md mx-auto text-center rounded-xl bg-crimson-50 border border-crimson-200 px-4 py-3 text-sm text-crimson-700">
+          <div className="max-w-md mx-auto text-center rounded-xl bg-crimson-50 border border-crimson-200 p-4 text-[13px] text-crimson-700">
             {checkoutError}
           </div>
         )}
@@ -105,51 +135,56 @@ export default function PricingPage() {
         {/* Tiers */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-5xl mx-auto">
           {TIERS.map((tier) => {
-            const isCurrent = tier.id === currentPlan;
+            // While the plan is still loading, none of the tier buttons may
+            // act: "isCurrent" would mislabel a paid user as free and open a
+            // second checkout against their live subscription.
+            const isCurrent = !quotaLoading && tier.id === currentPlan;
             const ctaLabel = isCurrent
               ? 'Current plan'
               : tier.id === 'free'
                 ? 'Get started'
                 : tier.id === 'agency'
                   ? 'Talk to us'
-                  : (currentPlan === 'free' ? `Upgrade to ${tier.name}` : `Switch to ${tier.name}`);
+                  : (quotaLoading || currentPlan === 'free'
+                    ? `Upgrade to ${tier.name}`
+                    : `Switch to ${tier.name}`);
             return (
               <div
                 key={tier.name}
-                className={`relative bg-surface-panel rounded-2xl p-6 flex flex-col transition-all ${
+                className={`relative bg-surface-panel rounded-xl p-6 flex flex-col transition-all ${
                   tier.popular
                     ? 'border-2 border-brand-600 shadow-card'
-                    : 'border border-white/[0.06] hover:border-white/[0.14] hover:shadow-card'
+                    : 'border border-ink-200 hover:border-ink-300 hover:shadow-card'
                 }`}
               >
                 {tier.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-3 py-1 bg-brand-600 text-white rounded-full text-[10px] font-semibold shadow-sm whitespace-nowrap">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-2.5 h-6 bg-brand-600 text-on-brand rounded-md text-[11px] font-semibold shadow-xs whitespace-nowrap">
                     <Sparkles className="w-3 h-3" /> Most popular
                   </div>
                 )}
 
                 <div className="flex items-center justify-between">
-                  <div className="font-display text-lg font-bold tracking-tight text-ink-900">
+                  <div className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
                     {tier.name}
                   </div>
                   {isCurrent && <Badge variant="success">Current</Badge>}
                 </div>
-                <div className="text-[12.5px] mt-1.5 leading-relaxed text-ink-600">{tier.blurb}</div>
+                <div className="text-[12px] mt-1.5 leading-relaxed text-ink-600">{tier.blurb}</div>
 
                 <div className="mt-6 flex items-baseline gap-1.5">
-                  <span className="font-display text-[36px] font-bold tracking-tight tabular-nums leading-none text-ink-900">
+                  <span className="font-display text-[40px] font-semibold tracking-[-0.025em] tabular-nums leading-none text-ink-900">
                     {tier.price === null ? 'Custom' : `$${tier.price}`}
                   </span>
                   {tier.price !== null && <span className="text-[13px] text-ink-500">/mo</span>}
                 </div>
                 <div className="text-[12px] mt-2 font-medium text-ink-900">{tier.audits}</div>
 
-                <div className="mt-5 h-px w-full bg-white/[0.08]" />
+                <div className="mt-5 h-px w-full bg-ink-100" />
 
                 <ul className="mt-5 space-y-2.5 flex-1 text-ink-700">
                   {tier.features.map((f) => (
                     <li key={f} className="flex items-start gap-2.5 text-[13px] leading-relaxed">
-                      <Check className="w-4 h-4 shrink-0 mt-0.5 text-brand-600" strokeWidth={2.5} />
+                      <Check className="w-4 h-4 shrink-0 mt-0.5 text-brand-600" strokeWidth={3} />
                       {f}
                     </li>
                   ))}
@@ -159,7 +194,7 @@ export default function PricingPage() {
                   variant={isCurrent ? 'ghost' : tier.popular ? 'dark' : 'primary'}
                   size="lg"
                   full
-                  disabled={isCurrent}
+                  disabled={isCurrent || (quotaLoading && tier.id !== 'free' && tier.id !== 'agency')}
                   isLoading={loadingId === tier.id}
                   onClick={() => {
                     if (isCurrent) return;
@@ -178,25 +213,25 @@ export default function PricingPage() {
         </div>
 
         {/* Comparison table */}
-        <div className="rounded-2xl border border-white/[0.06] bg-surface-panel overflow-hidden max-w-5xl mx-auto">
-          <div className="px-6 py-5 border-b border-ink-100">
-            <h2 className="font-display text-lg font-bold tracking-tight text-ink-900">Compare plans</h2>
-            <p className="text-xs text-ink-500 mt-1">Everything included, side by side.</p>
+        <div className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel overflow-hidden max-w-5xl mx-auto">
+          <div className="px-6 py-5 border-b border-ink-200">
+            <h2 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">Compare plans</h2>
+            <p className="text-[12px] text-ink-500 mt-1">Everything included, side by side.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px]">
               <thead>
-                <tr className="bg-white/[0.03] text-left">
-                  <th className="px-6 py-3 text-xs font-medium text-ink-500">Feature</th>
+                <tr className="bg-ink-50 text-left">
+                  <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">Feature</th>
                   {PLAN_ORDER.map((id) => (
-                    <th key={id} className="px-6 py-3 text-xs font-medium text-ink-500 text-center">{PLANS[id].name}</th>
+                    <th key={id} className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 text-center">{PLANS[id].name}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-ink-100">
+              <tbody className="divide-y divide-ink-200">
                 {COMPARISON.map((row) => (
-                  <tr key={row.feature} className="hover:bg-white/[0.06] transition-colors">
-                    <td className="px-6 py-3.5 text-sm text-ink-900">{row.feature}</td>
+                  <tr key={row.feature} className="hover:bg-ink-50 transition-colors">
+                    <td className="px-6 py-3.5 text-[13px] text-ink-900">{row.feature}</td>
                     {PLAN_ORDER.map((k) => {
                       const v = row[k];
                       return (
@@ -204,7 +239,7 @@ export default function PricingPage() {
                           {typeof v === 'boolean' ? (
                             v ? <Check className="w-4 h-4 text-brand-600 mx-auto" /> : <span className="text-ink-300">—</span>
                           ) : (
-                            <span className="text-sm font-medium text-ink-900 tabular-nums">{v}</span>
+                            <span className="text-[13px] font-medium text-ink-900 tabular-nums">{v}</span>
                           )}
                         </td>
                       );
@@ -217,14 +252,14 @@ export default function PricingPage() {
         </div>
 
         {/* Guarantee */}
-        <div className="rounded-2xl border border-white/[0.06] bg-surface-panel p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between max-w-5xl mx-auto">
+        <div className="rounded-xl shadow-xs border border-ink-200 bg-surface-panel p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between max-w-5xl mx-auto">
           <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-full bg-brand-50 border border-brand-100 text-brand-600 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 ring-1 ring-inset ring-brand-100 flex items-center justify-center shrink-0">
               <ShieldCheck className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-sm font-bold text-ink-900">Cancel anytime, keep your data</div>
-              <p className="text-xs text-ink-500 mt-1 max-w-xl leading-relaxed">
+              <div className="text-[13px] font-semibold text-ink-900">Cancel anytime, keep your data</div>
+              <p className="text-[12px] text-ink-500 mt-1 max-w-xl leading-relaxed">
                 No contracts, no cancellation fees. If you downgrade, your past reports stay accessible for
                 30 days so you can export anything you need.
               </p>
@@ -244,7 +279,7 @@ export default function PricingPage() {
         </div>
 
         {/* Auto-renewal disclosure — required by Lemon Squeezy and consumer law */}
-        <p className="text-center text-[11px] text-ink-400 max-w-2xl mx-auto leading-relaxed">
+        <p className="text-center text-[11px] text-ink-500 max-w-2xl mx-auto leading-relaxed">
           Paid plans are <strong className="text-ink-500">auto-renewing subscriptions</strong> billed
           monthly by <strong className="text-ink-500">Lemon Squeezy</strong> (Merchant of
           Record). Your card is charged automatically at the start of each period until you cancel.

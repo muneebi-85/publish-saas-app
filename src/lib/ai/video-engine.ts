@@ -18,10 +18,14 @@
  * the next "trained on 12.7M videos".
  */
 
-import { analyzeImage } from './nvidia';
+import { analyzeImage, extractJSON } from './nvidia';
 import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore } from './guardrails';
 import type { VideoMetric } from '../types';
 import type { PlatformName } from './platform-engine';
+// The sampling constants, imported rather than re-hardcoded: the vision prompts
+// and the basis sentence state what was sampled, and both must stay true when
+// the constants are tuned. frame-signals.ts is DOM-free by design.
+import { HOOK_FRAMES, PROBE_INTERVAL, PROBE_WINDOWS } from '../video/frame-signals';
 
 /**
  * What the browser measured, plus where it put the sheets.
@@ -133,11 +137,15 @@ Return JSON only, exactly this schema and these field names:
 /**
  * Analyze decoded frames. Never throws — a vision failure degrades to the
  * measured half, which is still real.
+ *
+ * The creator's AI declaration is deliberately NOT an input here: the frames
+ * were decoded, so the artifact risk is read from the frames themselves —
+ * folding the self-report in would let a declaration inflate or deflate a
+ * value the vision pass actually measured.
  */
 export async function analyzeVideoFrames(
   signals: VideoFrameInput,
   platform: PlatformName,
-  aiGenerated: boolean,
 ): Promise<VideoMetric> {
   const cols = signals.height > signals.width ? 6 : 4;
 
@@ -147,7 +155,7 @@ export async function analyzeVideoFrames(
   const [sheetText, hookText] = await Promise.all([
     safeVision(signals.sheetUrl, sheetPrompt(cols, signals.sheetFrames, signals.durationSeconds)),
     signals.hookSheetUrl
-      ? safeVision(signals.hookSheetUrl, hookPrompt(4, platform))
+      ? safeVision(signals.hookSheetUrl, hookPrompt(HOOK_FRAMES, platform))
       : Promise.resolve(null),
   ]);
 
@@ -180,9 +188,10 @@ export async function analyzeVideoFrames(
     frameRepetitionCount: signals.staticPairs,
     aiVisualArtifactRisk: sheet
       ? normalizeRisk(sheet.aiVisualArtifactRisk)
-      : aiGenerated
-        ? 'Medium'
-        : 'Low',
+      // Vision returned nothing: the artifact read is unevaluated, and an
+      // unevaluated layer never asserts the safe band. 'Medium' matches
+      // normalizeRisk's own default for unknown values.
+      : 'Medium',
     resolution: resolutionLabel(signals.width, signals.height),
     compressionQuality: compressionLabel(signals),
     visualHookScore: hook ? conservativeScore(hook.visualHookScore ?? 50) : null,
@@ -297,7 +306,7 @@ export function pacingScore(
 function basisSentence(s: VideoFrameInput): string {
   const probe =
     s.comparisons >= 2
-      ? `cut density from ${s.comparisons} frame pairs 0.4s apart, covering ${Math.round(s.probedSeconds)}s of footage sampled in 3 windows`
+      ? `cut density from ${s.comparisons} frame pairs ${PROBE_INTERVAL}s apart, covering ${Math.round(s.probedSeconds)}s of footage sampled in ${PROBE_WINDOWS} windows`
       : 'cut density not measurable from the frames that decoded';
   return `Measured in your browser from ${s.sheetFrames} frames spread across the file, plus ${probe}. Resolution and bitrate are read from the file itself. Editing pace is a banded reading of the measured cut rate, not an observed score; camera movement, shot variety and artifact risk are a vision model's judgement of the sampled frames.`;
 }
@@ -359,21 +368,6 @@ function normalizeRisk(v: string | undefined): 'Low' | 'Medium' | 'High' {
   return 'Medium';
 }
 
-function extractJSON<T>(text: string): T | null {
-  const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    const m = cleaned.match(/\{[\s\S]*\}/);
-    if (!m) return null;
-    try {
-      return JSON.parse(m[0]) as T;
-    } catch {
-      return null;
-    }
-  }
-}
-
 /**
  * The explicit "no frames were decoded" result.
  *
@@ -396,7 +390,11 @@ export function unmeasuredVideo(
     cameraMovementRating: 'Not analyzed — no video frames were decoded',
     sceneTransitionRate: 'Not analyzed — no video frames were decoded',
     frameRepetitionCount: null,
-    aiVisualArtifactRisk: aiGenerated ? 'Medium' : 'Low',
+    // 'Medium' per the conservative-default convention used by normalizeRisk:
+    // this layer asserts no safe band for footage nobody looked at. (An
+    // AI-declared upload keeps Medium for the same reason — the risk is
+    // unevaluated, not cleared.)
+    aiVisualArtifactRisk: 'Medium',
     resolution: 'Unknown',
     compressionQuality: 'Unknown',
     visualHookScore: null,

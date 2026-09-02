@@ -17,7 +17,8 @@ if (!SECRET) {
 }
 
 const email = 'qa.buffy.test@proton.me';
-const password = 'BuffyTest123!';
+const password = process.env.QA_PASSWORD;
+if (!password) { console.error('Set QA_PASSWORD (the new account password) before running.'); process.exit(1); }
 
 fetch('https://api.clerk.com/v1/users', {
   method: 'POST',

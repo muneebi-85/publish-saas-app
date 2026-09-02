@@ -3,7 +3,8 @@
  *
  * Every user gets a unique referral code. When a new account attaches a code,
  * BOTH sides earn one free audit ("1 free audit per referral", credited as
- * `referralCredits`, consumed before the plan's monthly allowance). The credit
+ * `referralCredits`, spent once the plan's monthly allowance is full — that is
+ * what makes them extend the wall). The credit
  * is granted inside one transaction and guarded by a `granted` flag + a unique
  * referee constraint, so a retried attach can never double-pay.
  *
@@ -70,6 +71,7 @@ export async function getReferralStatus(userId: string): Promise<ReferralStatus>
       take: 50,
       select: {
         granted: true,
+        referrerCreditedAt: true,
         createdAt: true,
         referee: { select: { name: true } },
       },
@@ -82,17 +84,20 @@ export async function getReferralStatus(userId: string): Promise<ReferralStatus>
     signups: referrals.map((r) => ({
       name: r.referee.name,
       at: r.createdAt,
-      rewarded: r.granted,
+      // The referrer's side of the reward: paid when the signup completes
+      // their first review, not at signup. "Pending" is the honest state
+      // until then.
+      rewarded: r.referrerCreditedAt !== null,
     })),
   };
 }
 
 export type AttachResult =
   | { ok: true; credits: number; signups: number }
-  | { ok: false; error: string };
+  | { ok: false; error: string; retryable?: boolean };
 
 /**
- * Attach a referral code to the currently-logged-in user and credit both sides.
+ * Attach a referral code to the currently-logged-in user.
  *
  * Safe against abuse:
  *  - self-referral (your own code) is rejected.
@@ -100,6 +105,12 @@ export type AttachResult =
  *  - the referrer must actually exist.
  * Idempotent: a second attach with a different code for the same account returns
  * ok with the already-committed state rather than minting new credits.
+ *
+ * WHO GETS PAID WHEN
+ * The REFEREE's +1 lands here — the welcome audit they came to use. The
+ * REFERRER's +1 is NOT paid at attach: it lands when the referee completes
+ * their first real review (see the review worker), because paying it at
+ * signup let a farmer mint unlimited audits from throwaway accounts.
  */
 export async function attachReferral(
   code: string,
@@ -137,11 +148,9 @@ export async function attachReferral(
         select: { referrerId: true, refereeId: true },
       });
 
-      // Both sides get one free audit.
-      await tx.user.update({
-        where: { id: referrer.id },
-        data: { referralCredits: { increment: 1 } },
-      });
+      // Only the referee is paid at attach (their welcome audit). The
+      // referrer's credit waits for the referee's first completed review —
+      // see the header comment and the review worker.
       await tx.user.update({
         where: { id: refereeDbUserId },
         data: { referralCredits: { increment: 1 } },
@@ -166,6 +175,9 @@ export async function attachReferral(
     // Unique refereeId violation from a concurrent attach — treat as done.
     if ((err as { code?: string }).code === 'P2002') return { ok: false, error: 'Already claimed.' };
     console.error('[attachReferral] failed:', err);
-    return { ok: false, error: 'The referral could not be attached. Please try again.' };
+    // `retryable` distinguishes a server fault (DB outage, constraint beyond
+    // the referee) from a bad code: the route must answer 503 for this, not
+    // 400, or a transient failure tells the user their input was wrong.
+    return { ok: false, error: 'The referral could not be attached. Please try again.', retryable: true };
   }
 }

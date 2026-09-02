@@ -9,16 +9,13 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, UploadCloud, LineChart, FolderKanban, Sparkles,
   Wand2, Search, BarChart3, LayoutGrid, FileText, Palette, Settings,
-  HelpCircle, ChevronUp, Sun, Moon, Radio, ArrowUpRight, LogOut,
+  HelpCircle, ChevronUp, Sun, Moon, Radio, ArrowUpRight, LogOut, Bell,
 } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useTheme } from 'next-themes';
 import { Logo } from '@/components/ui/Logo';
 import { useQuota } from '@/hooks/useQuota';
-
-const PLAN_LABEL: Record<string, string> = {
-  free: 'Free Plan', starter: 'Starter Plan', pro: 'Pro Plan', agency: 'Agency Plan',
-};
+import { planDisplayName } from '@/lib/plans';
 
 type NavItem = { label: string; href: string; icon: React.ElementType; badge?: string };
 
@@ -56,8 +53,15 @@ const NAV_SECTIONS: { heading: string | null; items: NavItem[] }[] = [
     items: [
       { label: 'Connected Channels', href: '/connected-channels', icon: Radio    },
       { label: 'Brand Kit',          href: '/brand-kit',          icon: Palette  },
-      { label: 'Settings',           href: '/settings',           icon: Settings },
+      { label: 'Settings',           href: '/settings',          icon: Settings },
     ],
+  },
+  // Notifications has a bell in the desktop Topbar, but the Topbar is hidden
+  // below md — without this entry the page is unreachable from the mobile
+  // drawer.
+  {
+    heading: null,
+    items: [{ label: 'Notifications', href: '/notifications', icon: Bell }],
   },
 ];
 
@@ -81,11 +85,11 @@ export const Sidebar: React.FC<{ isMobile?: boolean }> = ({ isMobile }) => {
   return (
     <aside className={clsx(
       'bg-surface-panel flex flex-col select-none shrink-0',
-      isMobile ? 'w-full h-full' : 'w-[260px] border-r border-white/[0.06] h-screen sticky top-0 z-30',
+      isMobile ? 'w-full h-full' : 'w-[248px] border-r border-ink-200 h-screen sticky top-0 z-30',
     )}>
       {/* Brand */}
       {!isMobile && (
-        <div className="px-5 h-20 flex items-center border-b border-white/[0.06]">
+        <div className="px-4 h-14 flex items-center border-b border-ink-200">
           <Link href="/dashboard" className="block">
             <Logo size="md" />
           </Link>
@@ -93,15 +97,17 @@ export const Sidebar: React.FC<{ isMobile?: boolean }> = ({ isMobile }) => {
       )}
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+      <nav className="flex-1 px-2.5 py-3 overflow-y-auto">
         {NAV_SECTIONS.map((section, si) => (
-          <div key={section.heading ?? 'root'} className={si > 0 ? 'mt-6' : ''}>
+          // Two sections have no heading (Dashboard, Notifications), so the
+          // key needs the index — both would otherwise claim 'root'.
+          <div key={section.heading ?? `root-${si}`} className={si > 0 ? 'mt-5' : ''}>
             {section.heading && (
-              <div className="px-3 mb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-500">
+              <div className="px-2.5 mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">
                 {section.heading}
               </div>
             )}
-            <div className="space-y-0.5">
+            <div className="space-y-px">
               {section.items.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
@@ -111,25 +117,21 @@ export const Sidebar: React.FC<{ isMobile?: boolean }> = ({ isMobile }) => {
                     href={item.href}
                     aria-current={active ? 'page' : undefined}
                     className={clsx(
-                      'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[14px] font-medium transition-colors duration-180',
+                      'group relative flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[13px] transition-colors duration-150',
                       active
-                        ? 'bg-white/[0.06] text-white'
-                        : 'text-ink-600 hover:text-white hover:bg-white/[0.04]',
+                        ? 'bg-ink-100 text-ink-900 font-semibold'
+                        : 'text-ink-600 font-medium hover:text-ink-900 hover:bg-ink-50',
                     )}
                   >
-                    {active && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[2px] rounded-r bg-brand-600" />
-                    )}
                     <Icon
                       className={clsx(
-                        'w-[18px] h-[18px] shrink-0 transition-colors',
-                        active ? 'text-brand-600' : 'text-ink-500 group-hover:text-ink-700',
+                        'w-4 h-4 shrink-0 transition-colors',
+                        active ? 'text-brand-600' : 'text-ink-400 group-hover:text-ink-600',
                       )}
-                      strokeWidth={1.75}
                     />
                     <span className="flex-1 truncate">{item.label}</span>
                     {item.badge && (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md leading-none bg-brand-600/12 text-brand-600 border border-brand-600/20">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] px-1.5 h-4 inline-flex items-center rounded-md bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
                         {item.badge}
                       </span>
                     )}
@@ -141,24 +143,27 @@ export const Sidebar: React.FC<{ isMobile?: boolean }> = ({ isMobile }) => {
         ))}
       </nav>
       {/* Plan + credits */}
-      <div className="px-3 pb-3">
+      <div className="px-2.5 pb-2.5">
         <Link
           href="/pricing?upgrade=1"
-          className="group block rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 hover:border-white/[0.16] transition-colors duration-180"
+          className="group block rounded-lg border border-ink-200 bg-surface-panel shadow-xs p-3 hover:border-ink-300 transition-colors duration-150"
         >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[13px] font-semibold text-white">
-              {loading ? '…' : (PLAN_LABEL[plan] ?? 'Free Plan')}
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-[12px] font-semibold text-ink-900">
+              {loading ? '…' : `${planDisplayName(plan)} Plan`}
             </span>
-            <span className="inline-flex items-center gap-0.5 text-[12px] font-semibold text-brand-600">
+            <span className="inline-flex items-center gap-0.5 text-[12px] font-semibold text-brand-600 group-hover:text-brand-700">
               Upgrade
-              <ArrowUpRight className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-180" />
+              <ArrowUpRight className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-150" />
             </span>
           </div>
           <div
-            className="h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden"
+            className="h-1 w-full rounded-full bg-ink-100 overflow-hidden"
             role="progressbar"
-            aria-valuenow={auditsUsed}
+            // Clamped: referral credits can legitimately push usage past the
+            // plan's monthly allowance (they extend the wall), and an
+            // aria-valuenow above aria-valuemax is an invalid ARIA state.
+            aria-valuenow={Math.min(auditsUsed, auditsLimit)}
             aria-valuemin={0}
             aria-valuemax={auditsLimit}
             aria-label="Analyses used this cycle"
@@ -168,29 +173,29 @@ export const Sidebar: React.FC<{ isMobile?: boolean }> = ({ isMobile }) => {
               style={{ width: `${Math.min(100, percentUsed)}%` }}
             />
           </div>
-          <div className="mt-2.5 text-[11.5px] text-ink-500 font-mono tabular-nums">
+          <div className="mt-2 text-[11px] text-ink-500 tabular-nums">
             {loading ? 'Loading…' : `${auditsUsed} / ${auditsLimit} analyses used`}
           </div>
         </Link>
       </div>
 
       {/* User footer */}
-      <div className="px-3 pb-3 border-t border-white/[0.06] pt-3">
+      <div className="px-2.5 pb-2.5 border-t border-ink-200 pt-2.5">
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
-            <button className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/[0.04] transition-colors duration-180 focus-ring outline-none">
+            <button className="w-full flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-ink-100 transition-colors duration-150 focus-ring outline-none">
               {avatar ? (
-                <Image src={avatar} alt="" width={32} height={32} className="rounded-full object-cover shrink-0" />
+                <Image src={avatar} alt="" width={28} height={28} className="rounded-full object-cover shrink-0" />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-brand-600 text-[#060606] flex items-center justify-center text-[13px] font-semibold shrink-0">
+                <div className="w-7 h-7 rounded-full bg-ink-900 text-surface-canvas flex items-center justify-center text-[12px] font-semibold shrink-0">
                   {initial}
                 </div>
               )}
               <div className="flex-1 min-w-0 text-left">
-                <div className="text-[13px] font-semibold text-white truncate">{name}</div>
-                <div className="text-[11.5px] text-ink-500 truncate">{email || 'Creator'}</div>
+                <div className="text-[12px] font-semibold text-ink-900 truncate">{name}</div>
+                <div className="text-[11px] text-ink-500 truncate">{email || 'Creator'}</div>
               </div>
-              <ChevronUp className="w-4 h-4 text-ink-500" />
+              <ChevronUp className="w-3.5 h-3.5 text-ink-400 shrink-0" />
             </button>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
@@ -198,16 +203,16 @@ export const Sidebar: React.FC<{ isMobile?: boolean }> = ({ isMobile }) => {
               side="top"
               align="start"
               sideOffset={8}
-              className="w-[236px] bg-surface-raised border border-white/[0.1] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] p-1.5 z-50 animate-enter-scale origin-bottom-left"
+              className="w-[224px] bg-surface-panel border border-ink-200 rounded-xl shadow-float p-1 z-50 animate-enter-scale origin-bottom-left"
             >
               <DropdownMenu.Item asChild>
-                <Link href="/settings" className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-ink-700 hover:bg-white/[0.06] hover:text-white focus:bg-white/[0.06] focus:text-white outline-none cursor-pointer">
-                  <Settings className="w-4 h-4 text-ink-500" /> Account settings
+                <Link href="/settings" className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] text-ink-700 hover:bg-ink-100 hover:text-ink-900 focus:bg-ink-100 focus:text-ink-900 outline-none cursor-pointer">
+                  <Settings className="w-4 h-4 text-ink-400" /> Account settings
                 </Link>
               </DropdownMenu.Item>
               <DropdownMenu.Item asChild>
-                <Link href="/help" className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-ink-700 hover:bg-white/[0.06] hover:text-white focus:bg-white/[0.06] focus:text-white outline-none cursor-pointer">
-                  <HelpCircle className="w-4 h-4 text-ink-500" /> Help center
+                <Link href="/help" className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] text-ink-700 hover:bg-ink-100 hover:text-ink-900 focus:bg-ink-100 focus:text-ink-900 outline-none cursor-pointer">
+                  <HelpCircle className="w-4 h-4 text-ink-400" /> Help center
                 </Link>
               </DropdownMenu.Item>
               <DropdownMenu.Item
@@ -215,24 +220,24 @@ export const Sidebar: React.FC<{ isMobile?: boolean }> = ({ isMobile }) => {
                   e.preventDefault();
                   setTheme(theme === 'dark' ? 'light' : 'dark');
                 }}
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-ink-700 hover:bg-white/[0.06] hover:text-white focus:bg-white/[0.06] focus:text-white outline-none cursor-pointer"
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] text-ink-700 hover:bg-ink-100 hover:text-ink-900 focus:bg-ink-100 focus:text-ink-900 outline-none cursor-pointer"
               >
                 {theme === 'dark' ? (
-                  <Sun className="w-4 h-4 text-ink-500" />
+                  <Sun className="w-4 h-4 text-ink-400" />
                 ) : (
-                  <Moon className="w-4 h-4 text-ink-500" />
+                  <Moon className="w-4 h-4 text-ink-400" />
                 )}
-                Toggle Theme
+                Toggle theme
               </DropdownMenu.Item>
-              <DropdownMenu.Separator className="my-1 h-px bg-white/[0.06]" />
+              <DropdownMenu.Separator className="my-1 h-px bg-ink-200 -mx-1" />
               <DropdownMenu.Item
                 onSelect={(e) => {
                   e.preventDefault();
                   void signOut({ redirectUrl: '/' });
                 }}
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-crimson-500 hover:bg-crimson-500/10 focus:bg-crimson-500/10 outline-none cursor-pointer"
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] text-crimson-600 hover:bg-crimson-50 focus:bg-crimson-50 outline-none cursor-pointer"
               >
-                <LogOut className="w-4 h-4 text-crimson-500" />
+                <LogOut className="w-4 h-4 text-crimson-600" />
                 Sign out
               </DropdownMenu.Item>
             </DropdownMenu.Content>

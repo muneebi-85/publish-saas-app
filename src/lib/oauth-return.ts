@@ -23,6 +23,11 @@ export const OAUTH_RETURN_DEFAULT = '/connected-channels';
  */
 export function safeRedirect(raw: string | undefined, fallback: string = OAUTH_RETURN_DEFAULT): string {
   if (!raw) return fallback;
+  // Control characters are rejected ANYWHERE in the value, not just at the
+  // edges. `String.trim()` leaves interior tabs alone, and WHATWG URL parsing
+  // strips them later — so `/\t//evil.com` survived this guard, then parsed as
+  // the cross-origin `///evil.com` once it reached a Location header.
+  if (/[\x00-\x1f\x7f]/.test(raw)) return fallback;
   const trimmed = raw.trim();
   if (!trimmed.startsWith('/')) return fallback;
   // Protocol-relative (//host) and backslash-escaped (/\host) origins both

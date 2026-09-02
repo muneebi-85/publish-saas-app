@@ -30,8 +30,19 @@ export const maxDuration = 60;
 /** Rows processed per run. Bounded so one sweep cannot exceed maxDuration. */
 const BATCH = 50;
 
-/** Still-billable states. Belt and braces: POST already cancelled these. */
-const BILLABLE = new Set(['active', 'on_trial', 'past_due', 'unpaid']);
+/** Still-billable states. Belt and braces: POST already cancelled these.
+ * 'paused' bills again the moment Lemon Squeezy auto-resumes it. */
+const BILLABLE = new Set(['active', 'on_trial', 'past_due', 'unpaid', 'paused']);
+
+/**
+ * Sentinel for "the irreversible erasure has begun". Written by the sweep's
+ * final gate and recognized by the cancel path, which refuses while it holds.
+ * Without it, a cancellation landing between the sweep's pre-delete check and
+ * the delete itself still erased the account — the TOCTOU hole this closes:
+ * the conditional update IS the check, and the cancel route cannot flip the
+ * marker back once the sentinel is in.
+ */
+const PURGING_SENTINEL = new Date(0);
 
 function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -62,6 +73,10 @@ export async function GET(req: Request) {
   let failed = 0;
 
   try {
+    // Sentinel rows (epoch 0 — a sweep that died mid-erasure) are deliberately
+    // still selected: the top-of-loop claim pushes them to a retry deadline,
+    // so a stuck lock is un-stuck by the next run instead of leaving an
+    // uncancellable, undeletable account forever.
     const due = await prisma.user.findMany({
       where: { deleteScheduledAt: { not: null, lte: new Date() } },
       select: {
@@ -109,6 +124,27 @@ export async function GET(req: Request) {
           }
         }
 
+        // 0. Point of no return. The billing cancellations above can take tens
+        //    of seconds (serial 10s-timeout network calls), and the user may
+        //    have cancelled the deletion through /api/account/delete during
+        //    that window. This conditional update is the last look itself: it
+        //    only succeeds while the marker is still set, and writing the
+        //    PURGING sentinel locks it — the cancel route refuses while the
+        //    sentinel holds, so no cancellation can slip between "checked" and
+        //    "deleted" the way the old count-then-delete could.
+        const locked = await prisma.user
+          .updateMany({
+            where: { id: user.id, deleteScheduledAt: { not: null } },
+            data: { deleteScheduledAt: PURGING_SENTINEL },
+          })
+          .catch(() => ({ count: 0 }));
+        if (locked.count === 0) {
+          // Deletion was cancelled while we were cancelling billing. Skip the
+          // account entirely; the next sweep re-evaluates from scratch.
+          console.warn('[cron/purge] deletion cancelled during sweep', { userId: user.id });
+          continue;
+        }
+
         // 1. Remove the sign-in identity. A 404 means it is already gone —
         //    that is success, not an error, so the DB row still gets cleaned.
         try {
@@ -136,7 +172,16 @@ export async function GET(req: Request) {
         console.warn('[cron/purge] account erased', { userId: user.id });
       } catch (e) {
         failed += 1;
-        // The row keeps its pushed-back deadline and is retried tomorrow.
+        // Unlock the row: restore the grace-state marker so the account is
+        // cancellable again. A row left in the PURGING sentinel could never be
+        // cancelled, which would break the 30-day promise for a transient error.
+        // The backoff also prevents the next sweep from hammering a failing step.
+        await prisma.user
+          .updateMany({
+            where: { id: user.id, deleteScheduledAt: PURGING_SENTINEL },
+            data: { deleteScheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+          })
+          .catch(() => undefined);
         console.error('[cron/purge] erasure failed', { userId: user.id }, e);
       }
     }

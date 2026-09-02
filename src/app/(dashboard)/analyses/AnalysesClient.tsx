@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Search, Plus, ArrowUpRight, LineChart, SlidersHorizontal, Check } from 'lucide-react';
+import { Search, Plus, ArrowUpRight, LineChart } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ScoreGauge } from '@/components/ui/ScoreGauge';
 import { PageHeader } from '@/components/dashboard/PageHeader';
+import { scoreBand } from '@/lib/score-band';
 
 interface AnalysisItem {
   id: string;
@@ -18,24 +19,24 @@ interface AnalysisItem {
 
 type StatusFilter = 'all' | 'ready' | 'improve' | 'rework';
 
-const statusOf = (score: number): { key: StatusFilter; label: string; cls: string } =>
-  score >= 85 ? { key: 'ready', label: 'Ready', cls: 'text-brand-600 bg-brand-50' } :
-  score >= 70 ? { key: 'improve', label: 'Improve', cls: 'text-amber-700 bg-amber-50' } :
-  { key: 'rework', label: 'Rework', cls: 'text-crimson-700 bg-crimson-50' };
+// The pill and the tabs must agree, so both read the one band label from the
+// shared util — the row used to say "Improve" while the tab said "Needs work".
+const statusOf = (score: number): { key: StatusFilter; label: string; cls: string } => {
+  const band = scoreBand(score);
+  if (band === 'strong') return { key: 'ready',   label: 'Ready',   cls: 'text-grass-700 bg-grass-50' };
+  if (band === 'fair')   return { key: 'improve', label: 'Needs work', cls: 'text-amber-700 bg-amber-50' };
+  return                        { key: 'rework',  label: 'Rework',  cls: 'text-crimson-700 bg-crimson-50' };
+};
 
-export default function AnalysesClient({ items }: { items: AnalysisItem[] }) {
+export default function AnalysesClient({
+  items,
+  truncated,
+}: {
+  items: AnalysisItem[];
+  truncated: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('all');
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onPointerDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
-  }, []);
 
   const filtered = useMemo(
     () =>
@@ -62,20 +63,24 @@ export default function AnalysesClient({ items }: { items: AnalysisItem[] }) {
         showUtility
         actions={
           <Link href="/upload">
-            <Button variant="dark" leftIcon={<Plus className="w-4 h-4" />}>New analysis</Button>
+            <Button leftIcon={<Plus className="w-4 h-4" />}>New review</Button>
           </Link>
         }
       />
 
-      {/* Toolbar */}
+      {/* Toolbar — the status tabs are the single filter UI; a second dropdown
+          listing the same four options used to sit here and did nothing the
+          tabs don't. */}
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-5">
-        <div className="flex items-center gap-1 rounded-xl bg-white/[0.03] border border-white/[0.08] p-1">
+        <div className="flex items-center gap-0.5 rounded-lg bg-ink-100 p-0.5">
           {TABS.map((t) => (
             <button
+              type="button"
               key={t.key}
               onClick={() => setFilter(t.key)}
-              className={`px-3 h-8 rounded-lg text-[12.5px] font-medium transition-colors ${
-                filter === t.key ? 'bg-brand-600 text-[#060606]' : 'text-ink-600 hover:text-white hover:bg-white/[0.06]'
+              aria-pressed={filter === t.key}
+              className={`px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors ${
+                filter === t.key ? 'bg-surface-panel text-ink-900 shadow-xs' : 'text-ink-500 hover:text-ink-900'
               }`}
             >
               {t.label}
@@ -88,59 +93,39 @@ export default function AnalysesClient({ items }: { items: AnalysisItem[] }) {
             <input
               type="text"
               placeholder="Search analyses…"
+              aria-label="Search analyses"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl pl-9 pr-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition-colors"
+              className="w-full bg-surface-panel border border-ink-300 rounded-lg pl-9 pr-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 transition-colors"
             />
-          </div>
-          <div className="relative" ref={menuRef}>
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => setMenuOpen((o) => !o)}
-              leftIcon={<SlidersHorizontal className="w-3.5 h-3.5" />}
-            >
-              Filter
-              {filter !== 'all' && (
-                <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-brand-600" />
-              )}
-            </Button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full mt-2 z-20 w-48 rounded-xl bg-white/[0.03] border border-white/[0.08] shadow-lg py-1.5">
-                {TABS.map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => { setFilter(t.key); setMenuOpen(false); }}
-                    className="w-full flex items-center justify-between px-3.5 py-2 text-[13px] text-ink-700 hover:bg-white/[0.06] transition-colors"
-                  >
-                    {t.label}
-                    {filter === t.key && <Check className="w-3.5 h-3.5 text-brand-600" />}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </div>
 
+      {/* Truncation note — only rendered when the cap actually bit. */}
+      {truncated && (
+        <p className="mb-4 text-[12px] text-ink-500">
+          Showing your 50 most recent reviews. Older ones still open normally from Reports and search.
+        </p>
+      )}
+
       {/* Empty state */}
       {filtered.length === 0 ? (
-        <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-12 h-12 bg-white/[0.08] rounded-full flex items-center justify-center mb-4">
-            <LineChart className="w-6 h-6 text-ink-400" />
+        <div className="bg-surface-panel border border-ink-200 rounded-xl shadow-xs flex flex-col items-center justify-center py-16 px-6 text-center">
+          <div className="w-11 h-11 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center mb-4">
+            <LineChart className="w-5 h-5" />
           </div>
-          <h3 className="text-base font-semibold text-ink-900 mb-1">
+          <h3 className="font-display text-[16px] leading-[1.35] font-semibold tracking-[-0.015em] text-ink-900">
             {items.length === 0 ? 'No analyses yet' : 'No matches'}
           </h3>
-          <p className="text-sm text-ink-500 max-w-sm mb-6">
+          <p className="text-[13px] leading-relaxed text-ink-600 mt-2 mb-6 max-w-sm">
             {items.length === 0
               ? 'Upload your first video to get a full monetization, hook, and SEO report.'
               : 'Try a different search or filter.'}
           </p>
           {items.length === 0 ? (
             <Link href="/upload">
-              <Button variant="dark" leftIcon={<Plus className="w-4 h-4" />}>Analyze a video</Button>
+              <Button leftIcon={<Plus className="w-4 h-4" />}>Run your first review</Button>
             </Link>
           ) : (
             <Button variant="secondary" onClick={() => { setQuery(''); setFilter('all'); }}>
@@ -149,40 +134,40 @@ export default function AnalysesClient({ items }: { items: AnalysisItem[] }) {
           )}
         </div>
       ) : (
-        <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl overflow-hidden">
+        <div className="bg-surface-panel border border-ink-200 rounded-xl shadow-xs overflow-hidden">
           {/* Header row */}
-          <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_110px_120px_100px_88px_40px] gap-4 items-center px-5 py-3 border-b border-ink-100 bg-surface-canvas">
+          <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_110px_120px_100px_88px_40px] gap-4 items-center px-5 py-3 border-b border-ink-200 bg-surface-canvas">
             {['Analysis', 'Platform', 'Monetization', 'Score', 'Status', ''].map((h, i) => (
-              <span key={i} className={`text-[11px] font-semibold uppercase tracking-wide text-ink-400 ${i === 5 ? '' : ''}`}>{h}</span>
+              <span key={i} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500">{h}</span>
             ))}
           </div>
-          <div className="divide-y divide-ink-100">
+          <div className="divide-y divide-ink-200">
             {filtered.map((it) => {
               const status = statusOf(it.overall);
               return (
                 <Link
                   key={it.id}
                   href={`/analysis/${it.id}`}
-                  className="group grid grid-cols-[1fr_auto] sm:grid-cols-[minmax(0,1fr)_110px_120px_100px_88px_40px] gap-4 items-center px-5 py-3.5 hover:bg-white/[0.06] transition-colors"
+                  className="group grid grid-cols-[1fr_auto] sm:grid-cols-[minmax(0,1fr)_110px_120px_100px_88px_40px] gap-4 items-center px-5 py-3.5 hover:bg-ink-50 transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-8 rounded-md bg-white/[0.06] flex items-center justify-center shrink-0 text-white text-[10px] font-semibold">
+                    <div className="w-8 h-8 rounded-lg bg-ink-100 flex items-center justify-center shrink-0 text-ink-700 text-[12px] font-semibold">
                       {it.platform.charAt(0)}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[13.5px] font-medium text-ink-900 truncate">{it.title}</div>
-                      <div className="text-[11.5px] text-ink-400 sm:hidden">
-                        {new Date(it.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      <div className="text-[13px] font-medium text-ink-900 truncate">{it.title}</div>
+                      <div className="text-[12px] text-ink-500 sm:hidden">
+                        {new Date(it.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
                       </div>
                     </div>
                   </div>
-                  <span className="hidden sm:block text-[12.5px] text-ink-500">{it.platform}</span>
+                  <span className="hidden sm:block text-[12px] text-ink-500">{it.platform}</span>
                   <span className="hidden sm:block text-[13px] font-medium text-ink-700 tabular-nums">{it.monetization}/100</span>
                   <span className="hidden sm:block"><ScoreGauge score={it.overall} size="sm" showLabel={false} /></span>
-                  <span className={`hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-[11.5px] font-semibold ${status.cls}`}>
+                  <span className={`hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-[12px] font-semibold ${status.cls}`}>
                     {status.label}
                   </span>
-                  <ArrowUpRight className="w-4 h-4 text-ink-400 group-hover:text-white transition-colors justify-self-end" />
+                  <ArrowUpRight className="w-4 h-4 text-ink-400 group-hover:text-ink-900 transition-colors justify-self-end" />
                 </Link>
               );
             })}

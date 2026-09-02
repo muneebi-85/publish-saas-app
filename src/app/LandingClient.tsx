@@ -39,7 +39,6 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import BackgroundShader from '@/components/landing/BackgroundShader';
 import { MegaMenu } from '@/components/landing/MegaMenu';
 import { RESOURCES_MENU } from '@/components/landing/navData';
 import { PLANS, priceLabel } from '@/lib/plans';
@@ -63,12 +62,33 @@ const NAV = [
   { label: 'Pricing', href: '#pricing' },
 ];
 
-const CTA_LABEL = 'Check a video — free';
+const CTA_LABEL = 'Score my script — free';
 
 export default function LandingClient({ isLoggedIn, plan }: { isLoggedIn: boolean; plan: string }) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  /* Dismiss the mobile panel on Escape or an outside tap — the same contract
+     the desktop mega-menu honours via its own dismiss hook. */
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    const onPointer = (e: PointerEvent) => {
+      const panel = document.getElementById('lp-mobile-panel');
+      const trigger = document.getElementById('lp-mobile-trigger');
+      if (panel?.contains(e.target as Node) || trigger?.contains(e.target as Node)) return;
+      setMobileMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPointer);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPointer);
+    };
+  }, [mobileMenuOpen]);
   const startHref = isLoggedIn ? '/dashboard' : '/sign-up';
 
   /* The comp's reveal observer: add .revealed on first intersection and leave
@@ -89,10 +109,23 @@ export default function LandingClient({ isLoggedIn, plan }: { isLoggedIn: boolea
       { threshold: 0.15, rootMargin: '0px 0px -60px 0px' },
     );
     document.querySelectorAll('.reveal-element').forEach((el) => io.observe(el));
-    return () => io.disconnect();
+    // Remove the animation class on unmount so navigating into the app does
+    // not leave a landing-page-only class on <html> for the rest of the session.
+    return () => {
+      io.disconnect();
+      document.documentElement.classList.remove('lp-anim');
+    };
   }, []);
 
   const handleUpgrade = async (planId: string) => {
+    // The landing page's audience is anonymous. The checkout route is
+    // auth-bound by design (the webhook must credit a real account), so an
+    // anonymous click surfaced a raw "Not authenticated" error instead of a
+    // path to buy. Route to sign-up with the pricing intent preserved.
+    if (!isLoggedIn) {
+      window.location.href = '/sign-up?redirect_url=%2Fpricing';
+      return;
+    }
     setLoadingId(planId);
     setCheckoutError('');
 
@@ -107,8 +140,18 @@ export default function LandingClient({ isLoggedIn, plan }: { isLoggedIn: boolea
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ planId, interval: 'monthly' }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Checkout failed');
+      // Guarded: a proxy error page is HTML, and unguarded parsing would
+      // surface as "Unexpected token '<'" in the checkout-error UI.
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // The server already holds a live subscription — the portal is the
+        // only correct next step.
+        if (data?.portalRequired) {
+          window.location.href = '/api/billing/portal';
+          return;
+        }
+        throw new Error(data.error || 'Checkout failed');
+      }
       if (data.url) window.location.href = data.url;
     } catch (err) {
       setCheckoutError((err as Error).message);
@@ -119,7 +162,6 @@ export default function LandingClient({ isLoggedIn, plan }: { isLoggedIn: boolea
 
   return (
     <div className="landing-page-root relative min-h-screen overflow-x-hidden antialiased">
-      <BackgroundShader />
 
       <Header
         startHref={startHref}
@@ -199,7 +241,7 @@ function Tick({ className = '' }: { className?: string }) {
    ───────────────────────────────────────────────────────────────── */
 
 const NAV_LINK =
-  'text-[16px] font-medium text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:text-red-brand';
+  'text-[16px] font-medium text-ink-900 transition-all duration-300 hover:-translate-y-0.5 hover:text-red-brand-ink';
 
 function Header({
   startHref,
@@ -213,7 +255,7 @@ function Header({
   setOpen: (v: boolean) => void;
 }) {
   return (
-    <header className="fixed top-0 z-50 w-full border-b border-gray-100/50 bg-white/70 backdrop-blur-xl transition-all duration-500">
+    <header className="fixed top-0 z-50 w-full border-b border-ink-100/50 bg-white/70 backdrop-blur-xl transition-all duration-500">
       <div className={SHELL}>
         <div className="flex h-20 items-center justify-between">
           <Link
@@ -244,7 +286,7 @@ function Header({
             </Link>
             <Link
               href={startHref}
-              className="shimmer-hover flex items-center gap-2 rounded-full bg-red-brand px-6 py-2.5 text-[16px] font-medium text-white"
+              className="shimmer-hover flex items-center gap-2 rounded-full bg-red-brand-ink px-6 py-2.5 hover:brightness-95 text-[16px] font-medium text-white"
             >
               {CTA_LABEL}
               <CtaArrow className="h-4 w-4" />
@@ -254,10 +296,12 @@ function Header({
           {/* small screens */}
           <button
             type="button"
+            id="lp-mobile-trigger"
             onClick={() => setOpen(!open)}
             aria-expanded={open}
+            aria-controls={open ? 'lp-mobile-panel' : undefined}
             aria-label={open ? 'Close menu' : 'Open menu'}
-            className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full text-gray-900 transition-colors hover:bg-gray-100 lg:hidden"
+            className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full text-ink-900 transition-colors hover:bg-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-brand/60 focus-visible:ring-offset-2 lg:hidden"
           >
             <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               {open ? (
@@ -271,14 +315,14 @@ function Header({
       </div>
 
       {open && (
-        <div className="border-t border-gray-100/50 bg-white/95 backdrop-blur-xl lg:hidden">
+        <div id="lp-mobile-panel" className="border-t border-ink-100/50 bg-white/95 backdrop-blur-xl lg:hidden">
           <div className={`${SHELL} flex flex-col gap-1 py-4`}>
             {NAV.map((item) => (
               <a
                 key={item.label}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-ink-900 transition-colors hover:bg-ink-50"
               >
                 {item.label}
               </a>
@@ -286,21 +330,21 @@ function Header({
             <Link
               href="/help"
               onClick={() => setOpen(false)}
-              className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-gray-900 transition-colors hover:bg-gray-50"
+              className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-ink-900 transition-colors hover:bg-ink-50"
             >
               Resources
             </Link>
             <Link
               href={isLoggedIn ? '/dashboard' : '/sign-in'}
               onClick={() => setOpen(false)}
-              className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-gray-900 transition-colors hover:bg-gray-50"
+              className="rounded-[8px] px-2 py-3 text-[16px] font-medium text-ink-900 transition-colors hover:bg-ink-50"
             >
               {isLoggedIn ? 'Dashboard' : 'Log in'}
             </Link>
             <Link
               href={startHref}
               onClick={() => setOpen(false)}
-              className="mt-2 flex items-center justify-center gap-2 rounded-full bg-red-brand px-6 py-3 text-[16px] font-medium text-white"
+              className="mt-2 flex items-center justify-center gap-2 rounded-full bg-red-brand-ink px-6 py-3 hover:brightness-95 text-[16px] font-medium text-white"
             >
               {CTA_LABEL}
               <CtaArrow className="h-4 w-4" />
@@ -346,14 +390,14 @@ function Hero({ startHref }: { startHref: string }) {
       {/* left column */}
       <div className="z-10 w-full lg:w-1/2 lg:pr-8">
         <div className="hero-fade-up mb-5 flex flex-wrap items-center gap-2.5">
-          <span className="inline-flex cursor-default items-center gap-2 rounded-full border border-gray-200/50 bg-white/80 px-4 py-1.5 shadow-sm backdrop-blur-md transition-shadow duration-300 hover:shadow-md">
+          <span className="inline-flex cursor-default items-center gap-2 rounded-full border border-ink-200/50 bg-white/80 px-4 py-1.5 shadow-sm backdrop-blur-md transition-shadow duration-300 hover:shadow-md">
             <BadgeShield className="h-4 w-4 text-red-brand" />
-            <span className="text-[14px] font-medium text-gray-700">Trusted by 12,000+ creators</span>
+            <span className="text-[14px] font-medium text-ink-700">Pre-publish review for serious creators</span>
           </span>
           {/* Five faces as one strip. The strip's own "+2.1k more" pill is
               cropped off the asset because the count next to it is "12K+"
               here; the uncropped version is used lower down. */}
-          <span className="inline-flex cursor-default items-center gap-2 rounded-full border border-gray-200/50 bg-white/80 py-1.5 pl-2 pr-3.5 shadow-sm backdrop-blur-md transition-shadow duration-300 hover:shadow-md">
+          <span className="inline-flex cursor-default items-center gap-2 rounded-full border border-ink-200/50 bg-white/80 py-1.5 pl-2 pr-3.5 shadow-sm backdrop-blur-md transition-shadow duration-300 hover:shadow-md">
             <img
               src="/images/landing/avatar-group.webp"
               alt=""
@@ -361,7 +405,7 @@ function Hero({ startHref }: { startHref: string }) {
               height={136}
               className="h-7 w-auto"
             />
-            <span className="text-[12px] font-bold text-gray-900">12K+</span>
+            <span className="text-[12px] font-bold text-ink-900">Publish Score&trade;</span>
           </span>
         </div>
 
@@ -369,42 +413,43 @@ function Hero({ startHref }: { startHref: string }) {
             on a short laptop: ~44px at 700px tall, the comp's 72px only once
             there is room for it. */}
         <h1
-          className="hero-fade-up mb-5 text-[40px] font-extrabold leading-[1.08] tracking-tight text-gray-900 sm:text-[52px] lg:text-[clamp(2.5rem,4.2vh+1vw,4.5rem)]"
+          className="hero-fade-up mb-5 text-[40px] font-extrabold leading-[1.08] tracking-tight text-ink-900 sm:text-[52px] lg:text-[clamp(2.5rem,4.2vh+1vw,4.5rem)]"
           style={{ animationDelay: '100ms' }}
         >
-          Stop posting{' '}
+          Run your script.{' '}
           <br className="hidden lg:inline" />
-          videos that <span className="curve-underline italic text-red-brand">die.</span>
+          Get your <span className="curve-underline italic text-red-brand">score.</span>
         </h1>
 
         <p
-          className="hero-fade-up mb-4 max-w-lg text-[16px] leading-relaxed text-gray-600 lg:text-[18px]"
+          className="hero-fade-up mb-4 max-w-lg text-[16px] leading-relaxed text-ink-600 lg:text-[18px]"
           style={{ animationDelay: '200ms' }}
         >
-          Run your script, voiceover and video through nine AI checks — hook, SEO, thumbnail,
-          retention, monetization and more — and get a Publish Score before you upload.
+          Paste your video script and get a Publish Score in under a minute — the hook, the
+          retention, the SEO, the thumbnail. Everything that decides whether this one gets
+          a thousand views or a million.
         </p>
 
         <p
-          className="hero-fade-up mb-6 text-[18px] font-bold leading-7 text-gray-900"
+          className="hero-fade-up mb-6 text-[18px] font-bold leading-7 text-ink-900"
           style={{ animationDelay: '300ms' }}
         >
-          Not after. <span className="underline decoration-2 underline-offset-4">Before.</span>
+          Score first. <span className="underline decoration-2 underline-offset-4">Then go viral.</span>
         </p>
 
         {/* Six faces and the "+2.1k more" pill are one strip in the asset, so
             there is no HTML count next to it. */}
         <img
           src="/images/landing/avatar-stack.webp"
-          alt="Six creators who run their videos through Publish, plus 2,100 more"
+          alt="Six creators who run their videos through Publish"
           width={900}
           height={176}
           className="hero-fade-up mb-3 h-11 w-auto"
           style={{ animationDelay: '400ms' }}
         />
 
-        <p className="hero-fade-up mb-6 text-[14px] text-gray-500" style={{ animationDelay: '450ms' }}>
-          Trusted by creators at 47K–470K subscribers
+        <p className="hero-fade-up mb-6 text-[14px] text-ink-500" style={{ animationDelay: '450ms' }}>
+          Built for creators who monetize every upload
         </p>
 
         <div
@@ -413,17 +458,17 @@ function Hero({ startHref }: { startHref: string }) {
         >
           <Link
             href={startHref}
-            className="shimmer-hover flex items-center gap-2 rounded-full bg-red-brand px-8 py-4 text-[18px] font-bold text-white shadow-lg shadow-red-500/20"
+            className="shimmer-hover flex items-center gap-2 rounded-full bg-red-brand-ink px-8 py-4 text-[18px] font-bold text-white shadow-lg shadow-red-brand/20"
           >
-            Check a video — free
+            Score my script — free
             <CtaArrow className="h-5 w-5" />
           </Link>
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-[14px] text-gray-600">
+            <div className="flex items-center gap-2 text-[14px] text-ink-600">
               <Tick className="h-4 w-4 text-red-brand" />
               No credit card.
             </div>
-            <div className="flex items-center gap-2 text-[14px] text-gray-600">
+            <div className="flex items-center gap-2 text-[14px] text-ink-600">
               <Tick className="h-4 w-4 text-red-brand" />
               No trial timers.
             </div>
@@ -459,21 +504,21 @@ function Hero({ startHref }: { startHref: string }) {
             alt=""
             width={700}
             height={749}
-            className="float-a pointer-events-none absolute -left-[8%] top-[3%] w-[38%] drop-shadow-xl sm:top-[7%] sm:w-[46%] sm:-left-[18%] lg:-left-[24%]"
+            className="pointer-events-none absolute -left-[8%] top-[3%] w-[38%] drop-shadow-xl sm:top-[7%] sm:w-[46%] sm:-left-[18%] lg:-left-[24%]"
           />
           <img
             src="/images/landing/card-hook.webp"
             alt=""
             width={580}
             height={549}
-            className="float-b pointer-events-none absolute top-[4%] hidden w-[42%] drop-shadow-xl sm:block sm:-right-[18%] lg:-right-[24%]"
+            className="pointer-events-none absolute top-[4%] hidden w-[42%] drop-shadow-xl sm:block sm:-right-[18%] lg:-right-[24%]"
           />
           <img
             src="/images/landing/card-ctr.webp"
             alt=""
             width={579}
             height={577}
-            className="float-c pointer-events-none absolute bottom-[16%] hidden w-[42%] drop-shadow-xl sm:block sm:-right-[15%] lg:-right-[20%]"
+            className="pointer-events-none absolute bottom-[16%] hidden w-[42%] drop-shadow-xl sm:block sm:-right-[15%] lg:-right-[20%]"
           />
         </div>
       </div>
@@ -493,12 +538,12 @@ function Hero({ startHref }: { startHref: string }) {
 
 function AsSeenOn() {
   return (
-    <section className="reveal-element border-y border-gray-100/50 bg-white/50 py-8 backdrop-blur-sm">
+    <section className="reveal-element border-y border-ink-100/50 bg-white/50 py-8 backdrop-blur-sm">
       <div className="mx-auto w-full max-w-[1280px] px-4">
-        <p className="mb-5 text-center text-[12px] font-bold uppercase leading-4 tracking-widest text-gray-400">
+        <p className="mb-5 text-center text-[12px] font-bold uppercase leading-4 tracking-widest text-ink-500">
           Scores videos for
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-8 text-gray-900 opacity-50 transition-opacity duration-700 hover:opacity-80 md:gap-16">
+        <div className="flex flex-wrap items-center justify-center gap-8 text-ink-900 opacity-50 transition-opacity duration-700 hover:opacity-80 md:gap-16">
           <YouTubeMark />
           <TikTokMark />
           <InstagramMark />
@@ -530,12 +575,12 @@ const TRUST: { label: string; d: string }[] = [
 
 function TrustBar() {
   return (
-    <div className="reveal-element border-y border-gray-100/50 bg-white/50 py-6 backdrop-blur-sm">
-      <div className="mx-auto flex w-full max-w-[1280px] flex-wrap justify-center gap-8 px-4 text-[14px] font-medium text-gray-500 md:gap-16">
+    <div className="reveal-element border-y border-ink-100/50 bg-white/50 py-6 backdrop-blur-sm">
+      <div className="mx-auto flex w-full max-w-[1280px] flex-wrap justify-center gap-8 px-4 text-[14px] font-medium text-ink-500 md:gap-16">
         {TRUST.map((item) => (
           <div
             key={item.label}
-            className="flex cursor-default items-center gap-2 transition-colors duration-300 hover:text-gray-900"
+            className="flex cursor-default items-center gap-2 transition-colors duration-300 hover:text-ink-900"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path d={item.d} strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} />
@@ -562,7 +607,7 @@ function TrustBar() {
    ───────────────────────────────────────────────────────────────── */
 
 const CARD =
-  'reveal-element card-lift flex cursor-pointer flex-col rounded-2xl border border-gray-100 bg-white/80 p-8 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] backdrop-blur-md';
+  'reveal-element flex flex-col rounded-2xl border border-ink-100 bg-white/80 p-8 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] backdrop-blur-md';
 
 function CheckHead({
   n,
@@ -596,11 +641,11 @@ function CheckHead({
           )}
         </div>
         <div>
-          <span className="block text-[14px] font-bold leading-none text-gray-400">{n}</span>
-          <h3 className="text-[20px] font-bold leading-none text-gray-900">{title}</h3>
+          <span className="block text-[14px] font-bold leading-none text-ink-400">{n}</span>
+          <h3 className="text-[20px] font-bold leading-none text-ink-900">{title}</h3>
         </div>
       </div>
-      <p className="mb-8 text-[16px] text-gray-600">{blurb}</p>
+      <p className="mb-8 text-[16px] text-ink-600">{blurb}</p>
     </div>
   );
 }
@@ -637,9 +682,9 @@ function Mark({ children }: { children: React.ReactNode }) {
  * every verdict printed green regardless of its number.
  */
 function grade(score: number) {
-  if (score >= 70) return { word: 'Strong', bar: 'bg-green-500', text: 'text-green-600' };
-  if (score >= 40) return { word: 'Fair', bar: 'bg-amber-500', text: 'text-amber-600' };
-  return { word: 'Weak', bar: 'bg-red-brand', text: 'text-red-brand-ink' };
+  if (score >= 70) return { word: 'Strong', bar: 'bg-grass-600', text: 'text-grass-700' };
+  if (score >= 40) return { word: 'Fair', bar: 'bg-amber-600', text: 'text-amber-700' };
+  return { word: 'Weak', bar: 'bg-crimson-600', text: 'text-crimson-700' };
 }
 
 function ScoreLine({ score }: { score: number }) {
@@ -648,8 +693,8 @@ function ScoreLine({ score }: { score: number }) {
     <div className="mb-2 flex items-end justify-between">
       <span className={`font-bold ${g.text}`}>{g.word}</span>
       <span className="text-[14px] font-medium">
-        <span className="text-[18px] font-bold text-gray-900">{score}</span>
-        <span className="text-gray-400">/100</span>
+        <span className="text-[18px] font-bold text-ink-900">{score}</span>
+        <span className="text-ink-400">/100</span>
       </span>
     </div>
   );
@@ -663,7 +708,7 @@ function ScoreBar({ score }: { score: number }) {
     <div
       role="img"
       aria-label={`${score} out of 100 - ${g.word}`}
-      className="h-2 w-full overflow-hidden rounded-full bg-gray-50"
+      className="h-2 w-full overflow-hidden rounded-full bg-ink-50"
     >
       <div className={`lp-bar h-2 rounded-full ${g.bar}`} style={{ width: `${score}%` }} />
     </div>
@@ -689,14 +734,14 @@ function CardFooter({
   return (
     <div className="mt-auto">
       {children ? <div className="mb-4">{children}</div> : null}
-      <div className="mb-1 text-[12px] text-gray-500">{label}</div>
+      <div className="mb-1 text-[12px] text-ink-500">{label}</div>
       <ScoreLine score={score} />
       <ScoreBar score={score} />
     </div>
   );
 }
 
-const TILE_PLAIN = 'border border-gray-100 text-gray-900';
+const TILE_PLAIN = 'border border-ink-100 text-ink-900';
 
 /**
  * The waveform under the voice card. Heights only - it is a picture of speech,
@@ -718,7 +763,7 @@ function Checks() {
       aria-labelledby="checks-heading"
       className="mx-auto w-full max-w-[1280px] px-4 py-24"
     >
-      <h2 id="checks-heading" className="mb-16 text-[30px] font-bold text-gray-900">
+      <h2 id="checks-heading" className="mb-16 text-[30px] font-bold text-ink-900">
         Nine checks, every upload
       </h2>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -746,14 +791,14 @@ function Checks() {
             hover="hover:-rotate-12"
           />
           <CardFooter label="Search visibility" score={76}>
-            <div className="rounded-xl border border-gray-50 bg-gray-50/50 p-4 transition-colors duration-300 hover:bg-gray-100/50">
+            <div className="rounded-xl border border-ink-50 bg-ink-50/50 p-4 transition-colors duration-300 hover:bg-ink-100/50">
               <div className="mb-2 flex justify-between text-[14px]">
-                <span className="text-gray-500">Primary keyword</span>
-                <span className="font-bold text-gray-900">studio setup</span>
+                <span className="text-ink-500">Primary keyword</span>
+                <span className="font-bold text-ink-900">studio setup</span>
               </div>
               <div className="flex justify-between text-[14px]">
-                <span className="text-gray-500">Search volume</span>
-                <span className="font-bold text-gray-900">High</span>
+                <span className="text-ink-500">Search volume</span>
+                <span className="font-bold text-ink-900">High</span>
               </div>
             </div>
           </CardFooter>
@@ -770,7 +815,7 @@ function Checks() {
             hover="hover:scale-110"
           />
           <CardFooter label="Click-through potential" score={88}>
-            <div className="w-full overflow-hidden rounded-[8px] border border-gray-100 transition-transform duration-500 hover:scale-[1.02]">
+            <div className="w-full overflow-hidden rounded-[8px] border border-ink-100 transition-transform duration-500 hover:scale-[1.02]">
               <img
                 src="/images/landing/thumbnail-comparison.webp"
                 alt="The same thumbnail before and after, with predicted click-through for each: 2.1% before, 6.3% after"
@@ -806,7 +851,7 @@ function Checks() {
             hover="hover:-rotate-12"
           />
           <CardFooter label="Retention" score={41}>
-            <div className="text-[20px] font-bold text-gray-900">4:27 average view duration</div>
+            <div className="text-[20px] font-bold text-ink-900">4:27 average view duration</div>
           </CardFooter>
         </div>
 
@@ -841,12 +886,12 @@ function Checks() {
             hover="hover:rotate-12"
           />
           <CardFooter label="Script tightness" score={64}>
-            <div className="rounded-xl border border-gray-50 bg-gray-50/50 p-4 transition-colors duration-300 hover:bg-gray-100/50">
-              <div className="mb-2 text-[12px] text-gray-500">Line 3 - weak opener</div>
-              <p className="mb-1 text-[14px] leading-snug text-gray-400 line-through">
+            <div className="rounded-xl border border-ink-50 bg-ink-50/50 p-4 transition-colors duration-300 hover:bg-ink-100/50">
+              <div className="mb-2 text-[12px] text-ink-500">Line 3 - weak opener</div>
+              <p className="mb-1 text-[14px] leading-snug text-ink-400 line-through">
                 In today&apos;s video, I&apos;m going to show you my setup.
               </p>
-              <p className="text-[14px] font-bold leading-snug text-gray-900">
+              <p className="text-[14px] font-bold leading-snug text-ink-900">
                 Your studio is costing you views. Here&apos;s the fix.
               </p>
             </div>
@@ -868,12 +913,12 @@ function Checks() {
             hover="hover:-rotate-12"
           />
           <CardFooter label="Delivery" score={81}>
-            <div className="mb-2 text-[20px] font-bold text-gray-900">168 wpm</div>
+            <div className="mb-2 text-[20px] font-bold text-ink-900">168 wpm</div>
             <div className="group flex h-6 items-end gap-[3px]">
               {VOICE_BARS.map((h, i) => (
                 <span
                   key={i}
-                  className="flex-1 rounded-[2px] bg-gray-800 transition-transform duration-300 group-hover:scale-y-110"
+                  className="flex-1 rounded-[2px] bg-ink-800 transition-transform duration-300 group-hover:scale-y-110"
                   style={{ height: `${h}%` }}
                 />
               ))}
@@ -897,13 +942,13 @@ function Checks() {
             hover="hover:scale-110"
           />
           <CardFooter label="Pacing" score={69}>
-            <div className="mb-2 text-[20px] font-bold text-gray-900">1 cut every 2.4s</div>
+            <div className="mb-2 text-[20px] font-bold text-ink-900">1 cut every 2.4s</div>
             <div className="group flex gap-[3px]">
               {CUT_TICKS.map((cut, i) => (
                 <span
                   key={i}
                   className={`h-4 flex-1 rounded-[2px] transition-transform duration-300 group-hover:scale-y-125 ${
-                    cut ? 'bg-gray-800' : 'bg-gray-100'
+                    cut ? 'bg-ink-800' : 'bg-ink-100'
                   }`}
                 />
               ))}
@@ -926,11 +971,11 @@ const ALGO_SIGNALS = ['CTR (Click-Through Rate)', 'Retention (Audience Retention
 function AlgorithmPanel() {
   return (
     <section id="algorithm" className="mx-auto w-full max-w-[1280px] px-4 pb-24">
-      <div className="reveal-element relative z-20 flex flex-col overflow-hidden rounded-3xl border border-gray-800/50 bg-[#0f172a]/90 shadow-2xl backdrop-blur-xl transition-transform duration-700 hover:scale-[1.01] lg:flex-row">
+      <div className="reveal-element relative z-20 flex flex-col overflow-hidden rounded-3xl border border-ink-800/50 bg-[#0f172a]/90 shadow-2xl backdrop-blur-xl transition-transform duration-700 hover:scale-[1.01] lg:flex-row">
         <div className="flex flex-col justify-center p-12 text-white lg:w-1/3">
           <h2 className="mb-6 text-[36px] font-extrabold leading-tight">
             What the algorithm{' '}
-            <span className="scribble-underline font-serif italic">actually</span> measures.
+            <span className="italic">actually</span> measures.
           </h2>
           <ul className="mb-8 space-y-4">
             {ALGO_SIGNALS.map((signal) => (
@@ -952,11 +997,11 @@ function AlgorithmPanel() {
                     strokeWidth={2}
                   />
                 </svg>
-                <span className="text-gray-300">{signal}</span>
+                <span className="text-ink-300">{signal}</span>
               </li>
             ))}
           </ul>
-          <p className="text-[14px] leading-relaxed text-gray-400">
+          <p className="text-[14px] leading-relaxed text-ink-400">
             We reverse engineer what matters so you can post with confidence.
           </p>
         </div>
@@ -977,7 +1022,7 @@ function AlgorithmPanel() {
           {/* The raster shows two different quantities - a 7-day video-level average
               (the 82 badge) and a within-video curve (the plot). Without this line the
               rising 82 reads as contradicting a line that ends low. */}
-          <figcaption className="mt-4 max-w-xl text-center text-[12px] leading-relaxed text-gray-400">
+          <figcaption className="mt-4 max-w-xl text-center text-[12px] leading-relaxed text-ink-400">
             The badge is this video&rsquo;s overall score against the last seven days. The curve is
             how that score moves moment to moment inside the video &mdash; the late decline is the
             part worth fixing.
@@ -992,17 +1037,17 @@ function AlgorithmPanel() {
 
 function Testimonial() {
   return (
-    <section className="reveal-element mx-auto w-full max-w-[1280px] border-b border-gray-100/50 px-4 py-24">
+    <section className="reveal-element mx-auto w-full max-w-[1280px] border-b border-ink-100/50 px-4 py-24">
       <div className="flex flex-col items-center justify-center gap-8 md:flex-row md:gap-16">
         <div
           aria-hidden
-          className="h-20 font-serif text-[96px] leading-none text-red-brand transition-transform duration-500 hover:rotate-12 hover:scale-110"
+          className="h-20 text-[96px] font-extrabold leading-none text-red-brand select-none"
         >
           “
         </div>
 
         <div className="max-w-3xl flex-1">
-          <h3 className="group relative text-[30px] font-bold leading-tight text-gray-900 md:text-[36px]">
+          <h3 className="group relative text-[30px] font-bold leading-tight text-ink-900 md:text-[36px]">
             I ran the check before posting for the first time.
             <br />
             It said my hook was the problem.
@@ -1030,9 +1075,9 @@ function Testimonial() {
 
         <div className="group flex shrink-0 items-center gap-4">
           <div className="text-right transition-transform duration-300 group-hover:-translate-x-2">
-            <div className="font-bold text-gray-900">— Maya</div>
-            <div className="text-[14px] text-gray-500">14.2k subs</div>
-            <div className="text-[14px] text-gray-500">horror niche</div>
+            <div className="font-bold text-ink-900">— Maya</div>
+            <div className="text-[14px] text-ink-500">14.2k subs</div>
+            <div className="text-[14px] text-ink-500">horror niche</div>
           </div>
           <img
             src="/images/landing/testimonial-avatar.webp"
@@ -1078,13 +1123,13 @@ function HowItWorks() {
   return (
     <section id="how" className="reveal-element mx-auto w-full max-w-[1280px] px-4 py-24">
       <div className="mb-16">
-        <h2 className="text-[30px] font-bold text-gray-900">
+        <h2 className="text-[30px] font-bold text-ink-900">
           How it works in{' '}
           <span className="group relative">
             60 seconds
             <span
               aria-hidden
-              className="absolute -bottom-1 left-0 w-full border-b-2 border-dashed border-gray-300 transition-colors duration-300 group-hover:border-red-brand"
+              className="absolute -bottom-1 left-0 w-full border-b-2 border-dashed border-ink-300 transition-colors duration-300 group-hover:border-red-brand"
             />
           </span>
         </h2>
@@ -1102,8 +1147,8 @@ function HowItWorks() {
             <div key={i} className="relative">
               {i > 0 && (
                 <>
-                  <span className="absolute right-full top-0 w-12 border-t border-dashed border-gray-300" />
-                  <span className="absolute right-full top-0 h-3 w-3 -translate-y-1.5 rotate-45 border-r border-t border-gray-300" />
+                  <span className="absolute right-full top-0 w-12 border-t border-dashed border-ink-300" />
+                  <span className="absolute right-full top-0 h-3 w-3 -translate-y-1.5 rotate-45 border-r border-t border-ink-300" />
                 </>
               )}
             </div>
@@ -1131,10 +1176,10 @@ function HowItWorks() {
               </svg>
             </div>
             <div className="max-w-[28ch]">
-              <h3 className="mb-2 font-bold text-gray-900 transition-colors duration-300 group-hover:text-red-brand">
+              <h3 className="mb-2 font-bold text-ink-900 transition-colors duration-300 group-hover:text-red-brand">
                 {step.title}
               </h3>
-              <p className="text-[14px] leading-relaxed text-gray-600">{step.blurb}</p>
+              <p className="text-[14px] leading-relaxed text-ink-600">{step.blurb}</p>
             </div>
           </div>
         ))}
@@ -1151,17 +1196,17 @@ function HowItWorks() {
    ───────────────────────────────────────────────────────────────── */
 
 const OUTLINE_BTN =
-  'w-full rounded-[8px] border-2 border-gray-200 py-2.5 font-bold text-gray-900 transition-colors duration-300 hover:border-gray-900';
+  'w-full rounded-[8px] border-2 border-ink-200 py-2.5 font-bold text-ink-900 transition-colors duration-300 hover:border-ink-900';
 const PLAIN_CARD =
-  'pricing-card-hover flex h-full cursor-pointer flex-col rounded-2xl border border-gray-100 bg-white/80 p-6 pt-8 backdrop-blur-md';
+  'pricing-card-hover flex h-full flex-col rounded-2xl border border-ink-100 bg-white/80 p-6 pt-8 backdrop-blur-md';
 
 function PlanHead({ name, price }: { name: string; price: string }) {
   return (
     <>
-      <h3 className="mb-4 text-center font-bold text-gray-900">{name}</h3>
+      <h3 className="mb-4 text-center font-bold text-ink-900">{name}</h3>
       <div className="mb-6 text-center">
-        <span className="text-[36px] font-bold text-gray-900">{price}</span>
-        <span className="text-[14px] text-gray-500">/month</span>
+        <span className="text-[36px] font-bold text-ink-900">{price}</span>
+        <span className="text-[14px] text-ink-500">/month</span>
       </div>
     </>
   );
@@ -1170,7 +1215,7 @@ function PlanHead({ name, price }: { name: string; price: string }) {
 function Bullet({ children, tone }: { children: React.ReactNode; tone: 'red' | 'ink' }) {
   return (
     <li className="flex items-center gap-2">
-      <Tick className={`h-4 w-4 shrink-0 ${tone === 'red' ? 'text-red-brand' : 'text-gray-900'}`} />
+      <Tick className={`h-4 w-4 shrink-0 ${tone === 'red' ? 'text-red-brand' : 'text-ink-900'}`} />
       {children}
     </li>
   );
@@ -1196,19 +1241,19 @@ function Pricing({
     <section id="pricing" className="reveal-element mx-auto w-full max-w-[1280px] px-4 py-24">
       <div className="flex flex-col gap-8 lg:flex-row">
         <div className="lg:w-1/4">
-          <h2 className="mb-4 font-serif text-[36px] font-bold leading-tight text-gray-900">
+          <h2 className="mb-4 text-[36px] font-extrabold tracking-[-0.03em] leading-tight text-ink-900">
             Simple pricing.
             <br />
             Serious results.
           </h2>
-          <p className="font-medium text-gray-600">No hidden fees. Cancel anytime.</p>
+          <p className="font-medium text-ink-600">No hidden fees. Cancel anytime.</p>
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:w-3/4 lg:grid-cols-4">
           {/* Free */}
           <div className={PLAIN_CARD}>
             <PlanHead name={PLANS.free.name} price={priceLabel('free')} />
-            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-gray-600">
+            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-ink-600">
               {PLANS.free.features.map((f) => (
                 <Bullet key={f} tone="ink">
                   {f}
@@ -1222,11 +1267,11 @@ function Pricing({
 
           {/* Pro */}
           <div className="pricing-card-hover relative flex h-full cursor-pointer flex-col rounded-2xl border-2 border-red-brand bg-white/90 p-6 pt-8 shadow-xl backdrop-blur-xl">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-red-brand px-3 py-1 text-[12px] font-bold uppercase tracking-wider text-white shadow-md">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-red-brand-ink px-3 py-1 text-[12px] font-bold uppercase tracking-wider text-white shadow-md">
               Most Popular
             </div>
             <PlanHead name={PLANS.pro.name} price={priceLabel('pro')} />
-            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-gray-600">
+            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-ink-600">
               {PLANS.pro.features.map((f) => (
                 <Bullet key={f} tone="red">
                   {f}
@@ -1237,7 +1282,7 @@ function Pricing({
               type="button"
               onClick={() => onUpgrade('pro')}
               disabled={loadingId !== null}
-              className="shimmer-hover w-full rounded-[8px] bg-red-brand py-2.5 font-bold text-white shadow-lg shadow-red-500/20 disabled:opacity-70"
+              className="shimmer-hover w-full rounded-[8px] bg-red-brand-ink py-2.5 hover:brightness-95 font-bold text-white shadow-lg shadow-red-brand/20 disabled:opacity-70"
             >
               {label('pro', `Get ${PLANS.pro.name}`)}
             </button>
@@ -1246,7 +1291,7 @@ function Pricing({
           {/* Creator */}
           <div className={PLAIN_CARD}>
             <PlanHead name={PLANS.starter.name} price={priceLabel('starter')} />
-            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-gray-600">
+            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-ink-600">
               {PLANS.starter.features.map((f) => (
                 <Bullet key={f} tone="ink">
                   {f}
@@ -1266,7 +1311,7 @@ function Pricing({
           {/* Agency */}
           <div className={PLAIN_CARD}>
             <PlanHead name={PLANS.agency.name} price={priceLabel('agency')} />
-            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-gray-600">
+            <ul className="mb-8 flex-1 space-y-3 text-[14px] text-ink-600">
               {PLANS.agency.features.map((f) => (
                 <Bullet key={f} tone="ink">
                   {f}
@@ -1284,7 +1329,7 @@ function Pricing({
       </div>
 
       {checkoutError && (
-        <p role="alert" className="mt-6 text-center text-[14px] font-medium text-red-brand">
+        <p role="alert" className="mt-6 text-center text-[14px] font-medium text-red-brand-ink">
           {checkoutError}
         </p>
       )}
@@ -1320,16 +1365,16 @@ const FAQ: { q: string; a: string }[] = [
 function FaqItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="group overflow-hidden rounded-2xl border border-gray-100 bg-white/80 backdrop-blur-md transition-all duration-300 hover:border-red-brand/30">
+    <div className="group overflow-hidden rounded-2xl border border-ink-100 bg-white/80 backdrop-blur-md transition-all duration-300 hover:border-red-brand/30">
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         className="flex w-full items-center justify-between p-4 text-left"
       >
-        <span className="font-bold text-gray-900">{q}</span>
+        <span className="font-bold text-ink-900">{q}</span>
         <svg
-          className="h-5 w-5 shrink-0 text-gray-400 transition-transform duration-300 group-hover:rotate-180"
+          className="h-5 w-5 shrink-0 text-ink-400 transition-transform duration-300 group-hover:rotate-180"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -1338,7 +1383,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
           <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
         </svg>
       </button>
-      {open && <div className="px-4 pb-4 text-[14px] leading-relaxed text-gray-600">{a}</div>}
+      {open && <div className="px-4 pb-4 text-[14px] leading-relaxed text-ink-600">{a}</div>}
     </div>
   );
 }
@@ -1346,7 +1391,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 function Faq() {
   return (
     <section id="faq" className={`reveal-element py-12 ${SHELL_NARROW}`}>
-      <h2 className="mb-10 text-center font-serif text-[30px] font-bold text-gray-900">
+      <h2 className="mb-10 text-center text-[30px] font-extrabold tracking-[-0.03em] text-ink-900">
         Frequently Asked Questions
       </h2>
       <div className="space-y-3">
@@ -1359,24 +1404,23 @@ function Faq() {
 }
 
 /* ── Closing CTA ─────────────────────────────────────────────────
-   One departure: the comp pins the EST. 2026 ring at right-8, where it
-   lands on top of the button and the fine print. The panel carries
-   lg:pr-40 so the ring gets its own air, and the ring only appears once
-   there is room for it.
+   The comp's "EST. 2026" rotating ring was retired with the marketing
+   honesty pass — a badge with no referent, spinning on hover, whose
+   red-on-navy fill also missed AA contrast.
    ───────────────────────────────────────────────────────────────── */
 
 function FinalCta({ startHref }: { startHref: string }) {
   return (
     <section className="reveal-element mx-auto w-full max-w-[1280px] px-4 pb-24">
-      <div className="group relative flex flex-col items-center justify-between overflow-hidden rounded-3xl border border-gray-800/50 bg-[#0f172a]/90 p-8 shadow-2xl backdrop-blur-xl md:flex-row md:p-12 lg:pr-40">
+      <div className="group relative flex flex-col items-center justify-between overflow-hidden rounded-3xl border border-ink-800/50 bg-[#0f172a]/90 p-8 shadow-2xl backdrop-blur-xl md:flex-row md:p-12">
         <div className="relative z-10 mb-8 flex w-full items-center justify-center gap-8 md:mb-0 md:w-auto md:justify-start">
           <img
             src="/images/landing/rocket.png"
             alt=""
             aria-hidden
-            className="float-anim h-24 w-24 -rotate-12 object-contain"
+            className="float-soft h-24 w-24 -rotate-12 object-contain"
           />
-          <h2 className="font-serif text-[30px] font-bold leading-tight text-white md:text-[52px]">
+          <h2 className="text-[30px] font-extrabold tracking-[-0.03em] leading-tight text-white md:text-[52px]">
             Your next video
             <br />
             could be the <span className="font-light italic">one.</span>
@@ -1386,20 +1430,12 @@ function FinalCta({ startHref }: { startHref: string }) {
         <div className="relative z-10 flex flex-col items-center">
           <Link
             href={startHref}
-            className="shimmer-hover mb-3 flex items-center gap-2 rounded-full bg-red-brand px-8 py-4 text-[18px] font-bold text-white shadow-lg shadow-red-500/30"
+            className="mb-3 flex items-center gap-2 rounded-full bg-red-brand-ink px-8 py-4 text-[18px] font-bold text-white shadow-lg shadow-red-brand/30"
           >
-            Check a video — free
+            Score my script — free
             <CtaArrow className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" />
           </Link>
-          <p className="text-[14px] font-medium text-gray-400">No credit card. No trial timers.</p>
-        </div>
-
-        <div
-          aria-hidden
-          className="absolute right-8 top-1/2 hidden h-24 w-24 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 border-red-brand/30 text-red-brand transition-transform duration-1000 group-hover:rotate-180 lg:flex"
-        >
-          <span className="text-[12px] font-bold tracking-widest">EST.</span>
-          <span className="text-[20px] font-bold">2026</span>
+          <p className="text-[14px] font-medium text-ink-400">No credit card. No trial timers.</p>
         </div>
       </div>
     </section>
@@ -1515,7 +1551,7 @@ function SiteFooter() {
   }
 
   return (
-    <footer className="border-t border-gray-100/50 bg-white/50 pb-8 pt-16 backdrop-blur-sm">
+    <footer className="border-t border-ink-100/50 bg-white/50 pb-8 pt-16 backdrop-blur-sm">
       <div className={SHELL}>
         <div className="mb-16 grid grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-2">
@@ -1528,15 +1564,15 @@ function SiteFooter() {
                 className="h-7 w-auto object-contain"
               />
             </div>
-            <p className="max-w-xs text-[14px] text-gray-600">
+            <p className="max-w-xs text-[14px] text-ink-600">
               Helping creators make content that wins.
             </p>
           </div>
 
           {FOOTER_COLUMNS.map((col) => (
             <div key={col.title}>
-              <h3 className="mb-4 font-bold text-gray-900">{col.title}</h3>
-              <ul className="space-y-3 text-[14px] text-gray-600">
+              <h3 className="mb-4 font-bold text-ink-900">{col.title}</h3>
+              <ul className="space-y-3 text-[14px] text-ink-600">
                 {col.links.map((link) => (
                   <li key={link.label}>
                     {link.href.startsWith('/') ? (
@@ -1555,19 +1591,19 @@ function SiteFooter() {
           ))}
 
           <div className="lg:col-span-2">
-            <h3 className="mb-2 font-bold text-gray-900">Get the latest tips &amp; updates</h3>
+            <h3 className="mb-2 font-bold text-ink-900">Get the latest tips &amp; updates</h3>
             {/* Was "Join 25,000+ creators improving their content." There is no
                 subscriber list to count yet, so the number was invented. This
                 says what the reader gets instead of how many others get it. */}
-            <p className="mb-4 text-[14px] text-gray-600">
+            <p className="mb-4 text-[14px] text-ink-600">
               Practical breakdowns of what the platforms reward. No more than one email a week.
             </p>
             {status === 'done' ? (
-              <p className="text-[14px] font-medium text-gray-900" role="status">
+              <p className="text-[14px] font-medium text-ink-900" role="status">
                 You&rsquo;re on the list. We&rsquo;ll email you when the next one goes out.
               </p>
             ) : (
-              <form className="flex gap-2" onSubmit={subscribe} noValidate>
+              <form className="flex gap-2" onSubmit={subscribe}>
                 <label className="sr-only" htmlFor="lp-newsletter">
                   Email address
                 </label>
@@ -1579,12 +1615,12 @@ function SiteFooter() {
                   autoComplete="email"
                   disabled={status === 'sending'}
                   placeholder="Enter your email"
-                  className="flex-1 rounded-[6px] border border-gray-300 bg-white px-4 py-2 text-[14px] text-gray-900 placeholder:text-gray-500 shadow-sm transition-all duration-300 focus:scale-[1.02] focus:border-red-brand focus:outline-none focus:ring-1 focus:ring-red-brand disabled:opacity-60"
+                  className="flex-1 rounded-[6px] border border-ink-300 bg-white px-4 py-2 text-[14px] text-ink-900 placeholder:text-ink-500 shadow-sm transition-all duration-300 focus:border-red-brand focus:outline-none focus:ring-1 focus:ring-red-brand disabled:opacity-60"
                 />
                 <button
                   type="submit"
                   disabled={status === 'sending'}
-                  className="rounded-[6px] bg-gray-900 px-4 py-2 text-[14px] font-medium text-white transition-all duration-300 hover:scale-[1.02] hover:bg-black disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+                  className="rounded-[6px] bg-ink-900 px-4 py-2 text-[14px] font-medium text-white transition-all duration-300 hover:scale-[1.02] hover:bg-black disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
                 >
                   {status === 'sending' ? 'Subscribing…' : 'Subscribe'}
                 </button>
@@ -1598,10 +1634,10 @@ function SiteFooter() {
           </div>
         </div>
 
-        <div className="flex items-center justify-end border-t border-gray-100/50 pt-8 text-[14px] text-gray-500">
+        <div className="flex items-center justify-end border-t border-ink-100/50 pt-8 text-[14px] text-ink-500">
           <span className="text-right">
             Made for creators, by creators.
-            <span className="ml-1 animate-pulse text-red-brand">❤</span>
+            
           </span>
         </div>
       </div>

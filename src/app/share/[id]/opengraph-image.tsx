@@ -1,9 +1,12 @@
 import { ImageResponse } from 'next/og';
+import { scoreBand, SCORE_BAND_UI, SCORE_BAND_HEX_DARK } from '@/lib/score-band';
 
 /**
  * OG image for the public score card — the 1200×630 preview Discord, X,
  * WhatsApp and Slack render when the share link is posted. Same data contract
- * as the share page: score, title, platform, and nothing else.
+ * as the share page: score, title, platform, and nothing else. The band
+ * words and thresholds come from the shared score-band util so the preview
+ * can never grade a report differently than the app does.
  *
  * RUNTIME: Edge, on purpose. @vercel/og's node build reads its bundled font
  * with `fileURLToPath(join(import.meta.url, ...))`, which produces a malformed
@@ -25,16 +28,21 @@ interface SharePayload {
   layers: { label: string; value: number | null }[];
 }
 
-function bandOf(score: number): string {
-  return score >= 90 ? 'Excellent' : score >= 80 ? 'Strong' : score >= 70 ? 'Good' : score >= 55 ? 'Fair' : 'Needs work';
-}
-
-function scoreColor(score: number): string {
-  return score >= 80 ? '#7CFF9A' : score >= 55 ? '#F59E0B' : '#EF4444';
-}
+// The card is painted on a near-black canvas, so the band hexes are the
+// dark-theme variants of the same tokens.
+const bandLabel = (score: number) => SCORE_BAND_UI[scoreBand(score)].label;
+const bandHex = (score: number) => SCORE_BAND_HEX_DARK[scoreBand(score)];
 
 export default async function OpengraphImage({ params }: { params: { id: string } }) {
-  const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  // Same derivation as env.ts's APP_URL: explicit public URL first, then the
+  // per-deploy VERCEL_URL Vercel injects. Falling back to localhost (the old
+  // default) made every preview fetch miss on VERCEL_URL-only deployments.
+  const explicit = process.env.NEXT_PUBLIC_APP_URL;
+  const vercel = process.env.VERCEL_URL;
+  const origin =
+    (explicit && explicit.replace(/\/+$/, '')) ||
+    (vercel && `https://${vercel.replace(/\/+$/, '')}`) ||
+    'https://publish.genapps.online';
 
   let data: SharePayload | null = null;
   try {
@@ -51,8 +59,8 @@ export default async function OpengraphImage({ params }: { params: { id: string 
   const score = data ? Math.max(0, Math.min(100, data.overallScore)) : null;
   const title = data?.title ?? 'Your upload';
   const platform = data?.targetPlatform ?? 'YouTube';
-  const band = score === null ? '' : bandOf(score);
-  const color = score === null ? '#8A9199' : scoreColor(score);
+  const band = score === null ? '' : bandLabel(score);
+  const color = score === null ? '#8A9199' : bandHex(score);
   const layers = data?.layers ?? [];
 
   return new ImageResponse(

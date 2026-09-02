@@ -7,8 +7,8 @@
  * misleading thumbnails, and that is a monetization risk).
  */
 
-import { analyzeImage } from './nvidia';
-import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore } from './guardrails';
+import { analyzeImage, extractJSON } from './nvidia';
+import { TRUST_SYSTEM_PREAMBLE, scrubForbidden, conservativeScore, fenceSafe } from './guardrails';
 import { ThumbnailMetric } from '../types';
 
 interface RawThumbnailResponse {
@@ -58,7 +58,7 @@ export async function analyzeThumbnail(
   videoTitle?: string,
 ): Promise<ThumbnailMetric> {
   const prompt = videoTitle
-    ? `${VISION_PROMPT}\n\nThe video title is: "${videoTitle}". Judge clickbait risk against whether the thumbnail's implied promise matches this title.`
+    ? `${VISION_PROMPT}\n\nThe video title is: """${fenceSafe(videoTitle)}""". Judge clickbait risk against whether the thumbnail's implied promise matches this title.`
     : VISION_PROMPT;
 
   const rawText = await analyzeImage(imageUrl, prompt, { temperature: 0.3, maxTokens: 900 });
@@ -72,7 +72,7 @@ export async function analyzeThumbnail(
   return {
     measured:             true,
     ctrPredictionScore:   conservativeScore(parsed.ctrPredictionScore ?? 65),
-    faceCount:            Math.max(0, Math.round(parsed.faceCount ?? 0)),
+    faceCount:            Math.max(0, Math.round(Number(parsed.faceCount) || 0)),
     dominantEmotion:      scrubForbidden(parsed.dominantEmotion ?? 'N/A').clean,
     textReadabilityScore: conservativeScore(parsed.textReadabilityScore ?? 80),
     contrastRating:       scrubForbidden(parsed.contrastRating ?? 'Medium contrast').clean,
@@ -87,17 +87,6 @@ export async function analyzeThumbnail(
 function normalizeRisk(v: string | undefined): 'Low' | 'Medium' | 'High' {
   if (v === 'High' || v === 'Medium' || v === 'Low') return v;
   return 'Medium';
-}
-
-function extractJSON<T>(text: string): T | null {
-  const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    const m = cleaned.match(/\{[\s\S]*\}/);
-    if (!m) return null;
-    try { return JSON.parse(m[0]) as T; } catch { return null; }
-  }
 }
 
 /**
@@ -115,7 +104,10 @@ export function unmeasuredThumbnail(): ThumbnailMetric {
     dominantEmotion: 'Not measured',
     textReadabilityScore: null,
     contrastRating: 'Not measured',
-    clickbaitRisk: 'Low',
+    // null, not 'Low': an unmeasured layer never asserts a safe band. The UI
+    // renders "Not measured" off the `measured` flag; a 'Low' here would show
+    // "Clickbait risk: Low" for an image the vision model never saw.
+    clickbaitRisk: null,
     compositionScore: null,
     recommendations: [
       "No thumbnail is attached, so CTR, contrast, composition, and clickbait scoring can't run — and on YouTube's browse and Suggested feeds, thumbnail click-through is the single biggest multiplier turning impressions into views, so this is the highest-leverage layer to unlock. Attach the exact 1280x720 (16:9) image you plan to upload and this layer will measure face count and expression, text legibility after the 320x180 mobile downscale, and subject-background contrast against your title.",

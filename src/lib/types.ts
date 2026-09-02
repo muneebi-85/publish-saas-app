@@ -1,7 +1,5 @@
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 
-export type PlanTier = 'FREE' | 'STARTER' | 'PRO' | 'AGENCY' | 'ENTERPRISE';
-
 export interface ScoreItem {
   name: string;
   score: number;
@@ -37,7 +35,12 @@ export interface VoiceMetric {
   /** Derived from word count ÷ duration. null when duration is unknown. */
   speakingPaceWpm: number | null;
   isMonotone: boolean | null;
-  syntheticArtifactRisk: 'Low' | 'Medium' | 'High';
+  /**
+   * null when nothing about the voice was evaluated (no audio processed AND no
+   * model pass) — an unevaluated layer must not claim a safe band. Legacy
+   * reports stored a band, which reads as evaluated.
+   */
+  syntheticArtifactRisk: 'Low' | 'Medium' | 'High' | null;
   recommendations: string[];
 }
 
@@ -89,7 +92,12 @@ export interface ThumbnailMetric {
   dominantEmotion: string;
   textReadabilityScore: number | null;
   contrastRating: string;
-  clickbaitRisk: 'Low' | 'Medium' | 'High';
+  /**
+   * null when unmeasured: an unmeasured layer asserting a safe risk band
+   * renders "Clickbait risk: Low" for an image nobody looked at — the same
+   * unmeasured-as-passing inversion the rest of this contract forbids.
+   */
+  clickbaitRisk: 'Low' | 'Medium' | 'High' | null;
   compositionScore: number | null;
   recommendations: string[];
 }
@@ -108,6 +116,8 @@ export interface SEOMetric {
 
 export interface CopyrightMetric {
   musicMatchRisk: 'Low' | 'Medium' | 'High';
+  /** The creator's declared music-source label (lowercased UI enum), when one was given — the UI must distinguish "no music" from "stock/royalty-free" on the same Low risk band. */
+  musicSource?: string;
   detectedLogos: string[];
   movieClipRisk: 'Low' | 'Medium' | 'High';
   watermarkDetected: boolean;
@@ -122,6 +132,19 @@ export interface HookRetentionMetric {
   first30SecRetention: number;
   hookDropoffReason: string;
   recommendedHooks: string[];
+  /**
+   * False when no script or transcript was supplied, so the retention numbers
+   * above were never computed (they read 0 and must not be displayed). Absent
+   * on legacy reports, which were all produced from a real opening.
+   */
+  analyzed?: boolean;
+  /**
+   * 'heuristic' when these numbers came from the deterministic fallback (model
+   * unavailable/failed) rather than the model pass. Both paths read the same
+   * script, but a creator making an edit decision deserves to know which one
+   * produced the number. Absent on legacy reports = the model path.
+   */
+  basis?: 'model' | 'heuristic';
 }
 
 export interface PlatformReport {
@@ -274,8 +297,21 @@ export interface ProjectData {
     brandSafety: number;
     copyright: number;
     seo: number;
-    hook: number;
-    editing: number;
+    /**
+     * Predicted retention, 0-100 — or null when no script or transcript was
+     * supplied, because the hook engine has nothing to read. A fabricated
+     * number here would flow into the weighted headline at 15% and into the
+     * retention curve drawing a curve for a script that does not exist.
+     */
+    hook: number | null;
+    /**
+     * Editing/pacing, 0-100 — or null when the layer was never measured
+     * (no frames decoded and no thumbnail to stand in). A hard 0 here would
+     * render a measured-looking "0/100 editing" for a layer that never ran,
+     * the exact unmeasured-as-failing conflation the video engine's own copy
+     * forbids. Consumers render null as "Not measured".
+     */
+    editing: number | null;
   };
   scriptIssues: ScriptIssue[];
   scriptAnalysis?: {

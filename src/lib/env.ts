@@ -79,8 +79,6 @@ export const env = {
   NVIDIA_MODEL_REASONING: optional('NVIDIA_MODEL_REASONING'),
   NVIDIA_MODEL_FAST: optional('NVIDIA_MODEL_FAST'),
   NVIDIA_MODEL_VISION: optional('NVIDIA_MODEL_VISION'),
-  NVIDIA_MODEL_GUARD: optional('NVIDIA_MODEL_GUARD'),
-  NVIDIA_MODEL_EMBED: optional('NVIDIA_MODEL_EMBED'),
 
   // ---- Lemon Squeezy (Merchant of Record) ----
   LS_API_KEY: recommended('LEMONSQUEEZY_API_KEY'),
@@ -158,9 +156,17 @@ export function hasBilling(): boolean {
   return Boolean(env.LS_API_KEY && env.LS_STORE_ID && env.LS_WEBHOOK_SECRET);
 }
 
-/** True when jobs can be enqueued; otherwise callers must run work inline. */
+/** True when jobs can be enqueued; otherwise callers must run work inline.
+ *
+ * The worker verifies QStash deliveries with BOTH signing keys, so a
+ * token-only configuration enqueues jobs the worker then 503s — QStash burns
+ * its retries and the job strands until the reconcile cron refunds it. All
+ * three vars must be present before the queue is considered usable.
+ */
 export function hasJobQueue(): boolean {
-  return Boolean(env.QSTASH_TOKEN);
+  return Boolean(
+    env.QSTASH_TOKEN && env.QSTASH_CURRENT_SIGNING_KEY && env.QSTASH_NEXT_SIGNING_KEY,
+  );
 }
 
 /** True when uploads can be presigned. */

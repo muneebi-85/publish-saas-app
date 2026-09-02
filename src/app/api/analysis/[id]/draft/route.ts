@@ -103,6 +103,9 @@ export async function GET(
       ? (input.musicSource as MusicSource)
       : undefined,
     aiGenerated: input.aiGenerated === true ? true : undefined,
+    // Same bucket the Projects page groups by — a re-run that dropped the
+    // folder would silently re-file the review into General.
+    folder: boundedString(input.folder, 60) ?? 'General',
     thumbnailUrl: boundedString(input.thumbnailUrl, 2_048),
     // Re-run as a fresh review: media and frame signals come from the files
     // the creator re-attaches, not stale URLs from the previous run — an

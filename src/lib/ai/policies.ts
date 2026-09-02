@@ -17,30 +17,35 @@ export const PLATFORM_POLICIES: Record<PlatformName, {
   disqualifiers: string[];
 }> = {
   YouTube: {
-    lastReviewed: '2026-07-22',
+    lastReviewed: '2026-09-02',
     monetizationName: 'YouTube Partner Program / AdSense',
     rules: [
-      'Advertiser-friendly content guidelines govern ad suitability (green/yellow/red icon).',
-      'Synthetic or altered content must be disclosed when it could mislead about real events or people.',
-      'Reused content policy: substantial original commentary or transformation is required.',
+      'Advertiser-friendly content guidelines govern ad suitability (green/yellow/red icon); human review of ad-suitability decisions may take up to 24 hours.',
+      'Synthetic or altered content must be disclosed via the "AI use" setting when it is photorealistic and could mislead about real people, events, or places. Disclosing does not limit reach or monetization; consistently failing to disclose risks a YouTube-applied label, removal, or YPP suspension. Aesthetic edits, idea generation, and cloning your own voice are exempt.',
+      'Reused content policy: repurposing others’ material requires significant commentary, substantive modification, or added value — even with permission, and independent of copyright.',
+      'Inauthentic content policy (renamed from "repetitious content", July 2025): content must not be mass-produced, generic, repetitive, or manipulative — template-driven storylines with identical outcomes and AI content built on generic templates without original insight are demonetizable.',
+      'AI personas presenting as human experts on sensitive topics — e.g. an AI "doctor" giving medical advice or an AI host offering investment advice — cannot monetize.',
       'Profanity in the first 7 seconds or repeated strong profanity limits ad suitability.',
       'Controversial issues and sensitive events reduce advertiser suitability even when non-violative.',
       'Music must be licensed or from the Audio Library; Content ID claims may divert revenue.',
     ],
     disqualifiers: [
       'Reused/unoriginal content with no transformation',
-      'Undisclosed synthetic content depicting real people or events',
+      'Mass-produced or templated content with no original insight (inauthentic content policy)',
+      'AI persona posing as a human expert on sensitive topics (medical, financial)',
+      'Undisclosed photorealistic synthetic content depicting real people or events',
       'Repeated strong profanity throughout',
       'Content primarily targeting children without COPPA-compliant setup',
     ],
   },
   TikTok: {
-    lastReviewed: '2026-07-20',
+    lastReviewed: '2026-09-02',
     monetizationName: 'TikTok Creator Rewards Program',
     rules: [
       'Videos must be longer than 1 minute to qualify for Creator Rewards.',
       'Content must be original — reposted or watermarked content from other platforms is excluded.',
       'Must meet "qualified views" criteria: watched for a meaningful duration by real accounts.',
+      'Rewards value factors in watch time, search value, and engagement (likes, comments, shares) — completion and rewatches matter, not raw view count.',
       'Community Guidelines compliance is required; strikes remove eligibility.',
       'Commercial music requires the Commercial Music Library for branded content.',
     ],
@@ -52,7 +57,7 @@ export const PLATFORM_POLICIES: Record<PlatformName, {
     ],
   },
   Instagram: {
-    lastReviewed: '2026-07-18',
+    lastReviewed: '2026-09-02',
     monetizationName: 'Instagram Reels bonuses & branded content',
     rules: [
       'Content Monetization Policies apply in addition to Community Guidelines.',
@@ -60,6 +65,7 @@ export const PLATFORM_POLICIES: Record<PlatformName, {
       'Videos with watermarks or borders receive reduced distribution.',
       'Branded content must use the paid partnership label.',
       'Vertical 9:16 format required for full Reels distribution.',
+      'Sends-per-reach (shares to DMs) is the distribution signal Instagram leadership has named as the strongest growth indicator for Reels.',
     ],
     disqualifiers: [
       'Watermarked or letterboxed content',
@@ -68,7 +74,7 @@ export const PLATFORM_POLICIES: Record<PlatformName, {
     ],
   },
   Facebook: {
-    lastReviewed: '2026-07-18',
+    lastReviewed: '2026-09-02',
     monetizationName: 'Facebook In-Stream Ads',
     rules: [
       'Videos should exceed 1 minute for in-stream ad placement; 3 minutes is preferred.',
@@ -85,7 +91,7 @@ export const PLATFORM_POLICIES: Record<PlatformName, {
     ],
   },
   LinkedIn: {
-    lastReviewed: '2026-07-15',
+    lastReviewed: '2026-09-02',
     monetizationName: 'LinkedIn creator distribution (no direct ad revenue share)',
     rules: [
       'No direct monetization program — value is reach, inbound leads, and B2B credibility.',

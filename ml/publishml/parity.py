@@ -326,6 +326,44 @@ CASES: list[dict] = [
         "channel": {"subscribers": 300, "videoCount": 6, "publishedAt": "March 4, 2026"},
         "thumb": None,
     },
+    {
+        # Python 3.11+ fromisoformat accepts forms far beyond the basic dashed
+        # ISO the TS regex used to allow: hour-only times (T09), compact dates
+        # (20260304, 20260304T0915), lowercase t, ±hh and ±hhmm offsets, and
+        # short fractions. The TS mirrors now accept the same set; this case
+        # (hour-only + compact channel date) pins both sides so neither becomes
+        # stricter than the trainer's parser again.
+        "name": "fromisoformat extended grammar: hour-only and compact forms",
+        "video": {
+            "title": "extended iso grammar",
+            "description": "",
+            "tags": [],
+            "duration": "PT3M",
+            "publishedAt": "2026-03-04T09",
+            "definition": "hd",
+            "caption": False,
+        },
+        "channel": {"subscribers": 950, "videoCount": 15, "publishedAt": "20260304T0915"},
+        "thumb": None,
+    },
+    {
+        # The ±hh / ±hhmm offset spellings and a long fractional tail: Python
+        # accepts '+05' and '-0500' and truncates fractions at microseconds; the
+        # TS side must accept the spellings (and never let the offset shift the
+        # wall-clock fields Python's extractor records).
+        "name": "offset spellings ±hh/±hhmm and fractional seconds",
+        "video": {
+            "title": "offset spellings",
+            "description": "",
+            "tags": [],
+            "duration": "PT1M",
+            "publishedAt": "2026-03-05T21:45:10.1234567-0500",
+            "definition": "hd",
+            "caption": False,
+        },
+        "channel": {"subscribers": 420, "videoCount": 8, "publishedAt": "2026-03-05T21:45+05"},
+        "thumb": None,
+    },
 ]
 
 

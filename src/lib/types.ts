@@ -112,6 +112,18 @@ export interface SEOMetric {
   suggestedHashtags: string[];
   generatedDescription?: string;
   timestamps?: string[];
+  /**
+   * Deterministic script-term vs. packaging coverage. null when no script
+   * was analyzed (legacy reports read as undefined — render "not measured",
+   * never zero). See computeKeywordGaps in seo-engine.
+   */
+  keywordGaps?: {
+    term: string;
+    scriptCount: number;
+    inTitle: boolean;
+    inDescription: boolean;
+    inTags: boolean;
+  }[] | null;
 }
 
 export interface CopyrightMetric {

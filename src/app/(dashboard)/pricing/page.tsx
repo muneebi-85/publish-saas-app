@@ -61,6 +61,7 @@ const COMPARISON = [
 export default function PricingPage() {
   const [loadingId, setLoadingId] = useState<PlanId | null>(null);
   const [checkoutError, setCheckoutError] = useState('');
+  const [interval, setInterval] = useState<'monthly' | 'yearly'>('monthly');
   const { plan: currentPlan, loading: quotaLoading, authenticated } = useQuota();
 
   const handleUpgrade = async (planId: PlanId | null) => {
@@ -93,7 +94,7 @@ export default function PricingPage() {
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId, interval: 'monthly' }),
+        body: JSON.stringify({ planId, interval }),
       });
       // Guarded: a proxy error page is HTML, and unguarded parsing would
       // surface as "Unexpected token '<'" in the checkout-error UI.
@@ -132,6 +133,29 @@ export default function PricingPage() {
           </div>
         )}
 
+        {/* Billing interval toggle — the yearly Lemon Squeezy variants exist
+            (LEMONSQUEEZY_VARIANT_*_YEARLY), plans.ts carries the annual
+            catalogue prices ($190/$490 — two months free), and the checkout
+            route accepts `interval`; the purchase surfaces just never offered
+            the choice. */}
+        <div className="flex justify-center">
+          <div className="inline-flex items-center rounded-full border border-ink-200 bg-surface-panel p-1" role="group" aria-label="Billing interval">
+            {(['monthly', 'yearly'] as const).map((i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setInterval(i)}
+                aria-pressed={interval === i}
+                className={`px-4 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${
+                  interval === i ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900'
+                }`}
+              >
+                {i === 'monthly' ? 'Monthly' : 'Yearly · 2 months free'}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Tiers */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-5xl mx-auto">
           {TIERS.map((tier) => {
@@ -148,6 +172,15 @@ export default function PricingPage() {
                   : (quotaLoading || currentPlan === 'free'
                     ? `Upgrade to ${tier.name}`
                     : `Switch to ${tier.name}`);
+            // Both figures come from the same catalogue the quota meter reads
+            // (priceLabel), so the monthly and yearly prices on this page can
+            // never disagree with each other or with what LS charges.
+            const plan = tier.id === 'free' ? undefined : (tier.id as Plan);
+            const displayPrice =
+              plan && interval === 'yearly'
+                ? PLANS[plan].yearly
+                : tier.price;
+            const priceSuffix = interval === 'yearly' && plan ? '/yr' : '/mo';
             return (
               <div
                 key={tier.name}
@@ -173,9 +206,9 @@ export default function PricingPage() {
 
                 <div className="mt-6 flex items-baseline gap-1.5">
                   <span className="font-display text-[40px] font-semibold tracking-[-0.025em] tabular-nums leading-none text-ink-900">
-                    {tier.price === null ? 'Custom' : `$${tier.price}`}
+                    {displayPrice === null ? 'Custom' : `$${displayPrice}`}
                   </span>
-                  {tier.price !== null && <span className="text-[13px] text-ink-500">/mo</span>}
+                  {displayPrice !== null && <span className="text-[13px] text-ink-500">{priceSuffix}</span>}
                 </div>
                 <div className="text-[12px] mt-2 font-medium text-ink-900">{tier.audits}</div>
 

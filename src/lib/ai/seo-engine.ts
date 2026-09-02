@@ -25,6 +25,128 @@ export interface SEOAnalysis {
   tags: string[];
   description: string;
   timestamps?: string[];
+  /**
+   * Deterministic keyword-coverage gap analysis, computed (never modeled):
+   * the meaningful terms the script actually discusses, how often, and
+   * whether the title/description carry them. `null` when there is no
+   * script to extract terms from — an honest "not measured", not zero.
+   */
+  keywordGaps?: KeywordGap[] | null;
+}
+
+/** One script term and where the packaging does or does not carry it. */
+export interface KeywordGap {
+  term: string;
+  /** Occurrences in the script. */
+  scriptCount: number;
+  /** Present in the title (verbatim, word-boundary match). */
+  inTitle: boolean;
+  /** Present in the description. */
+  inDescription: boolean;
+  /** Present in the suggested tags. */
+  inTags: boolean;
+}
+
+const GAP_STOPWORDS = new Set([
+  'the','and','for','with','your','this','that','these','those','what','when',
+  'how','why','who','will','would','can','could','should','about','into','from',
+  'they','them','their','there','here','just','like','also','then','than',
+  'because','while','very','really','make','made','making','get','got','getting',
+  'going','gone','know','known','thing','things','stuff','people','something',
+  'anything','everything','nothing','one','two','three','first','second','next',
+  'video','youtube','tiktok','instagram','facebook','linkedin','channel',
+  'subscribe','subscribing','watching','watch','today','guys','welcome',
+  'okay','right','yeah','gonna','wanna','kind','sort','little','lot','much',
+  'more','most','less','least','some','any','all','each','every','both','few',
+  'other','another','same','such','only','own','same','way','ways','use','used',
+  'using','need','needs','want','wants','let','lets','like','look','looks',
+  'see','seen','say','says','said','come','comes','came','take','takes','took',
+  'give','gives','gave','find','finds','found','think','thinks','thought',
+  'even','still','back','actually','literally','basically','simply','clearly',
+  // Structural script words — they organize a script but name no topic.
+  'part','parts','segment','section','chapter','intro','outro','point',
+  'points','number','word','words','line','lines','minute','minutes',
+  'second','seconds','example','something','important','different','better',
+  'best','worst','least','main','major','whole','entire','everyone','anyone',
+]);
+
+/**
+ * Extract the creator's real subject terms from the script: multi-word content
+ * nouns will not survive single-token analysis, so this counts unigrams and
+ * bigrams, drops fillers, and keeps terms with at least `minCount` mentions.
+ * Everything is derived from the script's own words — nothing is invented.
+ */
+function extractScriptTerms(script: string, minCount = 3): Map<string, number> {
+  const words = script
+    .toLowerCase()
+    .replace(/[^a-z0-9\s'-]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !GAP_STOPWORDS.has(w) && !/^\d+$/.test(w));
+  if (words.length === 0) return new Map();
+
+  const counts = new Map<string, number>();
+  const bump = (term: string) => counts.set(term, (counts.get(term) ?? 0) + 1);
+  for (let i = 0; i < words.length; i++) {
+    bump(words[i]);
+    if (i + 1 < words.length) bump(`${words[i]} ${words[i + 1]}`);
+  }
+  // Unigram/bigram double counting is fine for ranking; the map is ordered by
+  // count desc, then term asc, so the output is deterministic.
+  return new Map(
+    [...counts.entries()]
+      .filter(([, n]) => n >= minCount)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+  );
+}
+
+/**
+ * The keyword-gap computation: for each script term, check whether the title,
+ * description, and suggested tags carry it. This is the "your script says
+ * 'thumbnail testing' 14×, your title mentions it 0×" finding — real gap
+ * analysis from data the app already holds, no external API, no model.
+ */
+export function computeKeywordGaps(input: {
+  scriptText: string;
+  title: string;
+  description?: string;
+  tags: string[];
+  /** Cap on returned gaps; the top terms are the decision-relevant ones. */
+  limit?: number;
+}): KeywordGap[] | null {
+  const script = input.scriptText.trim();
+  if (script.length < 200) return null;
+  const title = input.title.toLowerCase();
+  const desc = (input.description ?? '').toLowerCase();
+  const tags = input.tags.map((t) => t.toLowerCase());
+
+  const terms = extractScriptTerms(script);
+  if (terms.size === 0) return null;
+
+  const has = (haystack: string, term: string) =>
+    new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i').test(haystack);
+
+  const gaps: KeywordGap[] = [];
+  for (const [term, scriptCount] of terms) {
+    const inTitle = has(title, term);
+    const inDescription = has(desc, term);
+    const inTags = tags.some((t) => has(t, term));
+    // Title coverage is the meaningful one for search/suggested matching — a
+    // term the title carries is not a gap. (Description-only packaging was
+    // the old bar and it buried the actionable findings under "covered".)
+    if (inTitle) continue;
+    // A bigram whose words are each already reported (or title-covered) adds
+    // noise: "curve decides" when "curve" and "decides" are the real signals.
+    const parts = term.split(' ');
+    if (parts.length === 2) {
+      const bothKnown =
+        (terms.has(parts[0]) && (title.includes(parts[0]) || gaps.some((g) => g.term === parts[0]))) ||
+        (terms.has(parts[1]) && (title.includes(parts[1]) || gaps.some((g) => g.term === parts[1])));
+      if (bothKnown) continue;
+    }
+    gaps.push({ term, scriptCount, inTitle, inDescription, inTags });
+    if (gaps.length >= (input.limit ?? 5)) break;
+  }
+  return gaps;
 }
 
 interface RawSEOResponse {
@@ -91,6 +213,7 @@ export async function generateSEOAnalysis(
   title: string,
   platform: string,
   description?: string,
+  scriptText?: string,
 ): Promise<SEOAnalysis> {
   const hasDescription = typeof description === 'string' && description.trim().length > 0;
   const raw = await chatJSON<RawSEOResponse>(
@@ -106,7 +229,24 @@ export async function generateSEOAnalysis(
     { model: 'fast', temperature: 0.7, maxTokens: 1400 },
   );
 
-  if (!raw) return heuristicSEO(title, platform);
+  // The deterministic gap analysis runs on every path — model or fallback —
+  // because it needs no model at all: it compares the script's own terms
+  // against the packaging. Kept out of the prompt so the model cannot
+  // reword these findings into something softer than the data.
+  const tags = raw
+    ? (raw.tags ?? []).slice(0, 12).map((t) => scrubForbidden(t).clean.slice(0, 40))
+    : heuristicSEO(title, platform).tags;
+  const keywordGaps = computeKeywordGaps({
+    scriptText: scriptText ?? '',
+    title,
+    description,
+    tags,
+  });
+
+  if (!raw) {
+    const fallback = heuristicSEO(title, platform);
+    return { ...fallback, keywordGaps };
+  }
 
   return {
     seoScore:      conservativeScore(raw.seoScore ?? 60),
@@ -114,13 +254,14 @@ export async function generateSEOAnalysis(
     cpmPotential:  conservativeScore(raw.cpmPotential ?? 60),
     ctrPrediction: conservativeScore(raw.ctrPrediction ?? 60),
     optimizedTitles: (raw.optimizedTitles ?? []).slice(0, 3).map((t) => scrubForbidden(t).clean.slice(0, 100)),
-    tags:            (raw.tags ?? []).slice(0, 12).map((t) => scrubForbidden(t).clean.slice(0, 40)),
+    tags,
     description:     scrubForbidden(raw.description ?? '').clean,
     // Timestamps are only meaningful when the engine saw the creator's own
     // description (the only script-adjacent text this call receives). Without
     // it the model cannot know real chapter boundaries, so a fabricated
     // "0:00 Intro" is dropped rather than passed through.
     timestamps: hasDescription ? (raw.timestamps ?? []).slice(0, 10) : [],
+    keywordGaps,
   };
 }
 

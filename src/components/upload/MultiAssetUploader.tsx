@@ -228,6 +228,11 @@ export const MultiAssetUploader: React.FC = () => {
             if (data.aiGenerated === true) {
               setAiGenerated((prev) => (prev === false ? true : prev));
             }
+            // Same bucket the Projects page groups by — without this, a re-run
+            // silently re-files the review into General.
+            if (typeof data.folder === 'string' && data.folder) {
+              setFolder((prev) => (prev === 'General' ? data.folder.slice(0, 60) : prev));
+            }
           })
           .catch(() => {
             // Prefill-only; the review must still be runnable from a blank form.

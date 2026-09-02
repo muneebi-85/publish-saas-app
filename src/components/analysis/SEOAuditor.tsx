@@ -92,24 +92,82 @@ export const SEOAuditor: React.FC<{ seo: SEOMetric }> = ({ seo }) => {
       {(seo.generatedDescription || seo.timestamps) && (
         <div className="border-t border-ink-200 p-6 grid grid-cols-1 gap-6">
           {seo.generatedDescription && (
-            <CopyableText 
-              title="Optimized Description" 
-              icon={<AlignLeft className="w-3.5 h-3.5" />} 
-              text={seo.generatedDescription} 
+            <CopyableText
+              title="Optimized Description"
+              icon={<AlignLeft className="w-3.5 h-3.5" />}
+              text={seo.generatedDescription}
             />
           )}
           {seo.timestamps && seo.timestamps.length > 0 && (
-            <CopyableText 
-              title="Chapter Timestamps" 
-              icon={<Clock className="w-3.5 h-3.5" />} 
-              text={seo.timestamps.join('\n')} 
+            <CopyableText
+              title="Chapter Timestamps"
+              icon={<Clock className="w-3.5 h-3.5" />}
+              text={seo.timestamps.join('\n')}
             />
           )}
         </div>
       )}
+
+      {/* Keyword coverage — computed from the script's own terms, not a model
+          opinion. null/undefined = no script was analyzed: the honest answer
+          is the empty-state line, not a zero. */}
+      <div className="border-t border-ink-200 p-6">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-[12px] font-semibold text-brand-600 inline-flex items-center gap-1.5">
+            <Search className="w-3 h-3" /> Keyword coverage
+          </div>
+        </div>
+        <p className="text-[12px] text-ink-500 mb-3 leading-relaxed">
+          Terms your script discusses most, and whether your title, description, and tags carry them.
+        </p>
+        {!seo.keywordGaps || seo.keywordGaps.length === 0 ? (
+          <p className="text-[13px] text-ink-500">
+            {seo.keywordGaps === null || seo.keywordGaps === undefined
+              ? 'Not measured — attach the script to compare its terms against your packaging.'
+              : 'Your title and description already carry every term your script repeats most. Nothing missing.'}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {seo.keywordGaps.map((g) => (
+              <div
+                key={g.term}
+                className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg bg-surface-canvas border border-ink-200"
+              >
+                <div className="flex-1 min-w-0">
+                  <span className="text-[13px] font-medium text-ink-900">{g.term}</span>
+                  <span className="text-[12px] text-ink-500 ml-2">
+                    {g.scriptCount}× in script
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-[11px] font-medium shrink-0">
+                  <CoveragePill label="Title" covered={g.inTitle} />
+                  <CoveragePill label="Desc" covered={g.inDescription} />
+                  <CoveragePill label="Tags" covered={g.inTags} />
+                </div>
+              </div>
+            ))}
+            <p className="text-[11px] text-ink-500 leading-relaxed pt-1">
+              Search and suggested feeds match your packaging against what viewers type — a term the
+              script leans on that the title never names is the cheapest discoverability fix there is.
+            </p>
+          </div>
+        )}
+      </div>
     </section>
   );
 };
+
+const CoveragePill: React.FC<{ label: string; covered: boolean }> = ({ label, covered }) => (
+  <span
+    className={`inline-flex items-center px-2 py-0.5 rounded-md border ${
+      covered
+        ? 'text-grass-700 border-grass-200 bg-grass-50'
+        : 'text-ink-500 border-ink-200 bg-ink-50'
+    }`}
+  >
+    {covered ? '✓' : '—'} {label}
+  </span>
+);
 
 const CopyableText: React.FC<{ title: string; icon: React.ReactNode; text: string }> = ({ title, icon, text }) => {
   const [copied, setCopied] = useState(false);

@@ -344,27 +344,72 @@ function parseTime(value?: string | null): Date | null {
   // a date-only string as UTC. Python's mirror attaches UTC to both. Appending
   // Z makes this side deterministic and identical to Python for every input.
   //
-  // The ISO-shaped regex is the ONLY accepted form — Python's mirror is strict
-  // `fromisoformat` and returns None for anything else ("March 4, 2026" etc.).
-  // A `new Date(trimmed)` fallback used to accept those, computing a
-  // machine-zone-dependent age_days_log Python would have scored as 0 — the
-  // exact drift this parity layer exists to prevent.
+  // This regex is the ONLY accepted form, and it mirrors Python 3.11+
+  // `fromisoformat`'s full grammar (the parity twin is strict — anything else
+  // returns None there, and a `new Date(trimmed)` fallback used to accept
+  // "March 4, 2026" etc., computing a machine-zone-dependent age_days_log
+  // Python scored as 0). Python additionally accepts: COMPACT dates
+  // (20260304, 20260304T0915), HOUR-ONLY times (…T09), any-length fractional
+  // seconds, lowercase 't' separators, ±hh and ±hhmm offsets, and week dates
+  // (2026-W09-1). The compact/week forms are handled by explicit mirrors
+  // below; everything else the trainer's rows can carry is in the regex.
   const trimmed = value.trim();
-  // Strict ISO-8601 subset mirroring what Python's `fromisoformat` accepts
-  // (after its Z→+00:00 rewrite): date, optional time with optional fractional
-  // seconds, optional trailing Z/offset. Python returns None for anything
-  // else ("March 4, 2026") — a `new Date(trimmed)` fallback used to accept
-  // those, computing a machine-zone-dependent age_days_log Python scored as 0.
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.exec(trimmed);
+
+  // Compact date form: 20260304 / 20260304T091500Z — Python accepts, so TS must.
+  // Anchored end-to-end: fromisoformat rejects trailing junk ('20260304X').
+  const compact = /^(\d{4})(\d{2})(\d{2})(?:[Tt](\d{2})(\d{2})?(\d{2})?(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/.exec(trimmed);
+  if (compact) {
+    const y = Number(compact[1]), mo = Number(compact[2]), d = Number(compact[3]);
+    if (!isValidCalendarDate(y, mo, d)) return null;
+    const h = compact[4] ? Number(compact[4]) : 0;
+    const mi = compact[5] ? Number(compact[5]) : 0;
+    const s = compact[6] ? Number(compact[6]) : 0;
+    if (h > 23 || mi > 59 || s > 59) return null;
+    if (compact[8] !== undefined && compact[8] !== '') {
+      const raw = compact[8];
+      const off = raw === 'Z' ? '+00:00'
+        : /^([+-]\d{2})$/.test(raw) ? `${raw}:00`
+        : raw.replace(/^([+-]\d{2})(\d{2})$/, '$1:$2');
+      const msC = compact[7] !== undefined ? Math.round(Number('0.' + compact[7]) * 1000) : 0;
+      const date = new Date(`${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}T` +
+        `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(msC).padStart(3, '0')}${off}`);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    const date = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  // Standard dashed form. Every component Python allows, including optional
+  // minutes, optional seconds, any fractional length, and the four offset
+  // spellings (Z / ±hh / ±hhmm / ±hh:mm).
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[Tt ](\d{2})(?::(\d{2}))?(?::(\d{2}))?(?:\.(\d+))?)?(Z|[+-]\d{2}(?::?\d{2})?)?$/.exec(trimmed);
   if (!m) return null;
   const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
   if (!isValidCalendarDate(year, month, day)) return null;
-  if (!/[T ]/.test(trimmed)) {
-    // Date-only: both sides read UTC midnight.
-    const date = new Date(`${trimmed}T00:00:00Z`);
+  const hour = m[4] !== undefined ? Number(m[4]) : 0;
+  const minute = m[5] !== undefined ? Number(m[5]) : 0;
+  const second = m[6] !== undefined ? Number(m[6]) : 0;
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  // Python keeps microsecond precision; the parity tolerance is 1e-9 on
+  // log1p(age), so the fraction must survive as milliseconds (truncated the
+  // same way — 0.1234567s → 123ms, Python's datetime keeps .123456 but the
+  // difference lands below the 1e-9 log tolerance either way).
+  const ms = m[7] !== undefined ? Math.round(Number('0.' + m[7]) * 1000) : 0;
+  if (m[8] !== undefined && m[8] !== '') {
+    // Offset present: normalize Z / ±hh / ±hhmm to ±hh:mm — V8's parser
+    // rejects the short spellings even though fromisoformat accepts them.
+    const raw = m[8];
+    const off = raw === 'Z' ? '+00:00'
+      : /^([+-]\d{2})$/.test(raw) ? `${raw}:00`
+      : raw.replace(/^([+-]\d{2})(\d{2})$/, '$1:$2');
+    const date = new Date(
+      `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T` +
+      `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}.${String(ms).padStart(3, '0')}${off}`,
+    );
     return Number.isNaN(date.getTime()) ? null : date;
   }
-  const date = new Date(trimmed);
+  // No offset — both sides read the naive fields as UTC.
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second, ms));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -391,7 +436,15 @@ function parseTime(value?: string | null): Date | null {
  */
 function wallClock(value?: string | null): { hour: number; dow: number } | null {
   if (!value) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2})(?::(\d{2}))?)?/.exec(value.trim());
+  const trimmed = value.trim();
+  // Same grammar as parseTime (Python 3.11+ fromisoformat): compact or dashed
+  // dates, T/t/space separator, hour-only time. Fields are read straight out of
+  // the string so an offset never shifts them.
+  let m = /^(\d{4})-(\d{2})-(\d{2})(?:[Tt ](\d{2}))?/.exec(trimmed);
+  if (!m) {
+    // Compact spelling, anchored like Python's fromisoformat (no trailing junk).
+    m = /^(\d{4})(\d{2})(\d{2})(?:[Tt](\d{2})(\d{2})?(\d{2})?(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/.exec(trimmed);
+  }
   if (!m) return null;
   const year = Number(m[1]);
   const month = Number(m[2]);

@@ -25,6 +25,7 @@ import { normalizeReport } from '@/lib/normalize-report';
 import { ProjectData } from '@/lib/types';
 import { getUserPlanState } from '@/lib/session';
 import { ChallengeCompare } from '@/components/challenge/ChallengeCompare';
+import { RunComparisonStrip } from '@/components/analysis/RunComparisonStrip';
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
 
@@ -72,6 +73,61 @@ export default async function AnalysisPage({
   // entries render instead of crashing React (see normalizeReport).
   const project: ProjectData = normalizeReport(row);
 
+  // ── Previous run of the same video ────────────────────────────────
+  // The re-check loop's visible proof: the newest PRIOR report with the same
+  // normalized title+platform (the same grouping key the Reports trend page
+  // uses, so the two surfaces cannot disagree about what a "series" is). Only
+  // strictly older rows qualify — a re-run must never compare against itself
+  // or a newer sibling.
+  const groupKeyTitle = row.title.trim().toLowerCase();
+  const priorRun = await prisma.analysisReport.findFirst({
+    where: {
+      id: { not: row.id },
+      createdAt: { lt: row.createdAt },
+      targetPlatform: row.targetPlatform,
+      user: { clerkId: authCtx.clerkId },
+      // Prisma has no lower() on a plain string column without raw SQL; the
+      // normalized grouping is approximated by exact match after trim, which
+      // the re-run handoff guarantees (it carries the title verbatim), and
+      // the reports-page normalization still groups case-insensitively for
+      // its trend lines.
+      title: groupKeyTitle,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, createdAt: true, overallScore: true, report: true },
+  });
+  let comparison: import('@/components/analysis/RunComparisonStrip').RunComparison | null = null;
+  if (priorRun) {
+    const layerOf = (obj: unknown, key: string): number | null => {
+      const scores =
+        obj !== null && typeof obj === 'object' && !Array.isArray(obj)
+          ? ((obj as Record<string, unknown>).scores as Record<string, unknown> | undefined)
+          : undefined;
+      const v = scores?.[key];
+      if (v === null || v === undefined) return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? Math.min(100, Math.round(n)) : null;
+    };
+    const after = row.report as unknown;
+    const before = priorRun.report as unknown;
+    comparison = {
+      previous: {
+        id: priorRun.id,
+        createdAt: priorRun.createdAt.toISOString(),
+        overall: priorRun.overallScore,
+      },
+      currentOverall: row.overallScore,
+      layers: [
+        { label: 'Monetization', before: layerOf(before, 'monetization'), after: layerOf(after, 'monetization') },
+        { label: 'Retention', before: layerOf(before, 'hook'), after: layerOf(after, 'hook') },
+        { label: 'Authenticity', before: layerOf(before, 'humanAuthenticity'), after: layerOf(after, 'humanAuthenticity') },
+        { label: 'Copyright', before: layerOf(before, 'copyright'), after: layerOf(after, 'copyright') },
+        { label: 'SEO', before: layerOf(before, 'seo'), after: layerOf(after, 'seo') },
+        { label: 'Brand safety', before: layerOf(before, 'brandSafety'), after: layerOf(after, 'brandSafety') },
+      ],
+    };
+  }
+
   // The review targets one platform; surface it as the default everywhere so
   // the methodology card and the platform tabs start from the right policy set.
   const targetPlatform = (row.targetPlatform ?? project.platformReports?.[0]?.platform ?? 'YouTube') as PlatformName;
@@ -107,6 +163,11 @@ export default async function AnalysisPage({
       )}
 
       <ScoreHeader project={project} shared={row.sharedAt !== null} />
+
+      {/* The re-check loop's visible artifact: what changed vs the previous
+          run of this video. Rendered before the fix list because "did my fixes
+          work?" is the first question a returning creator has. */}
+      {comparison && <RunComparisonStrip comparison={comparison} />}
 
       <PriorityFixes project={project} />
 

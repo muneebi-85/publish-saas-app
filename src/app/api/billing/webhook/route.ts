@@ -543,14 +543,12 @@ export async function POST(req: Request) {
           // it is still queued). ACKing here would make Lemon Squeezy drop this
           // event for good; when `created` finally lands its upsert writes
           // status active with no cancelledAt — a subscription the customer
-          // cancelled recorded as live. A 500 makes LS redeliver once the row
-          // exists, which is the correct outcome.
-          console.error(
-            `[billing webhook] subscription_cancelled for unknown row ${lsSubscriptionId} — returning 500 so LS retries after the created event lands.`,
-          );
-          return NextResponse.json(
-            { error: 'Subscription row not yet present; retry later.' },
-            { status: 500 },
+          // cancelled recorded as live. Throwing (rather than returning the 500
+          // directly) routes through the catch below, which RELEASES the dedup
+          // row — a bare return would leave it in place and the LS retry would
+          // be deduped into a silent no-op, losing the cancellation forever.
+          throw new Error(
+            `subscription_cancelled for unknown row ${lsSubscriptionId} — 500ing so LS retries after the created event lands.`,
           );
         }
         if (isStale(sub)) {

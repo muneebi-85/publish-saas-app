@@ -264,7 +264,7 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       () => unmeasuredThumbnail(),
     ),
     safeCall('copyright', () => analyzeCopyright(copyrightInput), () => heuristicCopyright(copyrightInput)),
-    safeCall('seo',       () => generateSEOAnalysis(input.title, platform, input.description), () => heuristicSEO(input.title, platform)),
+    safeCall('seo',       () => generateSEOAnalysis(input.title, platform, input.description, script), () => heuristicSEO(input.title, platform)),
     safeCall('platforms', () => analyzeAllPlatforms({
       title: input.title,
       description: input.description,
@@ -497,6 +497,9 @@ export async function runFullReview(input: ReviewInput): Promise<ProjectData> {
       // Only kept when the engine actually saw the creator's description —
       // see generateSEOAnalysis; heuristicSEO always returns [] here.
       timestamps: seoResult.timestamps,
+      // Deterministic script-term coverage — the real gap analysis the
+      // qualitative model scores cannot substitute for.
+      keywordGaps: seoResult.keywordGaps ?? null,
     },
     copyrightAnalysis: copyrightResult,
     hookAnalysis: hookResult,

@@ -14,7 +14,11 @@
  */
 export type ClerkUserLike = {
   primaryEmailAddressId?: string | null;
-  emailAddresses?: { id: string; emailAddress: string }[];
+  emailAddresses?: {
+    id: string;
+    emailAddress: string;
+    verification?: { status?: string | null } | null;
+  }[];
 } | null;
 
 /**
@@ -23,6 +27,13 @@ export type ClerkUserLike = {
  * transactional mail key off this — sending a payment failure to a stale
  * secondary address is a real, silent failure. Falls back to the first entry
  * only when no primary id is set.
+ *
+ * Unverified addresses are skipped when any verified one exists: the
+ * email-matched billing flows (webhook attach, /restore) lean on this address
+ * being the account owner's, and an address the user typed but never confirmed
+ * is not that. Sign-up verifies by email code, so a verified address is the
+ * healthy state; the unverified fallback only preserves mail for accounts
+ * mid-verification.
  */
 export function primaryEmailOf(user: ClerkUserLike): string | null {
   // Blank entries are discarded up front. The return type promises an address or
@@ -30,10 +41,12 @@ export function primaryEmailOf(user: ClerkUserLike): string | null {
   // check downstream and be handed to the mailer as a recipient.
   const addresses = (user?.emailAddresses ?? []).filter((a) => a?.emailAddress?.trim());
   if (addresses.length === 0) return null;
+  const verified = addresses.filter((a) => a.verification?.status === 'verified');
+  const pool = verified.length > 0 ? verified : addresses;
   const primaryId = user?.primaryEmailAddressId;
   if (primaryId) {
-    const match = addresses.find((a) => a.id === primaryId);
+    const match = pool.find((a) => a.id === primaryId);
     if (match) return match.emailAddress;
   }
-  return addresses[0].emailAddress;
+  return pool[0].emailAddress;
 }

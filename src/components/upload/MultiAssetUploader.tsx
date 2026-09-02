@@ -127,6 +127,7 @@ export const MultiAssetUploader: React.FC = () => {
   const [dragOverKey, setDragOverKey] = useState<SlotKey | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [folder, setFolder] = useState('General');
   const [scriptText, setScriptText] = useState('');
   const [musicSource, setMusicSource] = useState<string>('none');
   const [aiGenerated, setAiGenerated] = useState(false);
@@ -631,7 +632,9 @@ export const MultiAssetUploader: React.FC = () => {
           videoFrames: videoFrames ?? undefined,
           musicSource,
           aiGenerated,
-          folder: 'General',
+          // The analyze route validates 1–60 chars; the blank state above is
+          // normalized to the same bucket the Projects page has always shown.
+          folder: folder.trim() || 'General',
         }),
       });
 
@@ -983,6 +986,23 @@ export const MultiAssetUploader: React.FC = () => {
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
+          </Field>
+
+          {/* Real folder choice — the Projects page has grouped by folder since
+              the beginning, but the uploader hard-coded "General", so the filter
+              axis was dead weight: every review landed in the same bucket. */}
+          <Field label="Folder" htmlFor="up-folder">
+            <input
+              id="up-folder"
+              value={folder}
+              maxLength={60}
+              onChange={(e) => setFolder(e.target.value.replace(/[<>:"/\\|?*]/g, '').slice(0, 60))}
+              placeholder="e.g. Shorts, Tutorials, Client work"
+              className="w-full bg-surface-panel border border-ink-300 rounded-lg px-3 h-9 text-[13px] placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15"
+            />
+            <span className="text-[11px] text-ink-500 mt-1 block">
+              Groups this review on the Projects page. Leave blank for General.
+            </span>
           </Field>
 
           <div className="md:col-span-2">

@@ -62,7 +62,7 @@ export default function PricingPage() {
   const [loadingId, setLoadingId] = useState<PlanId | null>(null);
   const [checkoutError, setCheckoutError] = useState('');
   const [interval, setInterval] = useState<'monthly' | 'yearly'>('monthly');
-  const { plan: currentPlan, loading: quotaLoading, authenticated } = useQuota();
+  const { plan: currentPlan, loading: quotaLoading, authenticated, yearlyAvailable } = useQuota();
 
   const handleUpgrade = async (planId: PlanId | null) => {
     if (!planId) return;
@@ -90,11 +90,16 @@ export default function PricingPage() {
     }
     if (quotaLoading) return;
 
+    // Interval the server can actually check out with: if the yearly variants
+    // are not configured, the checkout for 'yearly' fails closed — send the
+    // monthly one rather than surfacing a 502 the buyer cannot act on.
+    const effectiveInterval = yearlyAvailable ? interval : 'monthly';
+
     try {
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId, interval }),
+        body: JSON.stringify({ planId, interval: effectiveInterval }),
       });
       // Guarded: a proxy error page is HTML, and unguarded parsing would
       // surface as "Unexpected token '<'" in the checkout-error UI.
@@ -133,28 +138,28 @@ export default function PricingPage() {
           </div>
         )}
 
-        {/* Billing interval toggle — the yearly Lemon Squeezy variants exist
-            (LEMONSQUEEZY_VARIANT_*_YEARLY), plans.ts carries the annual
-            catalogue prices ($190/$490 — two months free), and the checkout
-            route accepts `interval`; the purchase surfaces just never offered
-            the choice. */}
-        <div className="flex justify-center">
-          <div className="inline-flex items-center rounded-full border border-ink-200 bg-surface-panel p-1" role="group" aria-label="Billing interval">
-            {(['monthly', 'yearly'] as const).map((i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setInterval(i)}
-                aria-pressed={interval === i}
-                className={`px-4 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${
-                  interval === i ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900'
-                }`}
-              >
-                {i === 'monthly' ? 'Monthly' : 'Yearly · 2 months free'}
-              </button>
-            ))}
+        {/* Billing interval toggle. Only offered when the deployment's yearly
+            Lemon Squeezy variants are configured (useQuota ← /api/me/plan):
+            an option whose checkout would fail is worse than no option. */}
+        {yearlyAvailable && (
+          <div className="flex justify-center">
+            <div className="inline-flex items-center rounded-full border border-ink-200 bg-surface-panel p-1" role="group" aria-label="Billing interval">
+              {(['monthly', 'yearly'] as const).map((i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setInterval(i)}
+                  aria-pressed={interval === i}
+                  className={`px-4 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${
+                    interval === i ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900'
+                  }`}
+                >
+                  {i === 'monthly' ? 'Monthly' : 'Yearly · 2 months free'}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Tiers */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-5xl mx-auto">

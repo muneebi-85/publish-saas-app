@@ -26,6 +26,8 @@ export interface QuotaState {
   isNearLimit: boolean;
   loading: boolean;
   authenticated: boolean;
+  /** Server-known: every tier's yearly LS variant is configured. */
+  yearlyAvailable: boolean;
 }
 
 const INITIAL: QuotaState = {
@@ -38,6 +40,7 @@ const INITIAL: QuotaState = {
   isNearLimit: false,
   loading: true,
   authenticated: false,
+  yearlyAvailable: false,
 };
 
 function coercePlan(p: unknown): Plan {
@@ -81,6 +84,7 @@ export function useQuota(): QuotaState & { refresh: () => void } {
         isNearLimit: Boolean(data.isNearLimit),
         loading: false,
         authenticated: Boolean(data.authenticated),
+        yearlyAvailable: Boolean(data.yearlyAvailable),
       });
     } catch {
       // A failed fetch keeps `authenticated` at its last-known value rather
@@ -88,7 +92,9 @@ export function useQuota(): QuotaState & { refresh: () => void } {
       // transiently failed is still signed in, and treating them as anonymous
       // (e.g. the pricing page's upgrade click) would bounce them to sign-up
       // mid-upgrade. The signed-out branch below is the only place that may
-      // set it false deliberately.
+      // set it false deliberately. `yearlyAvailable` keeps its last-known
+      // value for the same reason — flipping the pricing toggle's options off
+      // mid-view over a transient error is worse than leaving it.
       setState((s) => ({ ...s, loading: false, authenticated: isSignedIn ? true : s.authenticated }));
     }
   }, [isSignedIn]);

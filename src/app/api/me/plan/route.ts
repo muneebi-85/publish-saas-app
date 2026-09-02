@@ -2,9 +2,22 @@ import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getUserPlanState } from '@/lib/session';
 import { rateLimit, userKey, clientKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
+import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/**
+ * True when every tier's yearly Lemon Squeezy variant is configured. The
+ * pricing page hides the "Yearly" option when false — offering an interval
+ * whose checkout would fail is worse than not offering it, and the client
+ * cannot read env vars to know.
+ */
+function yearlyAvailable(): boolean {
+  return Boolean(
+    env.LS_VARIANT_STARTER_YEARLY && env.LS_VARIANT_PRO_YEARLY && env.LS_VARIANT_AGENCY_YEARLY,
+  );
+}
 
 /**
  * Authoritative plan + quota state, read straight from the database.
@@ -33,8 +46,7 @@ export async function GET(req: Request) {
     return NextResponse.json(
       { plan: 'free', auditsUsed: 0, auditsLimit: 1, canAnalyze: false, authenticated: false },
       { status: 200, headers: { 'Cache-Control': 'no-store' } },
-    );
-  }
+    );  }
 
   const limit = await rateLimit(
     userKey(userId, 'plan'),
@@ -66,6 +78,7 @@ export async function GET(req: Request) {
       periodEnd: state.periodEnd,
       percentUsed,
       authenticated: true,
+      yearlyAvailable: yearlyAvailable(),
     },
     { status: 200, headers: { 'Cache-Control': 'no-store' } },
   );

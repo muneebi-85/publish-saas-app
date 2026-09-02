@@ -19,7 +19,8 @@ export const ScriptAnalyzer: React.FC<{
   scriptText?: string;
   scores: { humanAuthenticity: number, hook: number | null };
   scriptAnalysis?: { gptProbability: number, storytellingArc: string };
-}> = ({ issues, scores, scriptAnalysis, scriptText }) => {
+  reportId?: string;
+}> = ({ issues, scores, scriptAnalysis, scriptText, reportId }) => {
   const [fixedIds, setFixedIds] = useState<string[]>([]);
   const toggleFix = (id: string) =>
     setFixedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
@@ -31,11 +32,12 @@ export const ScriptAnalyzer: React.FC<{
     ?? (scores.hook === null ? 'No script analyzed'
       : scores.hook >= 80 ? 'Strong retention' : 'Drop-off risk');
 
-  // Hand the report's script to the humanizer so the rewrite starts from the
-  // actual text instead of an empty editor.
+  // Hand the report id (not the script) to the humanizer — it fetches the
+  // text from /api/analysis/:id/draft. The previous href carried the whole
+  // 15k-char script in the querystring, which CDNs/proxies truncate or 414.
   const humanizerHref =
-    scriptText && scriptText.trim()
-      ? `/ai-humanizer?script=${encodeURIComponent(scriptText.slice(0, 15000))}`
+    scriptText && scriptText.trim() && reportId
+      ? `/ai-humanizer?report=${encodeURIComponent(reportId)}`
       : '/ai-humanizer';
 
   return (

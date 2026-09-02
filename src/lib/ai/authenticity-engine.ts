@@ -754,13 +754,16 @@ export function analyzeMonetizationRisk(
       fix: 'Change the thumbnail so its claim is one the first 30 seconds actually pays off. Keep the visual tension, remove the part the video does not deliver.',
     });
   }
-  if (ctx.voice && ctx.voice.syntheticArtifactRisk !== 'Low') {
+  // null (no audio processed AND no transcript-derived estimate) must not
+  // reach `risk` — an unmeasured signal cannot back a monetization item.
+  const syntheticRisk = ctx.voice?.syntheticArtifactRisk;
+  if (syntheticRisk && syntheticRisk !== 'Low') {
     items.push({
       category: 'Automation signals',
-      risk: ctx.voice.syntheticArtifactRisk,
-      confidence: ctx.voice.measured ? 68 : 45,
+      risk: syntheticRisk,
+      confidence: ctx.voice?.measured ? 68 : 45,
       location: 'voiceover track',
-      why: `Synthetic-voice risk was rated ${ctx.voice.syntheticArtifactRisk}${ctx.voice.measured ? ' from the processed audio' : ' from how the transcript reads, since no audio was processed'}. Mass-produced synthetic narration is what the reused-content policy targets; a disclosed synthetic voice over original writing is not.`,
+      why: `Synthetic-voice risk was rated ${syntheticRisk}${ctx.voice?.measured ? ' from the processed audio' : ' from how the transcript reads, since no audio was processed'}. Mass-produced synthetic narration is what the reused-content policy targets; a disclosed synthetic voice over original writing is not.`,
       fix: 'Keep the commentary and structure original, and set the altered-content disclosure if the voice could pass for a real identifiable person. The policy targets low-effort volume, not synthesis itself.',
     });
   }

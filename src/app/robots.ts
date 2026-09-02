@@ -19,7 +19,6 @@ export default function robots(): MetadataRoute.Robots {
           '/ai-humanizer',
           '/seo',
           '/channel-analytics',
-          '/inbox',
           '/*?*',
         ],
       },

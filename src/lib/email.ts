@@ -48,8 +48,15 @@ function shell(opts: {
   ctaLabel: string;
   ctaUrl: string;
   footNote?: string;
+  /**
+   * The "why am I receiving this" line — required by CAN-SPAM §5(f). Defaults
+   * to the account-holder wording; the one non-transactional sender (the
+   * newsletter welcome) replaces it, since its recipients have no account.
+   */
+  audienceNote?: string;
 }): string {
-  const { preheader, heading, bodyHtml, ctaLabel, ctaUrl, footNote } = opts;
+  const { preheader, heading, bodyHtml, ctaLabel, ctaUrl, footNote, audienceNote } = opts;
+  const audience = audienceNote ?? `You are receiving this email because you have an account with ${APP_NAME}.`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -89,7 +96,7 @@ function shell(opts: {
         <tr>
           <td style="border-top:1px solid #000000;padding:16px 0 0 0;font-size:12px;line-height:1.5;color:#000000;">
             ${footNote ? escapeHtml(footNote) + '<br/>' : ''}
-            You are receiving this email because you have an account with ${escapeHtml(APP_NAME)}.
+            ${escapeHtml(audience)}
           </td>
         </tr>
       </table>
@@ -121,6 +128,38 @@ async function send(to: string, subject: string, html: string): Promise<SendResu
 }
 
 // ── Senders ────────────────────────────────────────────────────────
+
+/**
+ * Welcome mail for the anonymous newsletter list — the one non-transactional
+ * sender, which is why it is the only one that MUST carry the unsubscribe
+ * link (CAN-SPAM §5(a)(3), GDPR Art. 21). The token in the URL is minted by
+ * the signup route and is specific to this address.
+ */
+export async function sendWelcome(args: {
+  to: string;
+  unsubscribeUrl: string;
+}): Promise<SendResult> {
+  const { to, unsubscribeUrl } = args;
+  const subject = `Welcome to ${APP_NAME}`;
+  const body = `
+    <p style="margin:0 0 12px 0;">Thanks for signing up. This list sends occasional product news — never a digest you didn't ask for, and never your address sold or shared.</p>
+    <p style="margin:0 0 12px 0;">You can unsubscribe at any time with one click:</p>
+    <p style="margin:0 0 12px 0;"><a href="${escapeHtml(unsubscribeUrl)}" style="color:#000000;">Unsubscribe from all marketing email</a></p>
+    <p style="margin:0;">The link works forever — no account, no password, no questions asked.</p>
+  `;
+  return send(
+    to,
+    subject,
+    shell({
+      preheader: 'Occasional product news — unsubscribe any time with one click.',
+      heading: 'You are on the list',
+      bodyHtml: body,
+      ctaLabel: 'Run a free review',
+      ctaUrl: env.APP_URL,
+      audienceNote: 'You are receiving this email because you signed up for the newsletter on the Publish landing page.',
+    })
+  );
+}
 
 export async function sendReportReady(args: {
   to: string;

@@ -56,7 +56,7 @@ export default function SubscriptionTermsPage() {
       <h2 id="cancellation">4. Cancellation</h2>
       <p>You can cancel your subscription at any time by:</p>
       <ol>
-        <li>Going to <strong>Settings &rsaquo; Billing</strong> and clicking &ldquo;Cancel plan&rdquo;, or</li>
+        <li>Going to <strong>Settings &rsaquo; Billing</strong> and opening the subscription manager (&ldquo;Manage subscription&rdquo;), or</li>
         <li>Opening the <a href="/api/billing/portal">customer portal</a> (link included in every receipt email), or</li>
         <li>Emailing <a href={`mailto:${LEGAL.billingEmail}`}>{LEGAL.billingEmail}</a> from your account email.</li>
       </ol>
@@ -68,17 +68,19 @@ export default function SubscriptionTermsPage() {
       <h2 id="restore">5. Restore purchase</h2>
       <p>
         If you already paid but the subscription is not showing on your account (for example, you
-        paid before signing up, or you paid with a different email), visit
-        {' '}<a href="/restore">/restore</a> and enter the email you used at checkout. We&rsquo;ll
-        match the Lemon Squeezy order and reactivate your subscription within a few minutes.
+        paid before signing up, or you paid with a different email), sign in and visit
+        {' '}<a href="/restore">/restore</a>. We&rsquo;ll match the Lemon Squeezy order against your
+        account&rsquo;s verified email and reactivate your subscription within a few minutes — no
+        email to type, nothing to forward.
       </p>
 
       <h2 id="failed-payments">6. Failed payments</h2>
       <p>
         If a renewal charge fails (expired card, insufficient funds, etc.), Lemon Squeezy will
-        retry the charge for up to 21 days and email you dunning reminders. After the retry
-        window ends without payment, your plan is automatically downgraded to Free. Reports you
-        created during the paid period remain accessible for 30 days so you can export them.
+        retry the charge for up to 21 days and email you dunning reminders. Your access is kept
+        for that full retry window. After it ends without payment, your plan is automatically
+        downgraded to Free. All reviews you created remain in your account — downgrade does not
+        delete them; you can export any report at any time from its page.
       </p>
 
       <h2 id="price-changes">7. Price changes</h2>

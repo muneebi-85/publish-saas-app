@@ -24,6 +24,9 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { rateLimit, clientKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 import * as v from '@/lib/validate';
+import { signUnsubscribeToken } from '@/lib/newsletter-token';
+import { env } from '@/lib/env';
+import { sendWelcome } from '@/lib/email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -65,6 +68,13 @@ export async function POST(req: Request) {
         source: source.ok ? source.value : 'landing-footer',
       },
     });
+    // Double opt-in welcome with the unsubscribe link already in it: the first
+    // mail we ever send carries its opt-out, which is the CAN-SPAM/GDPR
+    // position from day one rather than a retrofit on the first campaign.
+    await sendWelcome({
+      to: email.value,
+      unsubscribeUrl: `${env.APP_URL}/api/newsletter/unsubscribe?token=${encodeURIComponent(signUnsubscribeToken(email.value))}`,
+    }).catch((err) => console.error('[newsletter] welcome send failed:', err));
   } catch (err) {
     console.error('[newsletter] subscribe failed', err instanceof Error ? err.message : err);
     return NextResponse.json(

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Share2, Check, LinkOff } from 'lucide-react';
+import { Share2, Check, Link2Off } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { track } from '@/lib/analytics';
 
@@ -33,14 +33,25 @@ export function ShareScoreButton({
   const [copied, setCopied] = useState(false);
   const [isShared, setIsShared] = useState(shared);
   const [busy, setBusy] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   const handleShare = async () => {
     setBusy(true);
+    setShareError(null);
     try {
-      // Opt-in first, copy second: a link copied before the stamp resolves
-      // to 404 for whoever opens it. Idempotent server-side, so re-clicking
+      // Opt-in first, copy second — and only on success. The previous flow
+      // swallowed a failed stamp and copied anyway, handing the creator a link
+      // that 404s for every recipient. Idempotent server-side, so re-clicking
       // just re-copies.
-      await fetch(`/api/share/${reportId}`, { method: 'POST' }).catch(() => undefined);
+      const res = await fetch(`/api/share/${reportId}`, { method: 'POST' }).catch(
+        () => undefined,
+      );
+      if (!res || !res.ok) {
+        setIsShared(false);
+        setShareError('Could not publish the score card — the link was not copied. Try again.');
+        window.setTimeout(() => setShareError(null), 5000);
+        return;
+      }
       setIsShared(true);
 
       const url = `${window.location.origin}/share/${reportId}`;
@@ -102,7 +113,7 @@ export function ShareScoreButton({
         copied ? (
           <Check className="w-3.5 h-3.5 text-grass-700" strokeWidth={3} />
         ) : isPublic ? (
-          <LinkOff className="w-3.5 h-3.5" />
+          <Link2Off className="w-3.5 h-3.5" />
         ) : (
           <Share2 className="w-3.5 h-3.5" />
         )
@@ -119,6 +130,9 @@ export function ShareScoreButton({
       }
     >
       {copied ? 'Link copied' : busy ? (isPublic ? 'Unpublishing…' : 'Publishing…') : isPublic ? 'Unshare' : 'Share score'}
+      {shareError && (
+        <span className="text-[11px] font-medium text-crimson-700 ml-2">{shareError}</span>
+      )}
     </Button>
   );
 }

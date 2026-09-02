@@ -288,6 +288,44 @@ CASES: list[dict] = [
         "channel": {"subscribers": 800, "videoCount": 12},
         "thumb": None,
     },
+    {
+        # Tag tokenization edges Python's `str.split()` has and a bare JS
+        # `/\s+/` does not: the C0 separators - SPLIT (JS \s does
+        # not include them), while U+FEFF does NOT split (JS \s DOES include
+        # it). This case pins both so the two tag_avg_words computations can
+        # never drift for tags carrying control characters.
+        "name": "tag whitespace classes: C0 separators split, FEFF does not",
+        "video": {
+            "title": "tag separator edges",
+            "description": "",
+            "tags": ["ab", "a﻿c", "plain tag"],
+            "duration": "PT1M",
+            "publishedAt": "2026-07-03T08:00:00Z",
+            "definition": "hd",
+            "caption": False,
+        },
+        "channel": {"subscribers": 300, "videoCount": 6},
+        "thumb": None,
+    },
+    {
+        # Impossible calendar dates and free-text dates: Python's
+        # fromisoformat rejects both (age 0, dow pinned to Monday), and the TS
+        # mirrors now reject them too instead of rolling 2026-02-31 into
+        # March or parsing "March 4, 2026" in the machine's local zone. This
+        # case pins the reject branch on both sides.
+        "name": "impossible and non-ISO dates parse as absent",
+        "video": {
+            "title": "bad dates",
+            "description": "",
+            "tags": [],
+            "duration": "PT2M",
+            "publishedAt": "2026-02-31",
+            "definition": "hd",
+            "caption": False,
+        },
+        "channel": {"subscribers": 300, "videoCount": 6, "publishedAt": "March 4, 2026"},
+        "thumb": None,
+    },
 ]
 
 

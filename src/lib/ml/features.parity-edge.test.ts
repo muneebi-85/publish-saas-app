@@ -3,7 +3,7 @@
 // rejects impossible calendar dates and non-ISO text; the TS side used to
 // accept them (new Date fallback, Date.UTC roll-over).
 import { describe, expect, it } from 'vitest';
-import { extract } from './features';
+import { extract, tagFeatures } from './features';
 
 const video = (publishedAt: string) => ({
   title: 't', description: 'd', tags: [],
@@ -32,5 +32,21 @@ describe('parseTime parity edges', () => {
   it('accepts date-only ISO as UTC midnight on both sides', () => {
     const row = extract(video('2026-03-04'), channel);
     expect(row.age_days_log).toBeGreaterThan(0);
+  });
+});
+
+describe('tag tokenization parity (Python str.split semantics)', () => {
+  it('splits on the C0 separators \x1c-\x1f, like Python', () => {
+    expect(tagFeatures(['ab']).tag_avg_words).toBe(2);
+    expect(tagFeatures(['ab']).tag_avg_words).toBe(2);
+  });
+
+  it('does not split on U+FEFF, where a bare JS /\s+/ did', () => {
+    expect(tagFeatures(['a﻿b']).tag_avg_words).toBe(1);
+  });
+
+  it('keeps ordinary tokenization unchanged', () => {
+    expect(tagFeatures(['a b', '  x  ']).tag_avg_words).toBe(1.5);
+    expect(tagFeatures([]).tag_avg_words).toBe(0);
   });
 });

@@ -176,14 +176,23 @@ describe('decideEntitlement', () => {
       expect(verdict.write).toBe('none');
     });
 
-    it('keeps access at exactly the 14-day dunning boundary', () => {
-      const verdict = decideEntitlement('pro', PERIOD_END, sub({ status: 'past_due' }), at(14));
+    it('keeps access at exactly the 21-day dunning boundary the terms promise', () => {
+      const verdict = decideEntitlement('pro', PERIOD_END, sub({ status: 'past_due' }), at(21));
+      expect(verdict.plan).toBe('pro');
+      expect(verdict.write).toBe('none');
+    });
+
+    it('keeps access one day inside the published 21-day retry window', () => {
+      // 15 days used to downgrade here — a week inside the window the legal
+      // terms promise ("retry the charge for up to 21 days"). The code now
+      // matches the published promise.
+      const verdict = decideEntitlement('pro', PERIOD_END, sub({ status: 'past_due' }), at(15));
       expect(verdict.plan).toBe('pro');
       expect(verdict.write).toBe('none');
     });
 
     it('downgrades once the processor has given up', () => {
-      const verdict = decideEntitlement('pro', PERIOD_END, sub({ status: 'past_due' }), at(15));
+      const verdict = decideEntitlement('pro', PERIOD_END, sub({ status: 'past_due' }), at(22));
       expect(verdict.plan).toBe('free');
       expect(verdict.write).toBe('downgrade');
       expect(verdict.reason).toMatch(/payment has been failing since/);

@@ -69,8 +69,15 @@ async function upstashLimit(key: string, limit: number, windowMs: number): Promi
       cache: 'no-store',
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { result: number }[];
-    const count = data[0]?.result ?? 0;
+    const data = (await res.json()) as { result?: unknown }[];
+    // The pipeline element can carry an error OBJECT (WRONGTYPE after a key
+    // migration, Upstash-specific errors) — trusting it by shape made
+    // `object <= limit` false, 429ing every request in the bucket until the
+    // window rolled. A non-number answer means "redis unusable": fall through
+    // to the in-memory limiter, exactly like a network timeout.
+    const raw = data[0]?.result;
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+    const count = raw;
     return {
       success: count <= limit,
       limit,

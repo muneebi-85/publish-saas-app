@@ -156,8 +156,28 @@ export default function AnalysesClient({
                     </div>
                     <div className="min-w-0">
                       <div className="text-[13px] font-medium text-ink-900 truncate">{it.title}</div>
-                      <div className="text-[12px] text-ink-500 sm:hidden">
-                        {new Date(it.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                      {/* Mobile row: title sits above a score + status line, so
+                          the page's two most decision-relevant numbers survive
+                          the collapse. Hidden from sm up, where the columns
+                          carry them instead. */}
+                      <div className="flex items-center gap-2 mt-1 sm:hidden">
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[12px] font-bold tabular-nums ${
+                            scoreBand(it.overall) === 'strong'
+                              ? 'text-grass-700'
+                              : scoreBand(it.overall) === 'fair'
+                                ? 'text-amber-700'
+                                : 'text-crimson-700'
+                          }`}
+                        >
+                          {it.overall}
+                        </span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[12px] font-semibold ${status.cls}`}>
+                          {status.label}
+                        </span>
+                      </div>
+                      <div className="text-[12px] text-ink-500">
+                        {it.platform} · {new Date(it.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
                       </div>
                     </div>
                   </div>

@@ -437,12 +437,13 @@ function Hero({ startHref }: { startHref: string }) {
           Score first. <span className="underline decoration-2 underline-offset-4">Then go viral.</span>
         </p>
 
-        {/* Six faces and the "+2.1k more" pill are one strip in the asset, so
-            there is no HTML count next to it. */}
+        {/* Six faces, cropped where the comp's "+2.1k more" pill began — there
+            is no user count to substantiate 2.1k, so the count is not in the
+            asset and there is no HTML number next to it either. */}
         <img
           src="/images/landing/avatar-stack.webp"
-          alt="Six creators who run their videos through Publish"
-          width={900}
+          alt=""
+          width={735}
           height={176}
           className="hero-fade-up mb-3 h-11 w-auto"
           style={{ animationDelay: '400ms' }}
@@ -1035,6 +1036,15 @@ function AlgorithmPanel() {
 
 /* ── Testimonial ─────────────────────────────────────────────────── */
 
+/* ── How a first review goes ───────────────────────────────────────
+   Was a named testimonial ("Maya, 14.2k subs, horror niche") with a
+   comp-supplied portrait. There is no such customer — a named quote with
+   a stock face is an invented endorsement, the exact fabrication the
+   honesty pass removed everywhere else. The scene below is labeled as
+   what it is: an example of how a typical first review reads, drawn
+   from what the report actually surfaces.
+   ───────────────────────────────────────────────────────────────── */
+
 function Testimonial() {
   return (
     <section className="reveal-element mx-auto w-full max-w-[1280px] border-b border-ink-100/50 px-4 py-24">
@@ -1048,11 +1058,11 @@ function Testimonial() {
 
         <div className="max-w-3xl flex-1">
           <h3 className="group relative text-[30px] font-bold leading-tight text-ink-900 md:text-[36px]">
-            I ran the check before posting for the first time.
+            A typical first review:
             <br />
-            It said my hook was the problem.
+            the hook was the problem —
             <br />
-            Three videos past 10k since.
+            and it said exactly which 3 seconds.
             <span
               aria-hidden
               className="absolute bottom-0 left-0 -z-10 h-2 w-32 -rotate-1 translate-y-1 rounded-full bg-red-brand/20 transition-all duration-500 group-hover:w-full group-hover:bg-red-brand/10"
@@ -1073,19 +1083,22 @@ function Testimonial() {
           </h3>
         </div>
 
-        <div className="group flex shrink-0 items-center gap-4">
-          <div className="text-right transition-transform duration-300 group-hover:-translate-x-2">
-            <div className="font-bold text-ink-900">— Maya</div>
-            <div className="text-[14px] text-ink-500">14.2k subs</div>
-            <div className="text-[14px] text-ink-500">horror niche</div>
+        <div className="flex shrink-0 items-center gap-4">
+          {/* The report card itself stands in for the avatar: a real
+              artifact of the product rather than a face pretending to be
+              a customer. */}
+          <div className="rounded-2xl border border-ink-200 bg-white px-5 py-4 shadow-sm">
+            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-400">
+              Hook · first 30s
+            </div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-[32px] font-extrabold leading-none text-crimson-700">54</span>
+              <span className="text-[11px] font-semibold text-ink-400">/ 100</span>
+            </div>
+            <div className="mt-1.5 text-[10px] font-medium text-amber-700">
+              “in this video I&apos;ll show you” — throat-clear
+            </div>
           </div>
-          <img
-            src="/images/landing/testimonial-avatar.webp"
-            alt="Maya"
-            width={320}
-            height={320}
-            className="h-16 w-16 shrink-0 rounded-full object-cover transition-transform duration-500 group-hover:scale-110"
-          />
         </div>
       </div>
     </section>
@@ -1100,7 +1113,10 @@ const STEP_TILE = 'border border-red-200 bg-white/50 text-red-brand backdrop-blu
 
 const STEPS: { title: string; blurb: string; spin: string; d: string }[] = [
   {
-    title: 'Paste your script or link.',
+    // "or link" removed: the review runs on what you attach (script,
+    // thumbnail, audio, video) — there is no live-URL ingestion, and the
+    // previous wording promised one.
+    title: 'Paste your script. Attach the rest.',
     blurb: 'Two minutes, even on your phone.',
     spin: 'group-hover:-rotate-6',
     d: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
@@ -1176,7 +1192,10 @@ function HowItWorks() {
               </svg>
             </div>
             <div className="max-w-[28ch]">
-              <h3 className="mb-2 font-bold text-ink-900 transition-colors duration-300 group-hover:text-red-brand">
+              {/* red-brand-ink (#E60000, 4.6:1) not red-brand (#FF0000, 3.99:1):
+                  this h3 inherits body-size text, so the hover colour must
+                  clear AA for normal text. */}
+              <h3 className="mb-2 font-bold text-ink-900 transition-colors duration-300 group-hover:text-red-brand-ink">
                 {step.title}
               </h3>
               <p className="text-[14px] leading-relaxed text-ink-600">{step.blurb}</p>
@@ -1354,7 +1373,10 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Does it work with existing videos?',
-    a: 'Absolutely. You can paste a link to any live video to see why it performed the way it did and get actionable tips for your next upload.',
+    // Honest: the review runs on what you attach (title, script, thumbnail,
+    // audio, video file) — there is no live-URL ingestion. The previous
+    // answer promised link-pasting, which the product cannot do.
+    a: 'Yes — run the review on a video you have already edited. Attach the script, the thumbnail, and (optionally) the rendered video or voice track, and the review reads exactly what your viewers will see and hear. If the video is already live, connect your channel under Connected Channels to pair the review with its real analytics.',
   },
   {
     q: 'Is my data and script private?',

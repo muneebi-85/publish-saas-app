@@ -5,26 +5,35 @@ import { useRouter } from 'next/navigation';
 import { Command } from 'cmdk';
 import {
   Search, Folder, Video, User, LayoutDashboard, LineChart,
-  Wand2, BarChart3, FileText, CreditCard, Bell,
+  Wand2, BarChart3, FileText, CreditCard, Bell, Sparkles,
+  Radio, Palette, LayoutGrid, HelpCircle, Hash,
 } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
 
 type Action = { label: string; href: string; icon: React.ElementType; keywords?: string };
 
+// Mirrors the sidebar: every app page is reachable from ⌘K, so a power user
+// never has to remember which section a destination lives under.
 const NAVIGATE: Action[] = [
   { label: 'Upload new video',     href: '/upload',            icon: Video,           keywords: 'new analyze review audit' },
   { label: 'Go to Dashboard',     href: '/dashboard',         icon: LayoutDashboard, keywords: 'home overview' },
   { label: 'View all analyses',   href: '/analyses',          icon: LineChart,       keywords: 'reviews history' },
   { label: 'View all projects',   href: '/projects',          icon: Folder,          keywords: 'folders' },
-  { label: 'Creator Script Optimizer', href: '/ai-humanizer', icon: Wand2,           keywords: 'script rewrite hook' },
+  { label: 'AI Coach',             href: '/ai-coach',          icon: Sparkles,        keywords: 'ask advice chat coach' },
+  { label: 'Creator Script Optimizer', href: '/ai-humanizer', icon: Wand2,           keywords: 'script rewrite hook humanize' },
+  { label: 'SEO Studio',           href: '/seo',               icon: Hash,            keywords: 'title tags discoverability' },
   { label: 'Channel Analytics',    href: '/channel-analytics', icon: BarChart3,       keywords: 'trends growth' },
   { label: 'Reports',              href: '/reports',           icon: FileText,        keywords: 'export pdf' },
+  { label: 'Templates',            href: '/templates',         icon: LayoutGrid,      keywords: 'hooks formats ideas' },
+  { label: 'Connected Channels',    href: '/connected-channels', icon: Radio,          keywords: 'youtube tiktok link account' },
+  { label: 'Brand Kit',            href: '/brand-kit',         icon: Palette,         keywords: 'colors fonts tone style' },
   { label: 'Notifications',        href: '/notifications',     icon: Bell,            keywords: 'activity feed unread' },
 ];
 
 const SETTINGS: Action[] = [
-  { label: 'Profile settings', href: '/settings', icon: User,       keywords: 'account email' },
+  { label: 'Profile settings', href: '/settings', icon: User,       keywords: 'account email privacy delete' },
   { label: 'Billing & plan',   href: '/pricing',  icon: CreditCard, keywords: 'upgrade subscription invoice' },
+  { label: 'Help & FAQ',       href: '/help',     icon: HelpCircle, keywords: 'support questions contact' },
 ];
 
 export function CommandMenu({

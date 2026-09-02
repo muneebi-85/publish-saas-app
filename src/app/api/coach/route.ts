@@ -198,6 +198,8 @@ async function loadHistoryContext(
     selectedReportTitle,
   };
 }
+
+export async function POST(req: Request) {
   const authCtx = await requirePaidPlan();
   if (authCtx instanceof NextResponse) return authCtx;
 

@@ -130,7 +130,10 @@ export const Sidebar: React.FC<{ isMobile?: boolean }> = ({ isMobile }) => {
                       )}
                     />
                     <span className="flex-1 truncate">{item.label}</span>
-                    {item.badge && (
+                    {item.badge && plan !== 'free' && (
+                      // The "Pro" tag means "this feature is on a paid plan" —
+                      // rendering it for a paid user reads as a downgrade hint
+                      // on a feature they already own.
                       <span className="text-[10px] font-semibold uppercase tracking-[0.06em] px-1.5 h-4 inline-flex items-center rounded-md bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
                         {item.badge}
                       </span>

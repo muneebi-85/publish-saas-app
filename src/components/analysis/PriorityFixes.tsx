@@ -145,15 +145,14 @@ export const PriorityFixes: React.FC<{ project: ProjectData }> = ({ project }) =
   const remaining = fixes.length - done.length;
   const blocking = fixes.filter((f) => f.impact === 'blocking' && !done.includes(f.id)).length;
 
-  /** Carry the report's own inputs into a fresh review so re-running is one click. */
+  /**
+   * Carry the report id — not the script — to the uploader. The old handoff
+   * put the full 20k-char script in the querystring, which CDNs/proxies
+   * truncate or 414; the uploader now fetches the inputs by id
+   * (GET /api/analysis/:id/draft), so nothing rides the URL.
+   */
   const rerun = () => {
-    const qs = new URLSearchParams();
-    if (project.title) qs.set('title', project.title);
-    if (project.assets?.scriptText) qs.set('script', project.assets.scriptText);
-    const platform = project.platformReports?.[0]?.platform;
-    if (platform) qs.set('platform', platform);
-    const suffix = qs.toString();
-    window.location.href = `/upload${suffix ? `?${suffix}` : ''}`;
+    window.location.href = `/upload?rerun=${encodeURIComponent(project.id)}`;
   };
 
   if (fixes.length === 0) {

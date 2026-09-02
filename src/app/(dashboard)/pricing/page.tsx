@@ -260,8 +260,8 @@ export default function PricingPage() {
             <div>
               <div className="text-[13px] font-semibold text-ink-900">Cancel anytime, keep your data</div>
               <p className="text-[12px] text-ink-500 mt-1 max-w-xl leading-relaxed">
-                No contracts, no cancellation fees. If you downgrade, your past reports stay accessible for
-                30 days so you can export anything you need.
+                No contracts, no cancellation fees. If you downgrade, every report you created stays
+                in your account — nothing is deleted, and you can export any of them at any time.
               </p>
             </div>
           </div>

@@ -481,10 +481,27 @@ export function descriptionFeatures(rawDesc: string): FeatureRow {
 
 export function tagFeatures(tags?: string[]): FeatureRow {
   const list = tags ?? [];
-  const wordCount = list.reduce(
-    (sum, t) => sum + t.trim().split(/\s+/).filter(Boolean).length,
-    0,
-  );
+  const splitPython = (t: string): string[] => {
+    // Python's `str.split()` (no args) — the exact tokenizer the trainer
+    // used — splits on runs of [ \t\n\v\f\r] PLUS the C0 separators
+    // \x1c-\x1f, but NOT on U+FEFF, where a bare JS `/\s+/` differs on
+    // both. Tokenizing by Python's exact set keeps tag_avg_words
+    // byte-parity for tags carrying those characters.
+    const out: string[] = [];
+    let cur = '';
+    for (const ch of t) {
+      const cp = ch.codePointAt(0)!;
+      const isWs = cp === 0x20 || (cp >= 0x09 && cp <= 0x0d) || (cp >= 0x1c && cp <= 0x1f);
+      if (isWs) {
+        if (cur) { out.push(cur); cur = ''; }
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur) out.push(cur);
+    return out;
+  };
+  const wordCount = list.reduce((sum, t) => sum + splitPython(t).length, 0);
   return {
     tag_count: list.length,
     tag_chars: list.reduce((sum, t) => sum + codePoints(t), 0),

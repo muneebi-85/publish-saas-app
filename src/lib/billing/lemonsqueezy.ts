@@ -218,8 +218,11 @@ export type LemonEvent =
   | 'subscription_resumed'
   | 'subscription_expired'
   | 'subscription_payment_success'
+  | 'subscription_payment_recovered'
   | 'subscription_payment_failed'
-  | 'order_created';
+  | 'subscription_payment_refunded'
+  | 'order_created'
+  | 'order_refunded';
 
 export async function cancelSubscription(subscriptionId: string): Promise<boolean> {
   if (!env.LS_API_KEY) return false;

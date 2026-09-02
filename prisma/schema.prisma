@@ -81,6 +81,14 @@ model Subscription {
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   cancelledAt        DateTime?
+  /// Monotonicity guard for webhook delivery: the `updated_at` of the last
+  /// subscription event APPLIED to this row. Lemon Squeezy does not guarantee
+  /// in-order delivery, and a stale `payment_success` (first delivery 500'd,
+  /// dedup row released by design, redelivered mid-cycle) used to reset the
+  /// monthly counter to zero and roll the period back — a free quota reset
+  /// for the asking. Any event whose updated_at is older than this stamp is
+  /// skipped; equal means the same transition (idempotent no-op).
+  lastEventAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

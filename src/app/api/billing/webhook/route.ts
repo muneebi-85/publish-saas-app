@@ -24,6 +24,7 @@ import { prisma } from '@/lib/db';
 import { setUserPlan, resetQuota, downgradeToFree, PLAN_LIMITS, Plan } from '@/lib/session';
 import { sendPaymentFailed, sendPlanActivated } from '@/lib/email';
 import { env } from '@/lib/env';
+import { rateLimit, clientKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -137,7 +138,28 @@ async function maybePruneDedupRows() {
 }
 
 export async function POST(req: Request) {
+  // Every other public route is IP-throttled; the two webhook receivers were
+  // the gap. Signature verification is cheap per request, but an unthrottled
+  // flood of forgeries still buys unlimited HMAC work + log noise.
+  const rl = await rateLimit(clientKey(req, 'webhook'), LIMITS.WEBHOOK.limit, LIMITS.WEBHOOK.windowMs);
+  if (!rl.success) {
+    const { body, init } = tooManyRequests(rl);
+    return NextResponse.json(body, init);
+  }
+
+  // Cap before reading: webhook payloads are a few KB; the header claims
+  // anything, and an uncapped `text()` read lets a forged multi-MB body burn
+  // memory before the HMAC check even runs. 64 KB is comfortably above any
+  // legitimate Lemon Squeezy delivery.
+  const declaredLength = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declaredLength) && declaredLength > 64 * 1024) {
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
+  }
   const raw = await req.text();
+  if (raw.length > 256 * 1024) {
+    // A chunked request with no content-length still cannot sneak past.
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
+  }
   const sig = req.headers.get('x-signature');
 
   const ok = await verifyWebhookSignature(raw, sig);
@@ -198,6 +220,22 @@ export async function POST(req: Request) {
   /** What the response reports back; only set when a tier was actually applied. */
   let appliedPlan: Plan | null = null;
 
+  /**
+   * Out-of-order delivery guard (monotonicity). The dedup key above catches a
+   * redelivery of the SAME transition; it cannot catch a DIFFERENT, older
+   * transition arriving late — last month's payment_success whose first
+   * delivery 500'd and whose dedup row was released by design. Without this
+   * guard that delivery reset the monthly counter to zero mid-cycle (free
+   * reviews) and rolled the period boundary back. An event older than the
+   * stamp is skipped; equal is the same transition (no-op); null stamp means
+   * the row predates the guard and the event applies.
+   */
+  const eventAt = parseDate(attrs.updated_at) ?? parseDate(attrs.created_at);
+  const isStale = (sub: { lastEventAt: Date | null }): boolean => {
+    if (!sub.lastEventAt || !eventAt) return false;
+    return eventAt.getTime() <= sub.lastEventAt.getTime();
+  };
+
   try {
     switch (event) {
       case 'subscription_created':
@@ -231,16 +269,34 @@ export async function POST(req: Request) {
                 status: attrs.status ?? 'active',
                 currentPeriodStart: periodStart,
                 currentPeriodEnd: periodEnd,
+                lastEventAt: eventAt,
               },
               update: {
                 status: attrs.status ?? 'active',
                 currentPeriodStart: periodStart,
                 currentPeriodEnd: periodEnd,
                 cancelledAt: null,
+                lastEventAt: eventAt,
               },
             });
           }
           break;
+        }
+
+        // No-demote guard for the email-matched path (hosted payment links,
+        // where custom_data.user_id is absent and LS does not verify receipt
+        // email ownership): a cheap purchase made with someone else's email
+        // must not overwrite that account's higher tier. The signed-clerkId
+        // path (our own checkout) is exempt — that purchase IS the account's.
+        if (!clerkId) {
+          const currentPlan = asPlan(user.plan) ?? 'free';
+          if (currentPlan !== 'free' && resolvedPlan !== currentPlan && !isUpgrade(currentPlan, resolvedPlan)) {
+            console.error(
+              `[billing webhook] ${event} via email match (${email}) would lower ` +
+                `${user.id}'s "${currentPlan}" to "${resolvedPlan}" — refusing; the customer's tier is kept.`,
+            );
+            break;
+          }
         }
 
         if (lsSubscriptionId) {
@@ -253,6 +309,7 @@ export async function POST(req: Request) {
               status: attrs.status ?? 'active',
               currentPeriodStart: periodStart,
               currentPeriodEnd: periodEnd,
+              lastEventAt: eventAt,
             },
             update: {
               // Re-assert ownership: a resumed subscription must follow the
@@ -263,6 +320,7 @@ export async function POST(req: Request) {
               currentPeriodStart: periodStart,
               currentPeriodEnd: periodEnd,
               cancelledAt: null,
+              lastEventAt: eventAt,
             },
           });
         }
@@ -307,6 +365,7 @@ export async function POST(req: Request) {
                 status: attrs.status ?? 'active',
                 currentPeriodStart: periodStart,
                 currentPeriodEnd: periodEnd,
+                lastEventAt: eventAt,
               },
             });
             await setUserPlan(user.id, resolvedPlan, periodEnd);
@@ -318,6 +377,16 @@ export async function POST(req: Request) {
                 ` (plan resolvable: ${Boolean(resolvedPlan)}).`,
             );
           }
+          break;
+        }
+
+        // An older transition delivered late must not unwind a newer one
+        // (stale portal plan-change or a rolled-back period boundary).
+        if (isStale(sub)) {
+          console.log(
+            `[billing webhook] subscription_updated for ${lsSubscriptionId} is older than ` +
+              `the last applied event — skipped (out-of-order delivery).`,
+          );
           break;
         }
 
@@ -342,6 +411,7 @@ export async function POST(req: Request) {
             plan: nextPlan,
             // LS reports a resumed subscription as active again.
             ...(status === 'active' ? { cancelledAt: null } : {}),
+            lastEventAt: eventAt,
           },
         });
 
@@ -361,8 +431,9 @@ export async function POST(req: Request) {
           // sibling, which is otherwise the only place the monthly counter
           // resets. Without this, the customer pays for the new period and
           // still 402s on every analyze until the next payment_success (up to
-          // a month out).
-          if (periodEnd.getTime() > sub.user.periodEnd.getTime()) {
+          // a month out). A null periodEnd on the user row means the boundary
+          // was never stamped, so any real periodEnd is an advance.
+          if (periodEnd.getTime() > (sub.user.periodEnd?.getTime() ?? 0)) {
             await resetQuota(sub.userId);
           }
         }
@@ -397,6 +468,7 @@ export async function POST(req: Request) {
               status: 'active',
               currentPeriodStart: periodStart,
               currentPeriodEnd: periodEnd,
+              lastEventAt: eventAt,
             },
           });
           await setUserPlan(user.id, resolvedPlan, periodEnd);
@@ -405,7 +477,22 @@ export async function POST(req: Request) {
           break;
         }
 
-        const paidPlan = resolvedPlan ?? asPlan(sub.plan) ?? 'free';
+        // The critical stale guard: a late-delivered LAST-cycle payment_success
+        // resets the monthly counter to zero mid-cycle — free reviews for the
+        // asking. The dedup key cannot catch this (different transition), so
+        // the lastEventAt stamp is the only thing standing between a redelivered
+        // old webhook and a free month.
+        if (isStale(sub)) {
+          console.log(
+            `[billing webhook] payment_success for ${lsSubscriptionId} is older than the ` +
+              `last applied event — skipped (out-of-order delivery; quota not reset).`,
+          );
+          break;
+        }
+
+        // Resolution failed → keep the tier the sub row already carries, not
+        // 'free': a successful PAYMENT must never demote (the header's rule 3).
+        const paidPlan = resolvedPlan ?? asPlan(sub.plan) ?? asPlan(sub.user.plan) ?? 'free';
         if (!resolvedPlan && paidPlan === 'free') {
           // A renewal on a variant no operator ever mapped (see the created
           // branch's handling of the same case). Writing the free "plan" here
@@ -430,6 +517,7 @@ export async function POST(req: Request) {
             plan: paidPlan,
             currentPeriodStart: periodStart,
             currentPeriodEnd: periodEnd,
+            lastEventAt: eventAt,
           },
         });
         // A renewal payment is what makes a monthly allowance feel fair: the
@@ -447,22 +535,16 @@ export async function POST(req: Request) {
         // record the intent and leave the plan intact; `subscription_expired`
         // (or the reconciliation sweep) performs the actual downgrade.
         if (!lsSubscriptionId) break;
-        const cancelled = await prisma.subscription.updateMany({
+        const sub = await prisma.subscription.findUnique({
           where: { lsSubscriptionId },
-          data: {
-            status: 'cancelled',
-            cancelledAt: new Date(),
-            // ends_at is authoritative once cancelled — access runs to that date.
-            currentPeriodEnd: parseDate(attrs.ends_at) ?? periodEnd,
-          },
         });
-        // Zero rows means the `subscription_created` event was never persisted
-        // (LS exhausted its retries on it, or it is still queued). ACKing here
-        // would make Lemon Squeezy drop this event for good; when `created`
-        // finally lands its upsert writes status active with no cancelledAt —
-        // a subscription the customer cancelled recorded as live. A 500 makes
-        // LS redeliver once the row exists, which is the correct outcome.
-        if (cancelled.count === 0) {
+        if (!sub) {
+          // The row does not exist yet (LS exhausted its retries on created, or
+          // it is still queued). ACKing here would make Lemon Squeezy drop this
+          // event for good; when `created` finally lands its upsert writes
+          // status active with no cancelledAt — a subscription the customer
+          // cancelled recorded as live. A 500 makes LS redeliver once the row
+          // exists, which is the correct outcome.
           console.error(
             `[billing webhook] subscription_cancelled for unknown row ${lsSubscriptionId} — returning 500 so LS retries after the created event lands.`,
           );
@@ -471,6 +553,26 @@ export async function POST(req: Request) {
             { status: 500 },
           );
         }
+        if (isStale(sub)) {
+          // A cancelled event older than the last applied transition (e.g. it
+          // 500'd once, the customer resumed in the meantime) must not
+          // un-cancel a live subscription.
+          console.log(
+            `[billing webhook] subscription_cancelled for ${lsSubscriptionId} is older than ` +
+              `the last applied event — skipped (out-of-order delivery).`,
+          );
+          break;
+        }
+        await prisma.subscription.update({
+          where: { lsSubscriptionId },
+          data: {
+            status: 'cancelled',
+            cancelledAt: new Date(),
+            // ends_at is authoritative once cancelled — access runs to that date.
+            currentPeriodEnd: parseDate(attrs.ends_at) ?? periodEnd,
+            lastEventAt: eventAt,
+          },
+        });
         break;
       }
 
@@ -478,9 +580,16 @@ export async function POST(req: Request) {
         if (!lsSubscriptionId) break;
         const sub = await prisma.subscription.findUnique({ where: { lsSubscriptionId } });
         if (!sub) break;
+        if (isStale(sub)) {
+          console.log(
+            `[billing webhook] subscription_expired for ${lsSubscriptionId} is older than ` +
+              `the last applied event — skipped (out-of-order delivery).`,
+          );
+          break;
+        }
         await prisma.subscription.update({
           where: { lsSubscriptionId },
-          data: { status: 'expired' },
+          data: { status: 'expired', lastEventAt: eventAt },
         });
         // Only strip the plan if this is still the subscription the account is
         // being billed on. If they already re-subscribed on a new id, the old
@@ -518,7 +627,15 @@ export async function POST(req: Request) {
           where: { lsSubscriptionId },
           include: { user: true },
         });
-        if (!sub) break;
+        if (!sub) {
+          // A silent break here drops the customer's dunning email on the floor
+          // — every sibling branch logs loudly for exactly this reason.
+          console.error(
+            `[billing webhook] payment_failed for unknown subscription ${lsSubscriptionId} — ` +
+              `no row to mark past_due; the customer will not get the dunning email.`,
+          );
+          break;
+        }
         // past_due keeps access alive while Lemon Squeezy retries the card. The
         // downgrade only happens if it ultimately expires.
         await prisma.subscription.update({
@@ -537,6 +654,40 @@ export async function POST(req: Request) {
             updatePaymentUrl: portal,
           }).catch((e) => console.error('[billing webhook] dunning email failed:', e));
         }
+        break;
+      }
+
+      case 'subscription_payment_recovered': {
+        // Dunning succeeded after a payment_failed: the card now works and the
+        // charge went through. Clear past_due so the reconcile sweep does not
+        // later read the stale status as "still failing" and downgrade a
+        // customer who is fully paid up.
+        if (!lsSubscriptionId) break;
+        const sub = await prisma.subscription.findUnique({
+          where: { lsSubscriptionId },
+        });
+        if (!sub) break;
+        await prisma.subscription.update({
+          where: { lsSubscriptionId },
+          data: { status: 'active', currentPeriodEnd: periodEnd, lastEventAt: eventAt },
+        });
+        break;
+      }
+
+      case 'order_refunded':
+      case 'subscription_payment_refunded': {
+        // Lemon Squeezy can refund without cancelling the subscription. Without
+        // this branch the reconcile sweep then sees a live status + future
+        // period and PRESERVES access indefinitely — money returned, product
+        // kept, no alert. We do not know whether the operator intends the
+        // subscription to continue (a refund can be a goodwill credit), so the
+        // honest action is to keep entitlement and page an operator loudly.
+        console.error(
+          `[billing webhook] REFUND received: event=${String(event)} ` +
+            `subscription=${lsSubscriptionId || 'n/a'} email=${email ?? 'n/a'} ` +
+            `order=${payload.data?.id ?? 'n/a'} — entitlement NOT auto-revoked; ` +
+            `an operator must decide (refund policy: ${env.APP_URL}/legal/refund).`,
+        );
         break;
       }
 

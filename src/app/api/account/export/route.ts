@@ -37,7 +37,7 @@ export async function GET() {
   try {
     const uid = authCtx.dbUserId;
 
-    const [account, channels, projects, reports, jobs, comments, subscriptions] =
+    const [account, channels, reports, jobs, subscriptions] =
       await Promise.all([
         prisma.user.findUnique({
           where: { id: uid },
@@ -69,11 +69,6 @@ export async function GET() {
           },
           orderBy: { createdAt: 'asc' },
         }),
-        prisma.project.findMany({
-          where: { userId: uid },
-          include: { assets: true, comments: { select: { content: true, createdAt: true } } },
-          orderBy: { createdAt: 'asc' },
-        }),
         prisma.analysisReport.findMany({
           where: { userId: uid },
           orderBy: { createdAt: 'asc' },
@@ -94,11 +89,6 @@ export async function GET() {
           },
           orderBy: { createdAt: 'asc' },
         }),
-        prisma.comment.findMany({
-          where: { userId: uid },
-          select: { projectId: true, content: true, createdAt: true },
-          orderBy: { createdAt: 'asc' },
-        }),
         prisma.subscription.findMany({
           where: { userId: uid },
           select: {
@@ -111,6 +101,10 @@ export async function GET() {
           },
           orderBy: { createdAt: 'asc' },
         }),
+        // The legacy `Project`/`Comment`/`MediaAsset` models are never written
+        // by any route — the app's real units are AnalysisReport + AnalysisJob —
+        // so exporting them advertised sections that are structurally always
+        // empty and made a GDPR Art. 20 export misrepresent its own contents.
       ]);
 
     if (!account) {
@@ -122,10 +116,8 @@ export async function GET() {
       exportedAt: new Date().toISOString(),
       account,
       channels: channels.map(countsToNumbers),
-      projects,
       reviews: reports,
       reviewRuns: jobs,
-      comments,
       billing: {
         subscriptions,
         note:
@@ -133,10 +125,8 @@ export async function GET() {
       },
       counts: {
         channels: channels.length,
-        projects: projects.length,
         reviews: reports.length,
         reviewRuns: jobs.length,
-        comments: comments.length,
         subscriptions: subscriptions.length,
       },
     };

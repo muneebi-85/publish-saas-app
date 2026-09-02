@@ -121,14 +121,16 @@ export const ScoreHeader: React.FC<ScoreHeaderProps> = ({ project, shared = fals
       {/* Breadcrumb + actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <nav className="flex items-center gap-1.5 text-[12px] text-ink-500">
-          <Link href="/projects" className="hover:text-ink-900 transition-colors inline-flex items-center gap-1.5">
-            <ArrowLeft className="w-3.5 h-3.5" /> Projects
+          <Link href="/analyses" className="hover:text-ink-900 transition-colors inline-flex items-center gap-1.5">
+            <ArrowLeft className="w-3.5 h-3.5" /> Analyses
           </Link>
           <ChevronRight className="w-3 h-3 text-ink-300" />
           <span className="text-ink-900 font-medium truncate max-w-[240px]">{title}</span>
         </nav>
         <div className="flex items-center gap-2">
-          <Link href="/upload">
+          {/* Carries the report id so the uploader fetches the previous inputs
+              (title/script/platform/description) instead of starting blank. */}
+          <Link href={`/upload?rerun=${encodeURIComponent(project.id)}`}>
             <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>Re-run</Button>
           </Link>
           <ShareScoreButton reportId={project.id} reportTitle={title} shared={shared} />

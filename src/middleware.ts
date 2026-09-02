@@ -44,6 +44,11 @@ const isPublicRoute = createRouteMatcher([
   // 401 to every visitor it exists for. Rate-limited by IP, body-capped, and it
   // writes exactly one column it was given.
   '/api/newsletter',
+  // The unsubscribe leg of that list. Authenticated by the HMAC token in the
+  // link itself (see src/lib/newsletter-token.ts) — a mailing-list member has
+  // no session to authenticate with.
+  '/api/newsletter/unsubscribe',
+  '/unsubscribe',
   // The embeddable SVG badge — same exposure as the share page it points at.
   '/api/badge/(.*)',
 ]);
@@ -73,6 +78,7 @@ const isKnownPage = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/sso-callback',
+  '/unsubscribe',
   // app/(dashboard)/* — the route group is not part of the URL.
   '/ai-coach',
   '/ai-humanizer',

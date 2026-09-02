@@ -246,7 +246,12 @@ async function upsertChannel(
 
         if (existing && existing.userId !== dbUserId) {
           return NextResponse.json(
-            { error: 'That channel is already connected to another account.' },
+            {
+              error:
+                'That channel is already connected to another account. ' +
+                'If it is yours, contact support from the account email the channel uses — ' +
+                'we will unlink it and hand it back to you.',
+            },
             { status: 409 },
           );
         }

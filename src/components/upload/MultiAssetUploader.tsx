@@ -158,13 +158,18 @@ export const MultiAssetUploader: React.FC = () => {
     // which cannot prove that on its own.
     const inFlight = aborters.current;
 
-    // Re-run handoff from a report ("Re-run review"): preload title, script,
-    // and platform so the follow-up review starts from the same inputs.
+    // Re-run handoff from a report ("Re-run review"): the URL carries only a
+    // report id; the previous inputs (title, script, platform, description)
+    // are fetched from /api/analysis/:id/draft. The old handoff put the full
+    // script in the querystring, which CDNs/proxies truncate or 414 at a few
+    // KB — a partial-script re-run the trend line then misread as a failed fix.
     let queuedTitle = '';
     let queuedScript = '';
     let queuedPlatform: typeof PLATFORMS[number] = 'YouTube';
     try {
       const params = new URLSearchParams(window.location.search);
+      // Legacy handoffs (bookmarks, older links) still arrive as
+      // ?title=&script= — honor the fields that survived the URL.
       const title = params.get('title');
       const script = params.get('script');
       const platform = params.get('platform');
@@ -176,6 +181,59 @@ export const MultiAssetUploader: React.FC = () => {
       }
     } catch {
       // Reading the URL is cosmetic; never let it break the uploader.
+    }
+
+    // Re-run handoff, current form (/upload?rerun=<id>): the full input set is
+    // fetched by id — scripts are too long for the querystring (CDN request-
+    // line limits truncate or 414 them, and a PARTIAL script re-graded as a
+    // bogus before/after was exactly the bug the endpoint exists to fix).
+    // Same dirty-guard contract as the challenge prefill below: fields the
+    // creator has already touched by the time this resolves stay theirs.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const rerun = params.get('rerun');
+      if (rerun && /^[a-z0-9_-]{8,64}$/i.test(rerun)) {
+        const beforeFetch = { title: queuedTitle, script: queuedScript, platform: queuedPlatform };
+        void fetch(`/api/analysis/${encodeURIComponent(rerun)}/draft`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (!mounted.current || !data) return;
+            if (typeof data.title === 'string' && data.title) {
+              setTitle((prev) => (prev === beforeFetch.title ? data.title.slice(0, 200) : prev));
+            }
+            if (typeof data.scriptText === 'string' && data.scriptText) {
+              setScriptText((prev) =>
+                prev === beforeFetch.script ? data.scriptText.slice(0, 20_000) : prev,
+              );
+            }
+            if (typeof data.description === 'string' && data.description) {
+              setDescription((prev) => (prev === '' ? data.description.slice(0, 5_000) : prev));
+            }
+            if (
+              typeof data.targetPlatform === 'string' &&
+              (PLATFORMS as readonly string[]).includes(data.targetPlatform)
+            ) {
+              setPlatform((prev) =>
+                prev === beforeFetch.platform
+                  ? (data.targetPlatform as typeof PLATFORMS[number])
+                  : prev,
+              );
+            }
+            // Restoring the previous declarations keeps the re-run comparable;
+            // only the enumerated values are ever applied.
+            if (typeof data.musicSource === 'string' && data.musicSource) {
+              setMusicSource((prev) => (prev === 'none' ? data.musicSource : prev));
+            }
+            if (data.aiGenerated === true) {
+              setAiGenerated((prev) => (prev === false ? true : prev));
+            }
+          })
+          .catch(() => {
+            // Prefill-only; the review must still be runnable from a blank form.
+          });
+      }
+    } catch {
+      // Same rule as above — URL cosmetics must not break the uploader.
     }
 
     // Challenge accept ("I can beat this score"): prefill the SAME script,

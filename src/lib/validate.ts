@@ -77,6 +77,46 @@ export function boolean(input: unknown, field = 'value'): ValidateResult<boolean
 const PRIVATE_HOST = /^(localhost|127\.|0\.|10\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[|.*\.local|.*\.internal)/i;
 
 /**
+ * Numeric IPv4 encodings the dotted-decimal regex cannot see: whole-address
+ * decimal (`2130706433` = 127.0.0.1), hex (`0x7f000001`, `0x7f.0.0.1`), and
+ * octal parts (`0177.0.0.1`). Fetch stacks accept all of them, and the URL
+ * parser normalizes none — `hostname` keeps the literal — so they need their
+ * own shape checks. Still lexical (DNS rebinding is documented as out of scope
+ * above), but now covering every encoding a localhost-equivalent can arrive in.
+ */
+function isPrivateHost(hostname: string): boolean {
+  if (PRIVATE_HOST.test(hostname)) return true;
+  const parts = hostname.split('.');
+  // Octal dotted form: any part with a leading zero and a second digit (0177).
+  if (parts.every((p) => /^0\d+$|^\d+$/.test(p)) && parts.some((p) => /^0\d+$/.test(p))) {
+    return true;
+  }
+  // Hex dotted form: every part hex (0x7f.0.0.1). Rare but accepted by libc.
+  if (parts.length === 4 && parts.every((p) => /^0x[0-9a-f]+$|^0+$|^\d{1,3}$/.test(p)) && parts.some((p) => /^0x/i.test(p))) {
+    return true;
+  }
+  // Whole-address forms: pure decimal integer or 0x hex.
+  const whole = /^(\d{8,}|0x[0-9a-f]{7,8})$/i.exec(hostname);
+  if (whole) {
+    const n = hostname.toLowerCase().startsWith('0x')
+      ? parseInt(hostname.slice(2), 16)
+      : Number(hostname);
+    if (Number.isSafeInteger(n)) {
+      // eslint-disable-next-line no-bitwise
+      const a = (n >>> 24) & 0xff, b = (n >>> 16) & 0xff;
+      if (
+        a === 127 || a === 10 || a === 0 ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 100 && b >= 64 && b <= 127)
+      ) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Public https(s) URL. Rejects non-HTTP schemes (javascript:, data:, file:) and
  * private/loopback/link-local hosts so a user-supplied URL can never be used to
  * make the server fetch internal infrastructure (SSRF).
@@ -98,7 +138,7 @@ export function url(input: unknown, {
   if (scheme !== 'https:' && !(allowHttp && scheme === 'http:')) {
     return { ok: false, error: `${field} must use https` };
   }
-  if (PRIVATE_HOST.test(parsed.hostname)) {
+  if (isPrivateHost(parsed.hostname)) {
     return { ok: false, error: `${field} must be a public address` };
   }
   return { ok: true, value: parsed.toString() };

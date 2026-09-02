@@ -15,6 +15,7 @@ import { WebhookEvent } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { primaryEmailOf } from '@/lib/clerk-identity';
+import { rateLimit, clientKey, LIMITS, tooManyRequests } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -26,6 +27,15 @@ export const runtime = 'nodejs';
 const BILLABLE = new Set(['active', 'on_trial', 'past_due', 'unpaid', 'paused']);
 
 export async function POST(req: Request) {
+  // Same treatment as the billing receiver: the two webhook endpoints were the
+  // only public routes without an IP throttle, and an unverified flood buys
+  // unlimited svix-verify work before the signature check rejects it.
+  const rl = await rateLimit(clientKey(req, 'webhook'), LIMITS.WEBHOOK.limit, LIMITS.WEBHOOK.windowMs);
+  if (!rl.success) {
+    const { body, init } = tooManyRequests(rl);
+    return NextResponse.json(body, init);
+  }
+
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
   if (!WEBHOOK_SECRET) {
@@ -48,6 +58,13 @@ export async function POST(req: Request) {
     });
   }
 
+  // Cap before reading, same as the billing webhook: Clerk payloads are a few
+  // KB; a forged multi-MB body should not be buffered at all.
+  const declaredLength = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declaredLength) && declaredLength > 64 * 1024) {
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
+  }
+
   // Read the raw body first: `req.json()` would throw an unhandled rejection on
   // a malformed body (surfacing as an opaque 500 and retry noise in svix), and
   // verifying the raw text is what the svix signature actually covers — a
@@ -55,6 +72,9 @@ export async function POST(req: Request) {
   let body: string;
   try {
     body = await req.text();
+    if (body.length > 256 * 1024) {
+      return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
+    }
   } catch {
     return new Response('Error occured -- could not read body', { status: 400 });
   }

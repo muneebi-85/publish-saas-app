@@ -22,6 +22,7 @@ import { prisma } from '@/lib/db';
 import { env } from '@/lib/env';
 import { clerkClient } from '@clerk/nextjs/server';
 import { cancelSubscription } from '@/lib/billing/lemonsqueezy';
+import { purgeUserObjects } from '@/lib/upload/purge-objects';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -145,7 +146,44 @@ export async function GET(req: Request) {
           continue;
         }
 
-        // 1. Remove the sign-in identity. A 404 means it is already gone —
+        // 1. Remove the uploaded media. The DB cascade below removes every row,
+        //    but the objects themselves (videos, voiceovers, thumbnails, frame
+        //    sheets — up to 4 GB each) live in object storage keyed by the
+        //    Clerk id, which is itself personal data. Erasing the account while
+        //    leaving its media world-readable at the public origin is not
+        //    erasure. Best-effort per account: a storage outage must not block
+        //    the Clerk/DB erasure, and the failure is logged for the next sweep
+        //    to retry (the row survives a failed step — see the catch below).
+        try {
+          const objects = await purgeUserObjects(user.clerkId);
+          if (objects.failed > 0) {
+            console.error('[cron/purge] object deletion incomplete', {
+              userId: user.id,
+              ...objects,
+            });
+            // Objects that failed to delete keep the account's media exposed;
+            // do not proceed to the irreversible DB delete below until the
+            // prefix is gone. The catch path restores the grace marker so the
+            // next sweep retries the whole account.
+            if (!objects.skipped) {
+              throw new Error(
+                `object purge incomplete: ${objects.failed} of ${objects.listed} objects survived`,
+              );
+            }
+          } else {
+            console.warn('[cron/purge] objects erased', {
+              userId: user.id,
+              listed: objects.listed,
+              deleted: objects.deleted,
+            });
+          }
+        } catch (e) {
+          // Storage unconfigured returns skipped=true and cannot reach this
+          // branch; anything else is a real failure the sweep must retry.
+          throw e;
+        }
+
+        // 2. Remove the sign-in identity. A 404 means it is already gone —
         //    that is success, not an error, so the DB row still gets cleaned.
         try {
           // Clerk v5: clerkClient is an object instance, not a factory. Calling
@@ -161,7 +199,7 @@ export async function GET(req: Request) {
           }
         }
 
-        // 2. Remove the application data. Every relation is onDelete: Cascade,
+        // 3. Remove the application data. Every relation is onDelete: Cascade,
         //    so projects, reviews, reports, comments, channels, keys and jobs
         //    go with it. Subscription rows carry no personal data beyond the
         //    provider ids and are removed too; the provider retains its own

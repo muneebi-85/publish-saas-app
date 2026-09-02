@@ -32,11 +32,17 @@ export const dynamic = 'force-dynamic';
  * Variant → tier mapping, shared with the webhook via plan-resolution.ts so the
  * two paths that can grant a paid plan cannot drift apart. resolvePlan() never
  * returns 'free' and never matches an unset env var against an empty variant id.
+ * The yearly keys are the whole point of a restore for an ANNUAL subscriber —
+ * omitting them here answered "unrecognized variant" to exactly the customer
+ * this route exists for.
  */
 const VARIANT_MAP: VariantMap = {
   starter: env.LS_VARIANT_STARTER,
   pro: env.LS_VARIANT_PRO,
   agency: env.LS_VARIANT_AGENCY,
+  starterYearly: env.LS_VARIANT_STARTER_YEARLY,
+  proYearly: env.LS_VARIANT_PRO_YEARLY,
+  agencyYearly: env.LS_VARIANT_AGENCY_YEARLY,
 };
 
 // No parameter: the restore decision is made entirely from the authenticated

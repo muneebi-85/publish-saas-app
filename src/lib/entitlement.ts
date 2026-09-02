@@ -31,9 +31,13 @@ export const RENEWAL_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * How long a failing card keeps access while Lemon Squeezy retries the charge.
- * LS gives up after roughly two weeks of dunning, so this is the outer bound.
+ * 21 days — the window the published Subscription Terms promise ("retry the
+ * charge for up to 21 days... after the retry window ends... automatically
+ * downgraded"). This used to be 14, which downgraded customers a week inside
+ * the promised retry window; the codebase's bias is that wrongly locking out
+ * a payer is far worse than a late sweep, so the code matches the terms.
  */
-export const DUNNING_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
+export const DUNNING_GRACE_MS = 21 * 24 * 60 * 60 * 1000;
 
 /** Subscription statuses that still represent a live, paid-for entitlement. */
 export const LIVE_STATUSES = new Set(['active', 'on_trial']);

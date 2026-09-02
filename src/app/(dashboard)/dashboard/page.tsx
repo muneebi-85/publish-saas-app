@@ -70,9 +70,6 @@ export default async function DashboardPage({
   const scoreDelta =
     firstScore !== undefined && latestScore !== undefined ? latestScore - firstScore : 0;
   const showProgress = reports.length >= 2 && firstScore !== undefined && latestScore !== undefined;
-  const avgOverall = overallSeries.length
-    ? Math.round(overallSeries.reduce((a, b) => a + b, 0) / overallSeries.length)
-    : 0;
   const avgMonetization = monetizationSeries.length
     ? Math.round(monetizationSeries.reduce((a, b) => a + b, 0) / monetizationSeries.length)
     : 0;
@@ -83,12 +80,22 @@ export default async function DashboardPage({
   // "recent" feed, so count in the DB instead of deriving from the list.
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const [totalReports, thisMonthCount] = user
+  const [totalReports, thisMonthCount, avgAllOverall] = user
     ? await Promise.all([
         prisma.analysisReport.count({ where: { userId: user.id } }),
         prisma.analysisReport.count({ where: { userId: user.id, createdAt: { gte: monthStart } } }),
+        // True all-time average for the header line — the fetched 6-report
+        // window's average was previously labeled as if it covered every
+        // review, which read as honest until a creator passed ~6 reviews and
+        // the two numbers diverged.
+        prisma.analysisReport.aggregate({
+          where: { userId: user.id },
+          _avg: { overallScore: true },
+        }),
       ])
-    : [0, 0];
+    : ([0, 0, null] as const);
+  const lifetimeAvg =
+    avgAllOverall?._avg.overallScore != null ? Math.round(avgAllOverall._avg.overallScore) : 0;
 
   const showActivating = justCheckedOut && !planIsPaid;
   const showActivated  = justCheckedOut && planIsPaid;
@@ -214,7 +221,7 @@ export default async function DashboardPage({
     <div className="animate-enter">
       <PageHeader
         title={`Welcome back, ${firstName}`}
-        subtitle={`${totalReports} review${totalReports === 1 ? '' : 's'} run · average score ${avgOverall}`}
+        subtitle={`${totalReports} review${totalReports === 1 ? '' : 's'} run · average score ${lifetimeAvg}`}
         actions={
           <Link href="/upload">
             <Button variant="primary" leftIcon={<UploadCloud className="w-4 h-4" />}>New review</Button>
@@ -227,9 +234,9 @@ export default async function DashboardPage({
       <div className="mb-6 rounded-xl border border-ink-200 bg-surface-panel shadow-xs overflow-hidden grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 divide-x divide-y xl:divide-y-0 divide-ink-200">
         <Kpi icon={<BarChart3 className="w-4 h-4" />} label="Total analyses" value={totalReports}
              hint={`${state.auditsUsed} used this cycle`} />
-        <Kpi icon={<Gauge className="w-4 h-4" />} label="Avg. score" value={avgOverall}
-             tone={avgOverall >= 85 ? 'good' : avgOverall >= 70 ? 'warn' : 'bad'}
-             hint={`Average of your last ${reports.length}`} />
+        <Kpi icon={<Gauge className="w-4 h-4" />} label="Avg. score" value={lifetimeAvg}
+             tone={lifetimeAvg >= 85 ? 'good' : lifetimeAvg >= 70 ? 'warn' : 'bad'}
+             hint={`All ${totalReports} review${totalReports === 1 ? '' : 's'}`} />
         <Kpi icon={<TrendingUp className="w-4 h-4" />} label="Avg. monetization" value={avgMonetization}
              tone={avgMonetization >= 85 ? 'good' : avgMonetization >= 70 ? 'warn' : 'bad'}
              hint="Revenue eligibility" />
@@ -237,7 +244,7 @@ export default async function DashboardPage({
              hint={now.toLocaleDateString('en-US', { month: 'long' })} />
         <Kpi icon={<ShieldCheck className="w-4 h-4" />} label="Safe to publish" value={`${safeRate}%`}
              tone={safeRate >= 80 ? 'good' : 'neutral'}
-             hint={`${safeCount} of ${reports.length} scored 85+`} />
+             hint={`${safeCount} of your last ${reports.length} scored 85+`} />
         <Kpi icon={<Wrench className="w-4 h-4" />} label="Open fixes"
              value={insights?.totalFixes ?? topIssues.length}
              tone={(insights?.blockingCount ?? 0) > 0 ? 'bad' : 'neutral'}

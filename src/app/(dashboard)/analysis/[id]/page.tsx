@@ -136,7 +136,7 @@ export default async function AnalysisPage({
       <div className="space-y-6">
         {project.authenticity && <AuthenticityPanel authenticity={project.authenticity} />}
         {project.monetizationRisk && <MonetizationRiskPanel analysis={project.monetizationRisk} />}
-        <ScriptAnalyzer issues={project.scriptIssues} scriptAnalysis={project.scriptAnalysis} scriptText={project.assets.scriptText} scores={project.scores} />
+        <ScriptAnalyzer issues={project.scriptIssues} scriptAnalysis={project.scriptAnalysis} scriptText={project.assets.scriptText} scores={project.scores} reportId={row.id} />
         <HookPredictor hook={project.hookAnalysis} />
         <RetentionCurve hook={project.hookAnalysis} />
         <ThumbnailAnalyzer thumbnail={project.thumbnailAnalysis} thumbnailUrl={project.assets.thumbnailUrl} />

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { FileText, Link2, Check, LinkOff } from 'lucide-react';
+import { FileText, Link2, Check, Link2Off } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { track } from '@/lib/analytics';
 
@@ -89,7 +89,7 @@ export function ReportActions({ reportId, shared = false }: { reportId: string; 
           copied ? (
             <Check className="w-3.5 h-3.5 text-brand-600" />
           ) : isShared ? (
-            <LinkOff className="w-3.5 h-3.5" />
+            <Link2Off className="w-3.5 h-3.5" />
           ) : (
             <Link2 className="w-3.5 h-3.5" />
           )

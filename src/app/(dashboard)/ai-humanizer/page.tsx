@@ -58,10 +58,30 @@ function ScriptOptimizerBody() {
   const [result, setResult] = useState<OptimizeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Handoff from a report's "Open in humanizer" — preload the actual script.
+  // Handoff from a report's "Open in humanizer" — the URL carries the report
+  // id and the script is fetched from /api/analysis/:id/draft. (The old
+  // ?script=<15k chars> handoff truncated or 414'd behind CDNs/proxies, so
+  // the editor could open pre-filled with a partial script.) Legacy links
+  // that still carry ?script= keep working, bounded to the same 15k.
   useEffect(() => {
     const script = searchParams.get('script');
     if (script) setRawText(script.slice(0, 15000));
+    const report = searchParams.get('report');
+    if (report && /^[a-z0-9_-]{8,64}$/i.test(report)) {
+      let cancelled = false;
+      fetch(`/api/analysis/${report}/draft`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (cancelled || !data) return;
+          if (typeof data.scriptText === 'string' && data.scriptText) {
+            setRawText((prev) => (prev ? prev : data.scriptText.slice(0, 15000)));
+          }
+        })
+        .catch(() => undefined);
+      return () => {
+        cancelled = true;
+      };
+    }
   }, [searchParams]);
 
   const handleRun = async () => {

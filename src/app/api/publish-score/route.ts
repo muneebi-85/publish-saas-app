@@ -60,14 +60,29 @@ export async function POST(req: Request) {
   // extractor is locked byte-for-byte against its Python twin and must keep taking
   // exactly one format. A caller sending "11:04" in `duration` would otherwise parse
   // to 0 seconds and be silently scored as a Short.
-  const secondsGiven = Number(body.durationSeconds);
-  const duration =
-    typeof body.duration === 'string' && body.duration.trim() !== ''
-      ? body.duration.slice(0, 32)
-      : Number.isFinite(secondsGiven) && secondsGiven > 0
-        ? `PT${Math.min(Math.round(secondsGiven), 86_400 * 7)}S`
-        : null;
-  const publishedAt = typeof body.publishedAt === 'string' ? body.publishedAt.slice(0, 40) : null;
+  //
+  // An unusable `durationSeconds` is ABSENT, not 400 and not a coerced value —
+  // a raw `Number()` here used to grade `true` as a 1-second Short and `['664']`
+  // as PT664S; anything that is not a genuine number or its string spelling
+  // simply leaves duration unset, the same "unknown length" the extractor
+  // reports for a display string like "11:04".
+  let duration: string | null = null;
+  if (typeof body.duration === 'string' && body.duration.trim() !== '') {
+    duration = body.duration.slice(0, 32);
+  } else if (body.durationSeconds !== undefined && body.durationSeconds !== null) {
+    const seconds = v.integer(body.durationSeconds, {
+      min: 1, max: 86_400 * 7, field: 'durationSeconds',
+    });
+    if (seconds.ok) duration = `PT${seconds.value}S`;
+  }
+  // Strict ISO-8601 only — this is the string the TS/Python parity extractors
+  // parse, and anything else they deliberately read as "absent" (age 0, no
+  // publish hour). Accepting free text here would score the video against a
+  // feature vector neither extractor would have produced.
+  const publishedAt =
+    typeof body.publishedAt === 'string' && /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(body.publishedAt.trim())
+      ? body.publishedAt.slice(0, 40)
+      : null;
   const categoryId =
     typeof body.categoryId === 'string' && /^\d{1,3}$/.test(body.categoryId)
       ? body.categoryId
